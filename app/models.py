@@ -1,6 +1,5 @@
 from app.database import db
 from datetime import datetime
-import bcrypt
 
 class Marca(db.Model):
     __tablename__ = 'marca'

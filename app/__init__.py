@@ -1,14 +1,12 @@
 from flask import Flask
 from flask_cors import CORS
-import os
+from config import Config  # ← Importar desde la raíz
 
 def create_app():
     app = Flask(__name__)
     
-    # Configuración
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///optica.db')
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
+    # Configuración desde config.py
+    app.config.from_object(Config)
     
     # CORS
     CORS(app)
@@ -20,5 +18,11 @@ def create_app():
     # Registrar blueprints
     from app.routes import main_bp
     app.register_blueprint(main_bp)
+    
+    # Crear tablas después de inicializar
+    with app.app_context():
+        from app.database import db
+        db.create_all()
+        print("✅ Tablas creadas/verificadas")
     
     return app
