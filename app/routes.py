@@ -18,17 +18,42 @@ main_bp = Blueprint('main', __name__)
 def home():
     return jsonify({
         "message": "API Óptica - Sistema Completo", 
-        "version": "2.0",
-        "modulos": {
-            "productos": "GET /productos, /marcas, /categorias",
-            "clientes": "GET /clientes",
-            "empleados": "GET /empleados", 
-            "proveedores": "GET /proveedores",
-            "ventas": "GET /ventas",
-            "citas": "GET /citas",
-            "servicios": "GET /servicios",
-            "usuarios": "GET /usuarios"
-        }
+        "version": "3.0",
+        "modulos_principales": {
+            "clientes": "GET/POST /clientes",
+            "empleados": "GET/POST /empleados", 
+            "proveedores": "GET/POST /proveedores",
+            "ventas": "GET/POST /ventas",
+            "citas": "GET/POST /citas",
+            "servicios": "GET/POST /servicios",
+            "usuarios": "GET/POST /usuarios",
+            "roles": "GET/POST /roles",
+            "productos": "GET/POST /productos, /marcas, /categorias"
+        },
+        "modulos_secundarios": {
+            "compras": "GET/POST /compras",
+            "detalle_venta": "GET/POST /detalle-venta",
+            "detalle_compra": "GET/POST /detalle-compra",
+            "estado_cita": "GET/POST /estado-cita",
+            "estado_venta": "GET/POST /estado-venta",
+            "horario": "GET/POST /horario",
+            "historial_formula": "GET/POST /historial-formula",
+            "abono": "GET/POST /abono",
+            "permiso": "GET/POST /permiso",
+            "permiso_rol": "GET/POST /permiso-rol"
+        },
+        "relaciones": {
+            "detalles_venta": "GET /ventas/{id}/detalles",
+            "detalles_compra": "GET /compras/{id}/detalles", 
+            "historial_cliente": "GET /clientes/{id}/historial",
+            "horarios_empleado": "GET /empleados/{id}/horarios"
+        },
+        "utilidades": {
+            "dashboard": "GET /dashboard/estadisticas",
+            "elemento_especifico": "GET /{tabla}/{id}",
+            "todos_endpoints": "GET /endpoints"
+        },
+        "documentacion_completa": "GET /endpoints para ver todos los endpoints disponibles"
     })
 
 # ===== MÓDULO PRODUCTOS (EXISTENTE) =====
