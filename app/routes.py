@@ -352,6 +352,34 @@ def create_usuario():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al crear usuario"}), 500
+    
+# ===== MÓDULO ROLES =====
+@main_bp.route('/roles', methods=['GET'])
+def get_roles():
+    try:
+        roles = Rol.query.all()
+        return jsonify([rol.to_dict() for rol in roles])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener roles"}), 500
+
+@main_bp.route('/roles', methods=['POST'])
+def create_rol():
+    try:
+        data = request.get_json()
+        if not data.get('nombre'):
+            return jsonify({"error": "El nombre es requerido"}), 400
+
+        rol = Rol(
+            nombre=data['nombre'],
+            descripcion=data.get('descripcion', ''),
+            estado=data.get('estado', True)
+        )
+        db.session.add(rol)
+        db.session.commit()
+        return jsonify({"message": "Rol creado", "rol": rol.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear rol"}), 500
 
 # ===== RUTAS PARA OBTENER UN ELEMENTO ESPECÍFICO =====
 @main_bp.route('/<tabla>/<int:id>', methods=['GET'])
@@ -367,7 +395,12 @@ def get_elemento(tabla, id):
             'servicios': Servicio,
             'usuarios': Usuario,
             'marcas': Marca,
-            'categorias': CategoriaProducto
+            'categorias': CategoriaProducto,
+            'compras': Compra,
+            'estado-cita': EstadoCita,
+            'estado-venta': EstadoVenta,
+            'roles': Rol
+            
         }
         
         if tabla not in modelos:
@@ -380,6 +413,36 @@ def get_elemento(tabla, id):
         return jsonify(elemento.to_dict())
     except Exception as e:
         return jsonify({"error": "Error al obtener elemento"}), 500
+    
+# ===== MÓDULO COMPRAS =====
+@main_bp.route('/compras', methods=['GET'])
+def get_compras():
+    try:
+        compras = Compra.query.all()
+        return jsonify([compra.to_dict() for compra in compras])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener compras"}), 500
+
+@main_bp.route('/compras', methods=['POST'])
+def create_compra():
+    try:
+        data = request.get_json()
+        required_fields = ['proveedor_id', 'total']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        compra = Compra(
+            proveedor_id=data['proveedor_id'],
+            total=float(data['total']),
+            estado_compra=data.get('estado_compra', True)
+        )
+        db.session.add(compra)
+        db.session.commit()
+        return jsonify({"message": "Compra creada", "compra": compra.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear compra"}), 500
 
 # ===== TABLAS SECUNDARIAS - DETALLES =====
 @main_bp.route('/detalle-venta', methods=['GET'])
@@ -682,7 +745,9 @@ def get_all_endpoints():
             "usuarios": "GET/POST /usuarios",
             "productos": "GET/POST /productos",
             "marcas": "GET/POST /marcas",
-            "categorias": "GET/POST /categorias"
+            "categorias": "GET/POST /categorias",
+            "compras": "GET/POST /compras",
+            "roles": "GET/POST /roles"
         },
         "modulos_secundarios": {
             "detalle_venta": "GET/POST /detalle-venta",
@@ -708,23 +773,3 @@ def get_all_endpoints():
         }
     })
 
-
-# ===== ESTADÍSTICAS GENERALES =====
-@main_bp.route('/dashboard/estadisticas', methods=['GET'])
-def get_estadisticas():
-    try:
-        total_clientes = Cliente.query.count()
-        total_empleados = Empleado.query.count()
-        total_productos = Producto.query.count()
-        total_ventas = Venta.query.count()
-        total_citas = Cita.query.count()
-        
-        return jsonify({
-            "total_clientes": total_clientes,
-            "total_empleados": total_empleados,
-            "total_productos": total_productos,
-            "total_ventas": total_ventas,
-            "total_citas": total_citas
-        })
-    except Exception as e:
-        return jsonify({"error": "Error al obtener estadísticas"}), 500
