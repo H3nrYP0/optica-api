@@ -6,7 +6,8 @@ from app.models import (
     # Nuevas tablas principales
     Usuario, Rol, Cliente, Empleado, Proveedor, 
     Venta, Cita, Servicio, EstadoCita, EstadoVenta,
-    DetalleVenta, Compra, DetalleCompra
+    DetalleVenta, Compra, DetalleCompra, HistorialFormula, Horario, Abono, Permiso,
+    PermisoPorRol
 )
 from datetime import datetime
 
@@ -379,6 +380,334 @@ def get_elemento(tabla, id):
         return jsonify(elemento.to_dict())
     except Exception as e:
         return jsonify({"error": "Error al obtener elemento"}), 500
+
+# ===== TABLAS SECUNDARIAS - DETALLES =====
+@main_bp.route('/detalle-venta', methods=['GET'])
+def get_detalles_venta():
+    try:
+        detalles = DetalleVenta.query.all()
+        return jsonify([detalle.to_dict() for detalle in detalles])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener detalles de venta"}), 500
+
+@main_bp.route('/detalle-venta', methods=['POST'])
+def create_detalle_venta():
+    try:
+        data = request.get_json()
+        required_fields = ['venta_id', 'producto_id', 'cantidad', 'precio_unitario']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        detalle = DetalleVenta(
+            venta_id=data['venta_id'],
+            producto_id=data['producto_id'],
+            cantidad=data['cantidad'],
+            precio_unitario=float(data['precio_unitario']),
+            descuento=data.get('descuento', 0.0),
+            subtotal=float(data['cantidad']) * float(data['precio_unitario']) - float(data.get('descuento', 0.0))
+        )
+        db.session.add(detalle)
+        db.session.commit()
+        return jsonify({"message": "Detalle de venta creado", "detalle": detalle.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear detalle de venta"}), 500
+
+@main_bp.route('/detalle-compra', methods=['GET'])
+def get_detalles_compra():
+    try:
+        detalles = DetalleCompra.query.all()
+        return jsonify([detalle.to_dict() for detalle in detalles])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener detalles de compra"}), 500
+
+@main_bp.route('/detalle-compra', methods=['POST'])
+def create_detalle_compra():
+    try:
+        data = request.get_json()
+        required_fields = ['compra_id', 'producto_id', 'cantidad', 'precio_unidad']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        detalle = DetalleCompra(
+            compra_id=data['compra_id'],
+            producto_id=data['producto_id'],
+            cantidad=data['cantidad'],
+            precio_unidad=float(data['precio_unidad']),
+            subtotal=float(data['cantidad']) * float(data['precio_unidad'])
+        )
+        db.session.add(detalle)
+        db.session.commit()
+        return jsonify({"message": "Detalle de compra creado", "detalle": detalle.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear detalle de compra"}), 500
+
+# ===== TABLAS MAESTRAS - ESTADOS =====
+@main_bp.route('/estado-cita', methods=['GET'])
+def get_estados_cita():
+    try:
+        estados = EstadoCita.query.all()
+        return jsonify([estado.to_dict() for estado in estados])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener estados de cita"}), 500
+
+@main_bp.route('/estado-cita', methods=['POST'])
+def create_estado_cita():
+    try:
+        data = request.get_json()
+        if not data.get('nombre'):
+            return jsonify({"error": "El nombre es requerido"}), 400
+
+        estado = EstadoCita(nombre=data['nombre'])
+        db.session.add(estado)
+        db.session.commit()
+        return jsonify({"message": "Estado de cita creado", "estado": estado.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear estado de cita"}), 500
+
+@main_bp.route('/estado-venta', methods=['GET'])
+def get_estados_venta():
+    try:
+        estados = EstadoVenta.query.all()
+        return jsonify([estado.to_dict() for estado in estados])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener estados de venta"}), 500
+
+@main_bp.route('/estado-venta', methods=['POST'])
+def create_estado_venta():
+    try:
+        data = request.get_json()
+        if not data.get('nombre'):
+            return jsonify({"error": "El nombre es requerido"}), 400
+
+        estado = EstadoVenta(nombre=data['nombre'])
+        db.session.add(estado)
+        db.session.commit()
+        return jsonify({"message": "Estado de venta creado", "estado": estado.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear estado de venta"}), 500
+
+# ===== TABLAS DEL SISTEMA =====
+@main_bp.route('/horario', methods=['GET'])
+def get_horarios():
+    try:
+        horarios = Horario.query.all()
+        return jsonify([horario.to_dict() for horario in horarios])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener horarios"}), 500
+
+@main_bp.route('/horario', methods=['POST'])
+def create_horario():
+    try:
+        data = request.get_json()
+        required_fields = ['empleado_id', 'hora_inicio', 'hora_final', 'dia']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        horario = Horario(
+            empleado_id=data['empleado_id'],
+            hora_inicio=datetime.strptime(data['hora_inicio'], '%H:%M').time(),
+            hora_final=datetime.strptime(data['hora_final'], '%H:%M').time(),
+            dia=data['dia']
+        )
+        db.session.add(horario)
+        db.session.commit()
+        return jsonify({"message": "Horario creado", "horario": horario.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear horario"}), 500
+
+@main_bp.route('/historial-formula', methods=['GET'])
+def get_historiales_formula():
+    try:
+        historiales = HistorialFormula.query.all()
+        return jsonify([historial.to_dict() for historial in historiales])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener historial de fórmulas"}), 500
+
+@main_bp.route('/historial-formula', methods=['POST'])
+def create_historial_formula():
+    try:
+        data = request.get_json()
+        if not data.get('cliente_id'):
+            return jsonify({"error": "El cliente_id es requerido"}), 400
+
+        historial = HistorialFormula(
+            cliente_id=data['cliente_id'],
+            descripcion=data.get('descripcion', ''),
+            od_esfera=data.get('od_esfera'),
+            od_cilindro=data.get('od_cilindro'),
+            od_eje=data.get('od_eje'),
+            oi_esfera=data.get('oi_esfera'),
+            oi_cilindro=data.get('oi_cilindro'),
+            oi_eje=data.get('oi_eje')
+        )
+        db.session.add(historial)
+        db.session.commit()
+        return jsonify({"message": "Historial de fórmula creado", "historial": historial.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear historial de fórmula"}), 500
+
+@main_bp.route('/abono', methods=['GET'])
+def get_abonos():
+    try:
+        abonos = Abono.query.all()
+        return jsonify([abono.to_dict() for abono in abonos])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener abonos"}), 500
+
+@main_bp.route('/abono', methods=['POST'])
+def create_abono():
+    try:
+        data = request.get_json()
+        required_fields = ['venta_id', 'monto_abonado']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        abono = Abono(
+            venta_id=data['venta_id'],
+            monto_abonado=float(data['monto_abonado'])
+        )
+        db.session.add(abono)
+        db.session.commit()
+        return jsonify({"message": "Abono creado", "abono": abono.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear abono"}), 500
+
+# ===== TABLAS DE PERMISOS =====
+@main_bp.route('/permiso', methods=['GET'])
+def get_permisos():
+    try:
+        permisos = Permiso.query.all()
+        return jsonify([permiso.to_dict() for permiso in permisos])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener permisos"}), 500
+
+@main_bp.route('/permiso', methods=['POST'])
+def create_permiso():
+    try:
+        data = request.get_json()
+        if not data.get('nombre'):
+            return jsonify({"error": "El nombre es requerido"}), 400
+
+        permiso = Permiso(nombre=data['nombre'])
+        db.session.add(permiso)
+        db.session.commit()
+        return jsonify({"message": "Permiso creado", "permiso": permiso.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear permiso"}), 500
+
+@main_bp.route('/permiso-rol', methods=['GET'])
+def get_permisos_rol():
+    try:
+        permisos_rol = PermisoPorRol.query.all()
+        return jsonify([permiso.to_dict() for permiso in permisos_rol])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener permisos por rol"}), 500
+
+@main_bp.route('/permiso-rol', methods=['POST'])
+def create_permiso_rol():
+    try:
+        data = request.get_json()
+        required_fields = ['rol_id', 'permiso_id']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        permiso_rol = PermisoPorRol(
+            rol_id=data['rol_id'],
+            permiso_id=data['permiso_id']
+        )
+        db.session.add(permiso_rol)
+        db.session.commit()
+        return jsonify({"message": "Permiso por rol creado", "permiso_rol": permiso_rol.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear permiso por rol"}), 500
+
+# ===== RUTAS DE RELACIONES =====
+@main_bp.route('/ventas/<int:venta_id>/detalles', methods=['GET'])
+def get_detalles_venta_especifica(venta_id):
+    try:
+        detalles = DetalleVenta.query.filter_by(venta_id=venta_id).all()
+        return jsonify([detalle.to_dict() for detalle in detalles])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener detalles de la venta"}), 500
+
+@main_bp.route('/compras/<int:compra_id>/detalles', methods=['GET'])
+def get_detalles_compra_especifica(compra_id):
+    try:
+        detalles = DetalleCompra.query.filter_by(compra_id=compra_id).all()
+        return jsonify([detalle.to_dict() for detalle in detalles])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener detalles de la compra"}), 500
+
+@main_bp.route('/clientes/<int:cliente_id>/historial', methods=['GET'])
+def get_historial_cliente(cliente_id):
+    try:
+        historiales = HistorialFormula.query.filter_by(cliente_id=cliente_id).all()
+        return jsonify([historial.to_dict() for historial in historiales])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener historial del cliente"}), 500
+
+@main_bp.route('/empleados/<int:empleado_id>/horarios', methods=['GET'])
+def get_horarios_empleado(empleado_id):
+    try:
+        horarios = Horario.query.filter_by(empleado_id=empleado_id).all()
+        return jsonify([horario.to_dict() for horario in horarios])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener horarios del empleado"}), 500
+
+# ===== ACTUALIZAR RUTA PRINCIPAL CON TODOS LOS ENDPOINTS =====
+@main_bp.route('/endpoints', methods=['GET'])
+def get_all_endpoints():
+    return jsonify({
+        "modulos_principales": {
+            "clientes": "GET/POST /clientes",
+            "empleados": "GET/POST /empleados",
+            "proveedores": "GET/POST /proveedores",
+            "ventas": "GET/POST /ventas",
+            "citas": "GET/POST /citas",
+            "servicios": "GET/POST /servicios",
+            "usuarios": "GET/POST /usuarios",
+            "productos": "GET/POST /productos",
+            "marcas": "GET/POST /marcas",
+            "categorias": "GET/POST /categorias"
+        },
+        "modulos_secundarios": {
+            "detalle_venta": "GET/POST /detalle-venta",
+            "detalle_compra": "GET/POST /detalle-compra",
+            "estado_cita": "GET/POST /estado-cita",
+            "estado_venta": "GET/POST /estado-venta",
+            "horario": "GET/POST /horario",
+            "historial_formula": "GET/POST /historial-formula",
+            "abono": "GET/POST /abono",
+            "permiso": "GET/POST /permiso",
+            "permiso_rol": "GET/POST /permiso-rol"
+        },
+        "relaciones": {
+            "detalles_venta": "GET /ventas/{id}/detalles",
+            "detalles_compra": "GET /compras/{id}/detalles",
+            "historial_cliente": "GET /clientes/{id}/historial",
+            "horarios_empleado": "GET /empleados/{id}/horarios"
+        },
+        "utilidades": {
+            "dashboard": "GET /dashboard/estadisticas",
+            "elemento_especifico": "GET /{tabla}/{id}",
+            "todos_endpoints": "GET /endpoints"
+        }
+    })
+
 
 # ===== ESTADÍSTICAS GENERALES =====
 @main_bp.route('/dashboard/estadisticas', methods=['GET'])
