@@ -233,7 +233,7 @@ class Empleado(db.Model):
     __tablename__ = 'empleado'
     id = db.Column(db.Integer, primary_key=True)
     tipo_documento = db.Column(db.String(4))
-    numero_documento = db.Column(db.String(20), nullable=False)  # Cambié a String para documentos largos
+    numero_documento = db.Column(db.String(20), nullable=False)
     nombre = db.Column(db.String(20), nullable=False)
     telefono = db.Column(db.String(10))
     direccion = db.Column(db.String(30))
@@ -248,8 +248,11 @@ class Empleado(db.Model):
         return {
             'id': self.id,
             'nombre': self.nombre,
+            'tipo_documento': self.tipo_documento,
             'numero_documento': self.numero_documento,
             'telefono': self.telefono,
+            'direccion': self.direccion,
+            'fecha_ingreso': self.fecha_ingreso.isoformat() if self.fecha_ingreso else None,
             'cargo': self.cargo,
             'estado': self.estado
         }
