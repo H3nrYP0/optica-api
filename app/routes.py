@@ -179,39 +179,247 @@ def create_cliente():
         db.session.rollback()
         return jsonify({"error": "Error al crear cliente"}), 500
 
-# ===== MÓDULO EMPLEADOS =====
-@main_bp.route('/empleados', methods=['GET'])
-def get_empleados():
+# ===== MÓDULO EMPLEADOS - AGREGAR PUT Y DELETE =====
+@main_bp.route('/empleados/<int:id>', methods=['PUT'])
+def update_empleado(id):
     try:
-        empleados = Empleado.query.all()
-        return jsonify([empleado.to_dict() for empleado in empleados])
-    except Exception as e:
-        return jsonify({"error": "Error al obtener empleados"}), 500
+        empleado = Empleado.query.get(id)
+        if not empleado:
+            return jsonify({"error": "Empleado no encontrado"}), 404
 
-@main_bp.route('/empleados', methods=['POST'])
-def create_empleado():
-    try:
         data = request.get_json()
-        required_fields = ['nombre', 'numero_documento', 'fecha_ingreso']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"error": f"El campo {field} es requerido"}), 400
+        
+        # Actualizar campos
+        if 'nombre' in data:
+            empleado.nombre = data['nombre']
+        if 'tipo_documento' in data:
+            empleado.tipo_documento = data['tipo_documento']
+        if 'numero_documento' in data:
+            empleado.numero_documento = data['numero_documento']
+        if 'telefono' in data:
+            empleado.telefono = data['telefono']
+        if 'direccion' in data:
+            empleado.direccion = data['direccion']
+        if 'fecha_ingreso' in data:
+            empleado.fecha_ingreso = datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date()
+        if 'cargo' in data:
+            empleado.cargo = data['cargo']
 
-        empleado = Empleado(
-            nombre=data['nombre'],
-            tipo_documento=data.get('tipo_documento'),
-            numero_documento=data['numero_documento'],
-            telefono=data.get('telefono'),
-            direccion=data.get('direccion'),
-            fecha_ingreso=datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date(),
-            cargo=data.get('cargo')
-        )
-        db.session.add(empleado)
         db.session.commit()
-        return jsonify({"message": "Empleado creado", "empleado": empleado.to_dict()}), 201
+        return jsonify({"message": "Empleado actualizado", "empleado": empleado.to_dict()})
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al crear empleado"}), 500
+        return jsonify({"error": "Error al actualizar empleado"}), 500
+
+@main_bp.route('/empleados/<int:id>', methods=['DELETE'])
+def delete_empleado(id):
+    try:
+        empleado = Empleado.query.get(id)
+        if not empleado:
+            return jsonify({"error": "Empleado no encontrado"}), 404
+
+        db.session.delete(empleado)
+        db.session.commit()
+        return jsonify({"message": "Empleado eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar empleado"}), 500
+
+# ===== MÓDULO CLIENTES - AGREGAR PUT Y DELETE =====
+@main_bp.route('/clientes/<int:id>', methods=['PUT'])
+def update_cliente(id):
+    try:
+        cliente = Cliente.query.get(id)
+        if not cliente:
+            return jsonify({"error": "Cliente no encontrado"}), 404
+
+        data = request.get_json()
+        
+        # Actualizar campos
+        if 'nombre' in data:
+            cliente.nombre = data['nombre']
+        if 'apellido' in data:
+            cliente.apellido = data['apellido']
+        if 'tipo_documento' in data:
+            cliente.tipo_documento = data['tipo_documento']
+        if 'numero_documento' in data:
+            cliente.numero_documento = data['numero_documento']
+        if 'fecha_nacimiento' in data:
+            cliente.fecha_nacimiento = datetime.strptime(data['fecha_nacimiento'], '%Y-%m-%d').date()
+        if 'genero' in data:
+            cliente.genero = data['genero']
+        if 'telefono' in data:
+            cliente.telefono = data['telefono']
+        if 'correo' in data:
+            cliente.correo = data['correo']
+        if 'municipio' in data:
+            cliente.municipio = data['municipio']
+        if 'direccion' in data:
+            cliente.direccion = data['direccion']
+        if 'ocupacion' in data:
+            cliente.ocupacion = data['ocupacion']
+        if 'telefono_emergencia' in data:
+            cliente.telefono_emergencia = data['telefono_emergencia']
+
+        db.session.commit()
+        return jsonify({"message": "Cliente actualizado", "cliente": cliente.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar cliente"}), 500
+
+@main_bp.route('/clientes/<int:id>', methods=['DELETE'])
+def delete_cliente(id):
+    try:
+        cliente = Cliente.query.get(id)
+        if not cliente:
+            return jsonify({"error": "Cliente no encontrado"}), 404
+
+        db.session.delete(cliente)
+        db.session.commit()
+        return jsonify({"message": "Cliente eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar cliente"}), 500
+
+# ===== MÓDULO PROVEEDORES - AGREGAR PUT Y DELETE =====
+@main_bp.route('/proveedores/<int:id>', methods=['PUT'])
+def update_proveedor(id):
+    try:
+        proveedor = Proveedor.query.get(id)
+        if not proveedor:
+            return jsonify({"error": "Proveedor no encontrado"}), 404
+
+        data = request.get_json()
+        
+        # Actualizar campos
+        if 'tipo_proveedor' in data:
+            proveedor.tipo_proveedor = data['tipo_proveedor']
+        if 'tipo_documento' in data:
+            proveedor.tipo_documento = data['tipo_documento']
+        if 'documento' in data:
+            proveedor.documento = data['documento']
+        if 'razon_social_o_nombre' in data:
+            proveedor.razon_social_o_nombre = data['razon_social_o_nombre']
+        if 'contacto' in data:
+            proveedor.contacto = data['contacto']
+        if 'telefono' in data:
+            proveedor.telefono = data['telefono']
+        if 'correo' in data:
+            proveedor.correo = data['correo']
+        if 'departamento' in data:
+            proveedor.departamento = data['departamento']
+        if 'municipio' in data:
+            proveedor.municipio = data['municipio']
+        if 'direccion' in data:
+            proveedor.direccion = data['direccion']
+
+        db.session.commit()
+        return jsonify({"message": "Proveedor actualizado", "proveedor": proveedor.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar proveedor"}), 500
+
+@main_bp.route('/proveedores/<int:id>', methods=['DELETE'])
+def delete_proveedor(id):
+    try:
+        proveedor = Proveedor.query.get(id)
+        if not proveedor:
+            return jsonify({"error": "Proveedor no encontrado"}), 404
+
+        db.session.delete(proveedor)
+        db.session.commit()
+        return jsonify({"message": "Proveedor eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar proveedor"}), 500
+
+# ===== MÓDULO PRODUCTOS - AGREGAR PUT Y DELETE =====
+@main_bp.route('/productos/<int:id>', methods=['PUT'])
+def update_producto(id):
+    try:
+        producto = Producto.query.get(id)
+        if not producto:
+            return jsonify({"error": "Producto no encontrado"}), 404
+
+        data = request.get_json()
+        
+        # Actualizar campos
+        if 'nombre' in data:
+            producto.nombre = data['nombre']
+        if 'precio_venta' in data:
+            producto.precio_venta = float(data['precio_venta'])
+        if 'precio_compra' in data:
+            producto.precio_compra = float(data['precio_compra'])
+        if 'stock' in data:
+            producto.stock = data['stock']
+        if 'stock_minimo' in data:
+            producto.stock_minimo = data['stock_minimo']
+        if 'descripcion' in data:
+            producto.descripcion = data['descripcion']
+        if 'categoria_producto_id' in data:
+            producto.categoria_producto_id = data['categoria_producto_id']
+        if 'marca_id' in data:
+            producto.marca_id = data['marca_id']
+
+        db.session.commit()
+        return jsonify({"message": "Producto actualizado", "producto": producto.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar producto"}), 500
+
+@main_bp.route('/productos/<int:id>', methods=['DELETE'])
+def delete_producto(id):
+    try:
+        producto = Producto.query.get(id)
+        if not producto:
+            return jsonify({"error": "Producto no encontrado"}), 404
+
+        db.session.delete(producto)
+        db.session.commit()
+        return jsonify({"message": "Producto eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar producto"}), 500
+
+# ===== MÓDULO USUARIOS - AGREGAR PUT Y DELETE =====
+@main_bp.route('/usuarios/<int:id>', methods=['PUT'])
+def update_usuario(id):
+    try:
+        usuario = Usuario.query.get(id)
+        if not usuario:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+
+        data = request.get_json()
+        
+        # Actualizar campos
+        if 'nombre' in data:
+            usuario.nombre = data['nombre']
+        if 'correo' in data:
+            usuario.correo = data['correo']
+        if 'contrasenia' in data:
+            usuario.contrasenia = data['contrasenia']  # En producción, hashear esta contraseña
+        if 'rol_id' in data:
+            usuario.rol_id = data['rol_id']
+
+        db.session.commit()
+        return jsonify({"message": "Usuario actualizado", "usuario": usuario.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar usuario"}), 500
+
+@main_bp.route('/usuarios/<int:id>', methods=['DELETE'])
+def delete_usuario(id):
+    try:
+        usuario = Usuario.query.get(id)
+        if not usuario:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+
+        db.session.delete(usuario)
+        db.session.commit()
+        return jsonify({"message": "Usuario eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar usuario"}), 500
 
 # ===== MÓDULO PROVEEDORES =====
 @main_bp.route('/proveedores', methods=['GET'])
@@ -756,34 +964,34 @@ def get_horarios_empleado(empleado_id):
     except Exception as e:
         return jsonify({"error": "Error al obtener horarios del empleado"}), 500
 
-# ===== ACTUALIZAR RUTA PRINCIPAL CON TODOS LOS ENDPOINTS =====
+# ===== ACTUALIZAR LA RUTA DE ENDPOINTS PARA INCLUIR PUT Y DELETE =====
 @main_bp.route('/endpoints', methods=['GET'])
 def get_all_endpoints():
     return jsonify({
         "modulos_principales": {
-            "clientes": "GET/POST /clientes",
-            "empleados": "GET/POST /empleados",
-            "proveedores": "GET/POST /proveedores",
-            "ventas": "GET/POST /ventas",
-            "citas": "GET/POST /citas",
-            "servicios": "GET/POST /servicios",
-            "usuarios": "GET/POST /usuarios",
-            "productos": "GET/POST /productos",
-            "marcas": "GET/POST /marcas",
-            "categorias": "GET/POST /categorias",
-            "compras": "GET/POST /compras",
-            "roles": "GET/POST /roles"
+            "clientes": "GET/POST /clientes, PUT/DELETE /clientes/{id}",
+            "empleados": "GET/POST /empleados, PUT/DELETE /empleados/{id}",
+            "proveedores": "GET/POST /proveedores, PUT/DELETE /proveedores/{id}",
+            "ventas": "GET/POST /ventas, PUT/DELETE /ventas/{id}",
+            "citas": "GET/POST /citas, PUT/DELETE /citas/{id}",
+            "servicios": "GET/POST /servicios, PUT/DELETE /servicios/{id}",
+            "usuarios": "GET/POST /usuarios, PUT/DELETE /usuarios/{id}",
+            "productos": "GET/POST /productos, PUT/DELETE /productos/{id}",
+            "marcas": "GET/POST /marcas, PUT/DELETE /marcas/{id}",
+            "categorias": "GET/POST /categorias, PUT/DELETE /categorias/{id}",
+            "compras": "GET/POST /compras, PUT/DELETE /compras/{id}",
+            "roles": "GET/POST /roles, PUT/DELETE /roles/{id}"
         },
         "modulos_secundarios": {
-            "detalle_venta": "GET/POST /detalle-venta",
-            "detalle_compra": "GET/POST /detalle-compra",
-            "estado_cita": "GET/POST /estado-cita",
-            "estado_venta": "GET/POST /estado-venta",
-            "horario": "GET/POST /horario",
-            "historial_formula": "GET/POST /historial-formula",
-            "abono": "GET/POST /abono",
-            "permiso": "GET/POST /permiso",
-            "permiso_rol": "GET/POST /permiso-rol"
+            "detalle_venta": "GET/POST /detalle-venta, PUT/DELETE /detalle-venta/{id}",
+            "detalle_compra": "GET/POST /detalle-compra, PUT/DELETE /detalle-compra/{id}",
+            "estado_cita": "GET/POST /estado-cita, PUT/DELETE /estado-cita/{id}",
+            "estado_venta": "GET/POST /estado-venta, PUT/DELETE /estado-venta/{id}",
+            "horario": "GET/POST /horario, PUT/DELETE /horario/{id}",
+            "historial_formula": "GET/POST /historial-formula, PUT/DELETE /historial-formula/{id}",
+            "abono": "GET/POST /abono, PUT/DELETE /abono/{id}",
+            "permiso": "GET/POST /permiso, PUT/DELETE /permiso/{id}",
+            "permiso_rol": "GET/POST /permiso-rol, PUT/DELETE /permiso-rol/{id}"
         },
         "relaciones": {
             "detalles_venta": "GET /ventas/{id}/detalles",
@@ -797,4 +1005,3 @@ def get_all_endpoints():
             "todos_endpoints": "GET /endpoints"
         }
     })
-
