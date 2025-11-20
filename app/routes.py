@@ -179,6 +179,40 @@ def create_cliente():
         db.session.rollback()
         return jsonify({"error": "Error al crear cliente"}), 500
 
+# ===== MÓDULO EMPLEADOS =====
+@main_bp.route('/empleados', methods=['GET'])
+def get_empleados():
+    try:
+        empleados = Empleado.query.all()
+        return jsonify([empleado.to_dict() for empleado in empleados])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener empleados"}), 500
+
+@main_bp.route('/empleados', methods=['POST'])
+def create_empleado():
+    try:
+        data = request.get_json()
+        required_fields = ['nombre', 'numero_documento', 'fecha_ingreso']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        empleado = Empleado(
+            nombre=data['nombre'],
+            tipo_documento=data.get('tipo_documento'),
+            numero_documento=data['numero_documento'],
+            telefono=data.get('telefono'),
+            direccion=data.get('direccion'),
+            fecha_ingreso=datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date(),
+            cargo=data.get('cargo')
+        )
+        db.session.add(empleado)
+        db.session.commit()
+        return jsonify({"message": "Empleado creado", "empleado": empleado.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear empleado"}), 500
+
 # ===== MÓDULO EMPLEADOS - AGREGAR PUT Y DELETE =====
 @main_bp.route('/empleados/<int:id>', methods=['PUT'])
 def update_empleado(id):
