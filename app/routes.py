@@ -56,7 +56,7 @@ def home():
         "documentacion_completa": "GET /endpoints para ver todos los endpoints disponibles"
     })
 
-# ===== MÓDULO PRODUCTOS (EXISTENTE) =====
+# ===== MÓDULO MARCAS - COMPLETAR CRUD =====
 @main_bp.route('/marcas', methods=['GET'])
 def get_marcas():
     try:
@@ -80,6 +80,38 @@ def create_marca():
         db.session.rollback()
         return jsonify({"error": "Error al crear marca"}), 500
 
+@main_bp.route('/marcas/<int:id>', methods=['PUT'])
+def update_marca(id):
+    try:
+        marca = Marca.query.get(id)
+        if not marca:
+            return jsonify({"error": "Marca no encontrada"}), 404
+
+        data = request.get_json()
+        if 'nombre' in data:
+            marca.nombre = data['nombre']
+
+        db.session.commit()
+        return jsonify({"message": "Marca actualizada", "marca": marca.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar marca"}), 500
+
+@main_bp.route('/marcas/<int:id>', methods=['DELETE'])
+def delete_marca(id):
+    try:
+        marca = Marca.query.get(id)
+        if not marca:
+            return jsonify({"error": "Marca no encontrada"}), 404
+
+        db.session.delete(marca)
+        db.session.commit()
+        return jsonify({"message": "Marca eliminada correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar marca"}), 500
+
+# ===== MÓDULO CATEGORÍAS - COMPLETAR CRUD =====
 @main_bp.route('/categorias', methods=['GET'])
 def get_categorias():
     try:
@@ -106,6 +138,40 @@ def create_categoria():
         db.session.rollback()
         return jsonify({"error": "Error al crear categoría"}), 500
 
+@main_bp.route('/categorias/<int:id>', methods=['PUT'])
+def update_categoria(id):
+    try:
+        categoria = CategoriaProducto.query.get(id)
+        if not categoria:
+            return jsonify({"error": "Categoría no encontrada"}), 404
+
+        data = request.get_json()
+        if 'nombre' in data:
+            categoria.nombre = data['nombre']
+        if 'descripcion' in data:
+            categoria.descripcion = data['descripcion']
+
+        db.session.commit()
+        return jsonify({"message": "Categoría actualizada", "categoria": categoria.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar categoría"}), 500
+
+@main_bp.route('/categorias/<int:id>', methods=['DELETE'])
+def delete_categoria(id):
+    try:
+        categoria = CategoriaProducto.query.get(id)
+        if not categoria:
+            return jsonify({"error": "Categoría no encontrada"}), 404
+
+        db.session.delete(categoria)
+        db.session.commit()
+        return jsonify({"message": "Categoría eliminada correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar categoría"}), 500
+
+# ===== MÓDULO PRODUCTOS - COMPLETAR CRUD =====
 @main_bp.route('/productos', methods=['GET'])
 def get_productos():
     try:
@@ -140,7 +206,52 @@ def create_producto():
         db.session.rollback()
         return jsonify({"error": "Error al crear producto"}), 500
 
-# ===== MÓDULO CLIENTES =====
+@main_bp.route('/productos/<int:id>', methods=['PUT'])
+def update_producto(id):
+    try:
+        producto = Producto.query.get(id)
+        if not producto:
+            return jsonify({"error": "Producto no encontrado"}), 404
+
+        data = request.get_json()
+        if 'nombre' in data:
+            producto.nombre = data['nombre']
+        if 'precio_venta' in data:
+            producto.precio_venta = float(data['precio_venta'])
+        if 'precio_compra' in data:
+            producto.precio_compra = float(data['precio_compra'])
+        if 'stock' in data:
+            producto.stock = data['stock']
+        if 'stock_minimo' in data:
+            producto.stock_minimo = data['stock_minimo']
+        if 'descripcion' in data:
+            producto.descripcion = data['descripcion']
+        if 'categoria_producto_id' in data:
+            producto.categoria_producto_id = data['categoria_producto_id']
+        if 'marca_id' in data:
+            producto.marca_id = data['marca_id']
+
+        db.session.commit()
+        return jsonify({"message": "Producto actualizado", "producto": producto.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar producto"}), 500
+
+@main_bp.route('/productos/<int:id>', methods=['DELETE'])
+def delete_producto(id):
+    try:
+        producto = Producto.query.get(id)
+        if not producto:
+            return jsonify({"error": "Producto no encontrado"}), 404
+
+        db.session.delete(producto)
+        db.session.commit()
+        return jsonify({"message": "Producto eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar producto"}), 500
+
+# ===== MÓDULO CLIENTES - COMPLETAR CRUD =====
 @main_bp.route('/clientes', methods=['GET'])
 def get_clientes():
     try:
@@ -179,87 +290,6 @@ def create_cliente():
         db.session.rollback()
         return jsonify({"error": "Error al crear cliente"}), 500
 
-# ===== MÓDULO EMPLEADOS =====
-@main_bp.route('/empleados', methods=['GET'])
-def get_empleados():
-    try:
-        empleados = Empleado.query.all()
-        return jsonify([empleado.to_dict() for empleado in empleados])
-    except Exception as e:
-        return jsonify({"error": "Error al obtener empleados"}), 500
-
-@main_bp.route('/empleados', methods=['POST'])
-def create_empleado():
-    try:
-        data = request.get_json()
-        required_fields = ['nombre', 'numero_documento', 'fecha_ingreso']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"error": f"El campo {field} es requerido"}), 400
-
-        empleado = Empleado(
-            nombre=data['nombre'],
-            tipo_documento=data.get('tipo_documento'),
-            numero_documento=data['numero_documento'],
-            telefono=data.get('telefono'),
-            direccion=data.get('direccion'),
-            fecha_ingreso=datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date(),
-            cargo=data.get('cargo')
-        )
-        db.session.add(empleado)
-        db.session.commit()
-        return jsonify({"message": "Empleado creado", "empleado": empleado.to_dict()}), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": "Error al crear empleado"}), 500
-
-# ===== MÓDULO EMPLEADOS - AGREGAR PUT Y DELETE =====
-@main_bp.route('/empleados/<int:id>', methods=['PUT'])
-def update_empleado(id):
-    try:
-        empleado = Empleado.query.get(id)
-        if not empleado:
-            return jsonify({"error": "Empleado no encontrado"}), 404
-
-        data = request.get_json()
-        
-        # Actualizar campos
-        if 'nombre' in data:
-            empleado.nombre = data['nombre']
-        if 'tipo_documento' in data:
-            empleado.tipo_documento = data['tipo_documento']
-        if 'numero_documento' in data:
-            empleado.numero_documento = data['numero_documento']
-        if 'telefono' in data:
-            empleado.telefono = data['telefono']
-        if 'direccion' in data:
-            empleado.direccion = data['direccion']
-        if 'fecha_ingreso' in data:
-            empleado.fecha_ingreso = datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date()
-        if 'cargo' in data:
-            empleado.cargo = data['cargo']
-
-        db.session.commit()
-        return jsonify({"message": "Empleado actualizado", "empleado": empleado.to_dict()})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": "Error al actualizar empleado"}), 500
-
-@main_bp.route('/empleados/<int:id>', methods=['DELETE'])
-def delete_empleado(id):
-    try:
-        empleado = Empleado.query.get(id)
-        if not empleado:
-            return jsonify({"error": "Empleado no encontrado"}), 404
-
-        db.session.delete(empleado)
-        db.session.commit()
-        return jsonify({"message": "Empleado eliminado correctamente"})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": "Error al eliminar empleado"}), 500
-
-# ===== MÓDULO CLIENTES - AGREGAR PUT Y DELETE =====
 @main_bp.route('/clientes/<int:id>', methods=['PUT'])
 def update_cliente(id):
     try:
@@ -268,8 +298,6 @@ def update_cliente(id):
             return jsonify({"error": "Cliente no encontrado"}), 404
 
         data = request.get_json()
-        
-        # Actualizar campos
         if 'nombre' in data:
             cliente.nombre = data['nombre']
         if 'apellido' in data:
@@ -315,7 +343,118 @@ def delete_cliente(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar cliente"}), 500
 
-# ===== MÓDULO PROVEEDORES - AGREGAR PUT Y DELETE =====
+# ===== MÓDULO EMPLEADOS - COMPLETAR CRUD =====
+@main_bp.route('/empleados', methods=['GET'])
+def get_empleados():
+    try:
+        empleados = Empleado.query.all()
+        return jsonify([empleado.to_dict() for empleado in empleados])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener empleados"}), 500
+
+@main_bp.route('/empleados', methods=['POST'])
+def create_empleado():
+    try:
+        data = request.get_json()
+        required_fields = ['nombre', 'numero_documento', 'fecha_ingreso']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        empleado = Empleado(
+            nombre=data['nombre'],
+            tipo_documento=data.get('tipo_documento'),
+            numero_documento=data['numero_documento'],
+            telefono=data.get('telefono'),
+            direccion=data.get('direccion'),
+            fecha_ingreso=datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date(),
+            cargo=data.get('cargo')
+        )
+        db.session.add(empleado)
+        db.session.commit()
+        return jsonify({"message": "Empleado creado", "empleado": empleado.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear empleado"}), 500
+
+@main_bp.route('/empleados/<int:id>', methods=['PUT'])
+def update_empleado(id):
+    try:
+        empleado = Empleado.query.get(id)
+        if not empleado:
+            return jsonify({"error": "Empleado no encontrado"}), 404
+
+        data = request.get_json()
+        if 'nombre' in data:
+            empleado.nombre = data['nombre']
+        if 'tipo_documento' in data:
+            empleado.tipo_documento = data['tipo_documento']
+        if 'numero_documento' in data:
+            empleado.numero_documento = data['numero_documento']
+        if 'telefono' in data:
+            empleado.telefono = data['telefono']
+        if 'direccion' in data:
+            empleado.direccion = data['direccion']
+        if 'fecha_ingreso' in data:
+            empleado.fecha_ingreso = datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date()
+        if 'cargo' in data:
+            empleado.cargo = data['cargo']
+
+        db.session.commit()
+        return jsonify({"message": "Empleado actualizado", "empleado": empleado.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar empleado"}), 500
+
+@main_bp.route('/empleados/<int:id>', methods=['DELETE'])
+def delete_empleado(id):
+    try:
+        empleado = Empleado.query.get(id)
+        if not empleado:
+            return jsonify({"error": "Empleado no encontrado"}), 404
+
+        db.session.delete(empleado)
+        db.session.commit()
+        return jsonify({"message": "Empleado eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar empleado"}), 500
+
+# ===== MÓDULO PROVEEDORES - COMPLETAR CRUD =====
+@main_bp.route('/proveedores', methods=['GET'])
+def get_proveedores():
+    try:
+        proveedores = Proveedor.query.all()
+        return jsonify([proveedor.to_dict() for proveedor in proveedores])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener proveedores"}), 500
+
+@main_bp.route('/proveedores', methods=['POST'])
+def create_proveedor():
+    try:
+        data = request.get_json()
+        if not data.get('razon_social_o_nombre'):
+            return jsonify({"error": "La razón social o nombre es requerido"}), 400
+
+        proveedor = Proveedor(
+            tipo_proveedor=data.get('tipo_proveedor'),
+            tipo_documento=data.get('tipo_documento'),
+            documento=data.get('documento'),
+            razon_social_o_nombre=data['razon_social_o_nombre'],
+            contacto=data.get('contacto'),
+            telefono=data.get('telefono'),
+            correo=data.get('correo'),
+            departamento=data.get('departamento'),
+            municipio=data.get('municipio'),
+            direccion=data.get('direccion')
+        )
+        db.session.add(proveedor)
+        db.session.commit()
+        return jsonify({"message": "Proveedor creado", "proveedor": proveedor.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear proveedor"}), 500
+
 @main_bp.route('/proveedores/<int:id>', methods=['PUT'])
 def update_proveedor(id):
     try:
@@ -324,8 +463,6 @@ def update_proveedor(id):
             return jsonify({"error": "Proveedor no encontrado"}), 404
 
         data = request.get_json()
-        
-        # Actualizar campos
         if 'tipo_proveedor' in data:
             proveedor.tipo_proveedor = data['tipo_proveedor']
         if 'tipo_documento' in data:
@@ -367,55 +504,37 @@ def delete_proveedor(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar proveedor"}), 500
 
-# ===== MÓDULO PRODUCTOS - AGREGAR PUT Y DELETE =====
-@main_bp.route('/productos/<int:id>', methods=['PUT'])
-def update_producto(id):
+# ===== MÓDULO USUARIOS - COMPLETAR CRUD =====
+@main_bp.route('/usuarios', methods=['GET'])
+def get_usuarios():
     try:
-        producto = Producto.query.get(id)
-        if not producto:
-            return jsonify({"error": "Producto no encontrado"}), 404
+        usuarios = Usuario.query.all()
+        return jsonify([usuario.to_dict() for usuario in usuarios])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener usuarios"}), 500
 
+@main_bp.route('/usuarios', methods=['POST'])
+def create_usuario():
+    try:
         data = request.get_json()
-        
-        # Actualizar campos
-        if 'nombre' in data:
-            producto.nombre = data['nombre']
-        if 'precio_venta' in data:
-            producto.precio_venta = float(data['precio_venta'])
-        if 'precio_compra' in data:
-            producto.precio_compra = float(data['precio_compra'])
-        if 'stock' in data:
-            producto.stock = data['stock']
-        if 'stock_minimo' in data:
-            producto.stock_minimo = data['stock_minimo']
-        if 'descripcion' in data:
-            producto.descripcion = data['descripcion']
-        if 'categoria_producto_id' in data:
-            producto.categoria_producto_id = data['categoria_producto_id']
-        if 'marca_id' in data:
-            producto.marca_id = data['marca_id']
+        required_fields = ['nombre', 'correo', 'contrasenia', 'rol_id']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
 
+        usuario = Usuario(
+            nombre=data['nombre'],
+            correo=data['correo'],
+            contrasenia=data['contrasenia'],
+            rol_id=data['rol_id']
+        )
+        db.session.add(usuario)
         db.session.commit()
-        return jsonify({"message": "Producto actualizado", "producto": producto.to_dict()})
+        return jsonify({"message": "Usuario creado", "usuario": usuario.to_dict()}), 201
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al actualizar producto"}), 500
+        return jsonify({"error": "Error al crear usuario"}), 500
 
-@main_bp.route('/productos/<int:id>', methods=['DELETE'])
-def delete_producto(id):
-    try:
-        producto = Producto.query.get(id)
-        if not producto:
-            return jsonify({"error": "Producto no encontrado"}), 404
-
-        db.session.delete(producto)
-        db.session.commit()
-        return jsonify({"message": "Producto eliminado correctamente"})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": "Error al eliminar producto"}), 500
-
-# ===== MÓDULO USUARIOS - AGREGAR PUT Y DELETE =====
 @main_bp.route('/usuarios/<int:id>', methods=['PUT'])
 def update_usuario(id):
     try:
@@ -424,14 +543,12 @@ def update_usuario(id):
             return jsonify({"error": "Usuario no encontrado"}), 404
 
         data = request.get_json()
-        
-        # Actualizar campos
         if 'nombre' in data:
             usuario.nombre = data['nombre']
         if 'correo' in data:
             usuario.correo = data['correo']
         if 'contrasenia' in data:
-            usuario.contrasenia = data['contrasenia']  # En producción, hashear esta contraseña
+            usuario.contrasenia = data['contrasenia']
         if 'rol_id' in data:
             usuario.rol_id = data['rol_id']
 
@@ -455,42 +572,70 @@ def delete_usuario(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar usuario"}), 500
 
-# ===== MÓDULO PROVEEDORES =====
-@main_bp.route('/proveedores', methods=['GET'])
-def get_proveedores():
+# ===== MÓDULO ROLES - COMPLETAR CRUD =====
+@main_bp.route('/roles', methods=['GET'])
+def get_roles():
     try:
-        proveedores = Proveedor.query.all()
-        return jsonify([proveedor.to_dict() for proveedor in proveedores])
+        roles = Rol.query.all()
+        return jsonify([rol.to_dict() for rol in roles])
     except Exception as e:
-        return jsonify({"error": "Error al obtener proveedores"}), 500
+        return jsonify({"error": "Error al obtener roles"}), 500
 
-@main_bp.route('/proveedores', methods=['POST'])
-def create_proveedor():
+@main_bp.route('/roles', methods=['POST'])
+def create_rol():
     try:
         data = request.get_json()
-        if not data.get('razon_social_o_nombre'):
-            return jsonify({"error": "La razón social o nombre es requerido"}), 400
+        if not data.get('nombre'):
+            return jsonify({"error": "El nombre es requerido"}), 400
 
-        proveedor = Proveedor(
-            tipo_proveedor=data.get('tipo_proveedor'),
-            tipo_documento=data.get('tipo_documento'),
-            documento=data.get('documento'),
-            razon_social_o_nombre=data['razon_social_o_nombre'],
-            contacto=data.get('contacto'),
-            telefono=data.get('telefono'),
-            correo=data.get('correo'),
-            departamento=data.get('departamento'),
-            municipio=data.get('municipio'),
-            direccion=data.get('direccion')
+        rol = Rol(
+            nombre=data['nombre'],
+            descripcion=data.get('descripcion', ''),
+            estado=data.get('estado', True)
         )
-        db.session.add(proveedor)
+        db.session.add(rol)
         db.session.commit()
-        return jsonify({"message": "Proveedor creado", "proveedor": proveedor.to_dict()}), 201
+        return jsonify({"message": "Rol creado", "rol": rol.to_dict()}), 201
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al crear proveedor"}), 500
+        return jsonify({"error": "Error al crear rol"}), 500
 
-# ===== MÓDULO VENTAS =====
+@main_bp.route('/roles/<int:id>', methods=['PUT'])
+def update_rol(id):
+    try:
+        rol = Rol.query.get(id)
+        if not rol:
+            return jsonify({"error": "Rol no encontrado"}), 404
+
+        data = request.get_json()
+        if 'nombre' in data:
+            rol.nombre = data['nombre']
+        if 'descripcion' in data:
+            rol.descripcion = data['descripcion']
+        if 'estado' in data:
+            rol.estado = data['estado']
+
+        db.session.commit()
+        return jsonify({"message": "Rol actualizado", "rol": rol.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar rol"}), 500
+
+@main_bp.route('/roles/<int:id>', methods=['DELETE'])
+def delete_rol(id):
+    try:
+        rol = Rol.query.get(id)
+        if not rol:
+            return jsonify({"error": "Rol no encontrado"}), 404
+
+        db.session.delete(rol)
+        db.session.commit()
+        return jsonify({"message": "Rol eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar rol"}), 500
+
+# ===== MÓDULO VENTAS - COMPLETAR CRUD =====
 @main_bp.route('/ventas', methods=['GET'])
 def get_ventas():
     try:
@@ -523,7 +668,48 @@ def create_venta():
         db.session.rollback()
         return jsonify({"error": "Error al crear venta"}), 500
 
-# ===== MÓDULO CITAS =====
+@main_bp.route('/ventas/<int:id>', methods=['PUT'])
+def update_venta(id):
+    try:
+        venta = Venta.query.get(id)
+        if not venta:
+            return jsonify({"error": "Venta no encontrada"}), 404
+
+        data = request.get_json()
+        if 'cliente_id' in data:
+            venta.cliente_id = data['cliente_id']
+        if 'empleado_id' in data:
+            venta.empleado_id = data['empleado_id']
+        if 'estado_venta_id' in data:
+            venta.estado_venta_id = data['estado_venta_id']
+        if 'cita_id' in data:
+            venta.cita_id = data['cita_id']
+        if 'metodo_pago' in data:
+            venta.metodo_pago = data['metodo_pago']
+        if 'total_venta' in data:
+            venta.total_venta = float(data['total_venta'])
+
+        db.session.commit()
+        return jsonify({"message": "Venta actualizada", "venta": venta.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar venta"}), 500
+
+@main_bp.route('/ventas/<int:id>', methods=['DELETE'])
+def delete_venta(id):
+    try:
+        venta = Venta.query.get(id)
+        if not venta:
+            return jsonify({"error": "Venta no encontrada"}), 404
+
+        db.session.delete(venta)
+        db.session.commit()
+        return jsonify({"message": "Venta eliminada correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar venta"}), 500
+
+# ===== MÓDULO CITAS - COMPLETAR CRUD =====
 @main_bp.route('/citas', methods=['GET'])
 def get_citas():
     try:
@@ -558,7 +744,52 @@ def create_cita():
         db.session.rollback()
         return jsonify({"error": "Error al crear cita"}), 500
 
-# ===== MÓDULO SERVICIOS =====
+@main_bp.route('/citas/<int:id>', methods=['PUT'])
+def update_cita(id):
+    try:
+        cita = Cita.query.get(id)
+        if not cita:
+            return jsonify({"error": "Cita no encontrada"}), 404
+
+        data = request.get_json()
+        if 'cliente_id' in data:
+            cita.cliente_id = data['cliente_id']
+        if 'servicio_id' in data:
+            cita.servicio_id = data['servicio_id']
+        if 'empleado_id' in data:
+            cita.empleado_id = data['empleado_id']
+        if 'estado_cita_id' in data:
+            cita.estado_cita_id = data['estado_cita_id']
+        if 'metodo_pago' in data:
+            cita.metodo_pago = data['metodo_pago']
+        if 'hora' in data:
+            cita.hora = datetime.strptime(data['hora'], '%H:%M').time()
+        if 'duracion' in data:
+            cita.duracion = data['duracion']
+        if 'fecha' in data:
+            cita.fecha = datetime.strptime(data['fecha'], '%Y-%m-%d %H:%M')
+
+        db.session.commit()
+        return jsonify({"message": "Cita actualizada", "cita": cita.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar cita"}), 500
+
+@main_bp.route('/citas/<int:id>', methods=['DELETE'])
+def delete_cita(id):
+    try:
+        cita = Cita.query.get(id)
+        if not cita:
+            return jsonify({"error": "Cita no encontrada"}), 404
+
+        db.session.delete(cita)
+        db.session.commit()
+        return jsonify({"message": "Cita eliminada correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar cita"}), 500
+
+# ===== MÓDULO SERVICIOS - COMPLETAR CRUD =====
 @main_bp.route('/servicios', methods=['GET'])
 def get_servicios():
     try:
@@ -589,99 +820,44 @@ def create_servicio():
         db.session.rollback()
         return jsonify({"error": "Error al crear servicio"}), 500
 
-# ===== MÓDULO USUARIOS =====
-@main_bp.route('/usuarios', methods=['GET'])
-def get_usuarios():
+@main_bp.route('/servicios/<int:id>', methods=['PUT'])
+def update_servicio(id):
     try:
-        usuarios = Usuario.query.all()
-        return jsonify([usuario.to_dict() for usuario in usuarios])
-    except Exception as e:
-        return jsonify({"error": "Error al obtener usuarios"}), 500
+        servicio = Servicio.query.get(id)
+        if not servicio:
+            return jsonify({"error": "Servicio no encontrado"}), 404
 
-@main_bp.route('/usuarios', methods=['POST'])
-def create_usuario():
-    try:
         data = request.get_json()
-        required_fields = ['nombre', 'correo', 'contrasenia', 'rol_id']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"error": f"El campo {field} es requerido"}), 400
+        if 'nombre' in data:
+            servicio.nombre = data['nombre']
+        if 'duracion_min' in data:
+            servicio.duracion_min = data['duracion_min']
+        if 'precio' in data:
+            servicio.precio = float(data['precio'])
+        if 'descripcion' in data:
+            servicio.descripcion = data['descripcion']
 
-        usuario = Usuario(
-            nombre=data['nombre'],
-            correo=data['correo'],
-            contrasenia=data['contrasenia'],  # En producción, hashear esta contraseña
-            rol_id=data['rol_id']
-        )
-        db.session.add(usuario)
         db.session.commit()
-        return jsonify({"message": "Usuario creado", "usuario": usuario.to_dict()}), 201
+        return jsonify({"message": "Servicio actualizado", "servicio": servicio.to_dict()})
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al crear usuario"}), 500
-    
-# ===== MÓDULO ROLES =====
-@main_bp.route('/roles', methods=['GET'])
-def get_roles():
-    try:
-        roles = Rol.query.all()
-        return jsonify([rol.to_dict() for rol in roles])
-    except Exception as e:
-        return jsonify({"error": "Error al obtener roles"}), 500
+        return jsonify({"error": "Error al actualizar servicio"}), 500
 
-@main_bp.route('/roles', methods=['POST'])
-def create_rol():
+@main_bp.route('/servicios/<int:id>', methods=['DELETE'])
+def delete_servicio(id):
     try:
-        data = request.get_json()
-        if not data.get('nombre'):
-            return jsonify({"error": "El nombre es requerido"}), 400
+        servicio = Servicio.query.get(id)
+        if not servicio:
+            return jsonify({"error": "Servicio no encontrado"}), 404
 
-        rol = Rol(
-            nombre=data['nombre'],
-            descripcion=data.get('descripcion', ''),
-            estado=data.get('estado', True)
-        )
-        db.session.add(rol)
+        db.session.delete(servicio)
         db.session.commit()
-        return jsonify({"message": "Rol creado", "rol": rol.to_dict()}), 201
+        return jsonify({"message": "Servicio eliminado correctamente"})
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al crear rol"}), 500
+        return jsonify({"error": "Error al eliminar servicio"}), 500
 
-# ===== RUTAS PARA OBTENER UN ELEMENTO ESPECÍFICO =====
-@main_bp.route('/<tabla>/<int:id>', methods=['GET'])
-def get_elemento(tabla, id):
-    try:
-        modelos = {
-            'productos': Producto,
-            'clientes': Cliente,
-            'empleados': Empleado,
-            'proveedores': Proveedor,
-            'ventas': Venta,
-            'citas': Cita,
-            'servicios': Servicio,
-            'usuarios': Usuario,
-            'marcas': Marca,
-            'categorias': CategoriaProducto,
-            'compras': Compra,
-            'estado-cita': EstadoCita,
-            'estado-venta': EstadoVenta,
-            'roles': Rol
-            
-        }
-        
-        if tabla not in modelos:
-            return jsonify({"error": "Tabla no encontrada"}), 404
-            
-        elemento = modelos[tabla].query.get(id)
-        if not elemento:
-            return jsonify({"error": f"{tabla[:-1]} no encontrado"}), 404
-            
-        return jsonify(elemento.to_dict())
-    except Exception as e:
-        return jsonify({"error": "Error al obtener elemento"}), 500
-    
-# ===== MÓDULO COMPRAS =====
+# ===== MÓDULO COMPRAS - COMPLETAR CRUD =====
 @main_bp.route('/compras', methods=['GET'])
 def get_compras():
     try:
@@ -711,7 +887,42 @@ def create_compra():
         db.session.rollback()
         return jsonify({"error": "Error al crear compra"}), 500
 
-# ===== TABLAS SECUNDARIAS - DETALLES =====
+@main_bp.route('/compras/<int:id>', methods=['PUT'])
+def update_compra(id):
+    try:
+        compra = Compra.query.get(id)
+        if not compra:
+            return jsonify({"error": "Compra no encontrada"}), 404
+
+        data = request.get_json()
+        if 'proveedor_id' in data:
+            compra.proveedor_id = data['proveedor_id']
+        if 'total' in data:
+            compra.total = float(data['total'])
+        if 'estado_compra' in data:
+            compra.estado_compra = data['estado_compra']
+
+        db.session.commit()
+        return jsonify({"message": "Compra actualizada", "compra": compra.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar compra"}), 500
+
+@main_bp.route('/compras/<int:id>', methods=['DELETE'])
+def delete_compra(id):
+    try:
+        compra = Compra.query.get(id)
+        if not compra:
+            return jsonify({"error": "Compra no encontrada"}), 404
+
+        db.session.delete(compra)
+        db.session.commit()
+        return jsonify({"message": "Compra eliminada correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar compra"}), 500
+
+# ===== TABLAS SECUNDARIAS - DETALLES VENTA - COMPLETAR CRUD =====
 @main_bp.route('/detalle-venta', methods=['GET'])
 def get_detalles_venta():
     try:
@@ -744,6 +955,48 @@ def create_detalle_venta():
         db.session.rollback()
         return jsonify({"error": "Error al crear detalle de venta"}), 500
 
+@main_bp.route('/detalle-venta/<int:id>', methods=['PUT'])
+def update_detalle_venta(id):
+    try:
+        detalle = DetalleVenta.query.get(id)
+        if not detalle:
+            return jsonify({"error": "Detalle de venta no encontrado"}), 404
+
+        data = request.get_json()
+        if 'venta_id' in data:
+            detalle.venta_id = data['venta_id']
+        if 'producto_id' in data:
+            detalle.producto_id = data['producto_id']
+        if 'cantidad' in data:
+            detalle.cantidad = data['cantidad']
+        if 'precio_unitario' in data:
+            detalle.precio_unitario = float(data['precio_unitario'])
+        if 'descuento' in data:
+            detalle.descuento = float(data['descuento'])
+        if 'cantidad' in data and 'precio_unitario' in data:
+            detalle.subtotal = float(data['cantidad']) * float(data['precio_unitario']) - float(data.get('descuento', detalle.descuento))
+
+        db.session.commit()
+        return jsonify({"message": "Detalle de venta actualizado", "detalle": detalle.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar detalle de venta"}), 500
+
+@main_bp.route('/detalle-venta/<int:id>', methods=['DELETE'])
+def delete_detalle_venta(id):
+    try:
+        detalle = DetalleVenta.query.get(id)
+        if not detalle:
+            return jsonify({"error": "Detalle de venta no encontrado"}), 404
+
+        db.session.delete(detalle)
+        db.session.commit()
+        return jsonify({"message": "Detalle de venta eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar detalle de venta"}), 500
+
+# ===== TABLAS SECUNDARIAS - DETALLES COMPRA - COMPLETAR CRUD =====
 @main_bp.route('/detalle-compra', methods=['GET'])
 def get_detalles_compra():
     try:
@@ -775,7 +1028,46 @@ def create_detalle_compra():
         db.session.rollback()
         return jsonify({"error": "Error al crear detalle de compra"}), 500
 
-# ===== TABLAS MAESTRAS - ESTADOS =====
+@main_bp.route('/detalle-compra/<int:id>', methods=['PUT'])
+def update_detalle_compra(id):
+    try:
+        detalle = DetalleCompra.query.get(id)
+        if not detalle:
+            return jsonify({"error": "Detalle de compra no encontrado"}), 404
+
+        data = request.get_json()
+        if 'compra_id' in data:
+            detalle.compra_id = data['compra_id']
+        if 'producto_id' in data:
+            detalle.producto_id = data['producto_id']
+        if 'cantidad' in data:
+            detalle.cantidad = data['cantidad']
+        if 'precio_unidad' in data:
+            detalle.precio_unidad = float(data['precio_unidad'])
+        if 'cantidad' in data and 'precio_unidad' in data:
+            detalle.subtotal = float(data['cantidad']) * float(data['precio_unidad'])
+
+        db.session.commit()
+        return jsonify({"message": "Detalle de compra actualizado", "detalle": detalle.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar detalle de compra"}), 500
+
+@main_bp.route('/detalle-compra/<int:id>', methods=['DELETE'])
+def delete_detalle_compra(id):
+    try:
+        detalle = DetalleCompra.query.get(id)
+        if not detalle:
+            return jsonify({"error": "Detalle de compra no encontrado"}), 404
+
+        db.session.delete(detalle)
+        db.session.commit()
+        return jsonify({"message": "Detalle de compra eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar detalle de compra"}), 500
+
+# ===== TABLAS MAESTRAS - ESTADO CITA - COMPLETAR CRUD =====
 @main_bp.route('/estado-cita', methods=['GET'])
 def get_estados_cita():
     try:
@@ -799,6 +1091,38 @@ def create_estado_cita():
         db.session.rollback()
         return jsonify({"error": "Error al crear estado de cita"}), 500
 
+@main_bp.route('/estado-cita/<int:id>', methods=['PUT'])
+def update_estado_cita(id):
+    try:
+        estado = EstadoCita.query.get(id)
+        if not estado:
+            return jsonify({"error": "Estado de cita no encontrado"}), 404
+
+        data = request.get_json()
+        if 'nombre' in data:
+            estado.nombre = data['nombre']
+
+        db.session.commit()
+        return jsonify({"message": "Estado de cita actualizado", "estado": estado.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar estado de cita"}), 500
+
+@main_bp.route('/estado-cita/<int:id>', methods=['DELETE'])
+def delete_estado_cita(id):
+    try:
+        estado = EstadoCita.query.get(id)
+        if not estado:
+            return jsonify({"error": "Estado de cita no encontrado"}), 404
+
+        db.session.delete(estado)
+        db.session.commit()
+        return jsonify({"message": "Estado de cita eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar estado de cita"}), 500
+
+# ===== TABLAS MAESTRAS - ESTADO VENTA - COMPLETAR CRUD =====
 @main_bp.route('/estado-venta', methods=['GET'])
 def get_estados_venta():
     try:
@@ -822,7 +1146,38 @@ def create_estado_venta():
         db.session.rollback()
         return jsonify({"error": "Error al crear estado de venta"}), 500
 
-# ===== TABLAS DEL SISTEMA =====
+@main_bp.route('/estado-venta/<int:id>', methods=['PUT'])
+def update_estado_venta(id):
+    try:
+        estado = EstadoVenta.query.get(id)
+        if not estado:
+            return jsonify({"error": "Estado de venta no encontrado"}), 404
+
+        data = request.get_json()
+        if 'nombre' in data:
+            estado.nombre = data['nombre']
+
+        db.session.commit()
+        return jsonify({"message": "Estado de venta actualizado", "estado": estado.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar estado de venta"}), 500
+
+@main_bp.route('/estado-venta/<int:id>', methods=['DELETE'])
+def delete_estado_venta(id):
+    try:
+        estado = EstadoVenta.query.get(id)
+        if not estado:
+            return jsonify({"error": "Estado de venta no encontrado"}), 404
+
+        db.session.delete(estado)
+        db.session.commit()
+        return jsonify({"message": "Estado de venta eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar estado de venta"}), 500
+
+# ===== TABLAS DEL SISTEMA - HORARIO - COMPLETAR CRUD =====
 @main_bp.route('/horario', methods=['GET'])
 def get_horarios():
     try:
@@ -853,6 +1208,44 @@ def create_horario():
         db.session.rollback()
         return jsonify({"error": "Error al crear horario"}), 500
 
+@main_bp.route('/horario/<int:id>', methods=['PUT'])
+def update_horario(id):
+    try:
+        horario = Horario.query.get(id)
+        if not horario:
+            return jsonify({"error": "Horario no encontrado"}), 404
+
+        data = request.get_json()
+        if 'empleado_id' in data:
+            horario.empleado_id = data['empleado_id']
+        if 'hora_inicio' in data:
+            horario.hora_inicio = datetime.strptime(data['hora_inicio'], '%H:%M').time()
+        if 'hora_final' in data:
+            horario.hora_final = datetime.strptime(data['hora_final'], '%H:%M').time()
+        if 'dia' in data:
+            horario.dia = data['dia']
+
+        db.session.commit()
+        return jsonify({"message": "Horario actualizado", "horario": horario.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar horario"}), 500
+
+@main_bp.route('/horario/<int:id>', methods=['DELETE'])
+def delete_horario(id):
+    try:
+        horario = Horario.query.get(id)
+        if not horario:
+            return jsonify({"error": "Horario no encontrado"}), 404
+
+        db.session.delete(horario)
+        db.session.commit()
+        return jsonify({"message": "Horario eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar horario"}), 500
+
+# ===== TABLAS DEL SISTEMA - HISTORIAL FORMULA - COMPLETAR CRUD =====
 @main_bp.route('/historial-formula', methods=['GET'])
 def get_historiales_formula():
     try:
@@ -885,6 +1278,52 @@ def create_historial_formula():
         db.session.rollback()
         return jsonify({"error": "Error al crear historial de fórmula"}), 500
 
+@main_bp.route('/historial-formula/<int:id>', methods=['PUT'])
+def update_historial_formula(id):
+    try:
+        historial = HistorialFormula.query.get(id)
+        if not historial:
+            return jsonify({"error": "Historial de fórmula no encontrado"}), 404
+
+        data = request.get_json()
+        if 'cliente_id' in data:
+            historial.cliente_id = data['cliente_id']
+        if 'descripcion' in data:
+            historial.descripcion = data['descripcion']
+        if 'od_esfera' in data:
+            historial.od_esfera = data['od_esfera']
+        if 'od_cilindro' in data:
+            historial.od_cilindro = data['od_cilindro']
+        if 'od_eje' in data:
+            historial.od_eje = data['od_eje']
+        if 'oi_esfera' in data:
+            historial.oi_esfera = data['oi_esfera']
+        if 'oi_cilindro' in data:
+            historial.oi_cilindro = data['oi_cilindro']
+        if 'oi_eje' in data:
+            historial.oi_eje = data['oi_eje']
+
+        db.session.commit()
+        return jsonify({"message": "Historial de fórmula actualizado", "historial": historial.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar historial de fórmula"}), 500
+
+@main_bp.route('/historial-formula/<int:id>', methods=['DELETE'])
+def delete_historial_formula(id):
+    try:
+        historial = HistorialFormula.query.get(id)
+        if not historial:
+            return jsonify({"error": "Historial de fórmula no encontrado"}), 404
+
+        db.session.delete(historial)
+        db.session.commit()
+        return jsonify({"message": "Historial de fórmula eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar historial de fórmula"}), 500
+
+# ===== TABLAS DEL SISTEMA - ABONO - COMPLETAR CRUD =====
 @main_bp.route('/abono', methods=['GET'])
 def get_abonos():
     try:
@@ -913,7 +1352,40 @@ def create_abono():
         db.session.rollback()
         return jsonify({"error": "Error al crear abono"}), 500
 
-# ===== TABLAS DE PERMISOS =====
+@main_bp.route('/abono/<int:id>', methods=['PUT'])
+def update_abono(id):
+    try:
+        abono = Abono.query.get(id)
+        if not abono:
+            return jsonify({"error": "Abono no encontrado"}), 404
+
+        data = request.get_json()
+        if 'venta_id' in data:
+            abono.venta_id = data['venta_id']
+        if 'monto_abonado' in data:
+            abono.monto_abonado = float(data['monto_abonado'])
+
+        db.session.commit()
+        return jsonify({"message": "Abono actualizado", "abono": abono.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar abono"}), 500
+
+@main_bp.route('/abono/<int:id>', methods=['DELETE'])
+def delete_abono(id):
+    try:
+        abono = Abono.query.get(id)
+        if not abono:
+            return jsonify({"error": "Abono no encontrado"}), 404
+
+        db.session.delete(abono)
+        db.session.commit()
+        return jsonify({"message": "Abono eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar abono"}), 500
+
+# ===== TABLAS DE PERMISOS - PERMISO - COMPLETAR CRUD =====
 @main_bp.route('/permiso', methods=['GET'])
 def get_permisos():
     try:
@@ -937,6 +1409,38 @@ def create_permiso():
         db.session.rollback()
         return jsonify({"error": "Error al crear permiso"}), 500
 
+@main_bp.route('/permiso/<int:id>', methods=['PUT'])
+def update_permiso(id):
+    try:
+        permiso = Permiso.query.get(id)
+        if not permiso:
+            return jsonify({"error": "Permiso no encontrado"}), 404
+
+        data = request.get_json()
+        if 'nombre' in data:
+            permiso.nombre = data['nombre']
+
+        db.session.commit()
+        return jsonify({"message": "Permiso actualizado", "permiso": permiso.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar permiso"}), 500
+
+@main_bp.route('/permiso/<int:id>', methods=['DELETE'])
+def delete_permiso(id):
+    try:
+        permiso = Permiso.query.get(id)
+        if not permiso:
+            return jsonify({"error": "Permiso no encontrado"}), 404
+
+        db.session.delete(permiso)
+        db.session.commit()
+        return jsonify({"message": "Permiso eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar permiso"}), 500
+
+# ===== TABLAS DE PERMISOS - PERMISO POR ROL - COMPLETAR CRUD =====
 @main_bp.route('/permiso-rol', methods=['GET'])
 def get_permisos_rol():
     try:
@@ -964,6 +1468,78 @@ def create_permiso_rol():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al crear permiso por rol"}), 500
+
+@main_bp.route('/permiso-rol/<int:id>', methods=['PUT'])
+def update_permiso_rol(id):
+    try:
+        permiso_rol = PermisoPorRol.query.get(id)
+        if not permiso_rol:
+            return jsonify({"error": "Permiso por rol no encontrado"}), 404
+
+        data = request.get_json()
+        if 'rol_id' in data:
+            permiso_rol.rol_id = data['rol_id']
+        if 'permiso_id' in data:
+            permiso_rol.permiso_id = data['permiso_id']
+
+        db.session.commit()
+        return jsonify({"message": "Permiso por rol actualizado", "permiso_rol": permiso_rol.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar permiso por rol"}), 500
+
+@main_bp.route('/permiso-rol/<int:id>', methods=['DELETE'])
+def delete_permiso_rol(id):
+    try:
+        permiso_rol = PermisoPorRol.query.get(id)
+        if not permiso_rol:
+            return jsonify({"error": "Permiso por rol no encontrado"}), 404
+
+        db.session.delete(permiso_rol)
+        db.session.commit()
+        return jsonify({"message": "Permiso por rol eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar permiso por rol"}), 500
+
+# ===== RUTAS PARA OBTENER UN ELEMENTO ESPECÍFICO =====
+@main_bp.route('/<tabla>/<int:id>', methods=['GET'])
+def get_elemento(tabla, id):
+    try:
+        modelos = {
+            'productos': Producto,
+            'clientes': Cliente,
+            'empleados': Empleado,
+            'proveedores': Proveedor,
+            'ventas': Venta,
+            'citas': Cita,
+            'servicios': Servicio,
+            'usuarios': Usuario,
+            'marcas': Marca,
+            'categorias': CategoriaProducto,
+            'compras': Compra,
+            'estado-cita': EstadoCita,
+            'estado-venta': EstadoVenta,
+            'roles': Rol,
+            'detalle-venta': DetalleVenta,
+            'detalle-compra': DetalleCompra,
+            'horario': Horario,
+            'historial-formula': HistorialFormula,
+            'abono': Abono,
+            'permiso': Permiso,
+            'permiso-rol': PermisoPorRol
+        }
+        
+        if tabla not in modelos:
+            return jsonify({"error": "Tabla no encontrada"}), 404
+            
+        elemento = modelos[tabla].query.get(id)
+        if not elemento:
+            return jsonify({"error": f"{tabla[:-1]} no encontrado"}), 404
+            
+        return jsonify(elemento.to_dict())
+    except Exception as e:
+        return jsonify({"error": "Error al obtener elemento"}), 500
 
 # ===== RUTAS DE RELACIONES =====
 @main_bp.route('/ventas/<int:venta_id>/detalles', methods=['GET'])
