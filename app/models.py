@@ -33,6 +33,7 @@ class Usuario(db.Model):
             'rol_id': self.rol_id,
             'nombre': self.nombre,
             'correo': self.correo,
+            'contrasenia': self.contrasenia,
             'estado': self.estado
         }
 
