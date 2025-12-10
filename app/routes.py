@@ -701,12 +701,15 @@ def create_usuario():
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
+            
+        estado = data.get('estado', True)
 
         usuario = Usuario(
             nombre=data['nombre'],
             correo=data['correo'],
             contrasenia=data['contrasenia'],
-            rol_id=data['rol_id']
+            rol_id=data['rol_id'],
+            estado=estado
         )
         db.session.add(usuario)
         db.session.commit()
