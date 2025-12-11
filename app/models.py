@@ -340,25 +340,23 @@ class Cliente(db.Model):
     ventas = db.relationship('Venta', backref='cliente', lazy=True)
     historiales = db.relationship('HistorialFormula', backref='cliente', lazy=True)
 
-    def to_dict(self):
-        data = {
-            'id': self.id,
-            'nombre': f"{self.nombre} {self.apellido}",  # Nombre completo para compatibilidad
-            'primer_nombre': self.nombre,  # <-- Nombre por separado
-            'apellido': self.apellido,  # <-- Apellido por separado
-            'numero_documento': self.numero_documento,
-            'tipo_documento': self.tipo_documento,
-            'fecha_nacimiento': self.fecha_nacimiento.isoformat() if self.fecha_nacimiento else None,
-            'genero': self.genero,
-            'telefono': self.telefono,
-            'correo': self.correo,
-            'municipio': self.municipio,
-            'direccion': self.direccion,
-            'ocupacion': self.ocupacion,
-            'telefono_emergencia': self.telefono_emergencia,
-            'estado': self.estado
-        }
-        return data
+def to_dict(self):
+    return {
+        'id': self.id,
+        'tipo_documento': self.tipo_documento,
+        'numero_documento': self.numero_documento,
+        'nombre': self.nombre,
+        'apellido': self.apellido,
+        'fecha_nacimiento': self.fecha_nacimiento.isoformat() if self.fecha_nacimiento else None,
+        'genero': self.genero,
+        'telefono': self.telefono,
+        'correo': self.correo,
+        'municipio': self.municipio,
+        'direccion': self.direccion,
+        'ocupacion': self.ocupacion,
+        'telefono_emergencia': self.telefono_emergencia,
+        'estado': self.estado
+    }
 
 # ===== TABLAS DE CITAS =====
 class Cita(db.Model):
