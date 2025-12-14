@@ -79,32 +79,18 @@ class Marca(db.Model):
 class Imagen(db.Model):
     __tablename__ = 'imagen'
     id = db.Column(db.Integer, primary_key=True)
-    
-    # Campos polimórficos (reemplazan producto_id)
-    imagenable_type = db.Column(db.String(50))  # 'producto', 'categoria', 'pedido', 'home'
-    imagenable_id = db.Column(db.Integer)       # ID del modelo relacionado
-    
-    # Campos de Cloudinary
-    url = db.Column(db.String(255), nullable=False)
-    cloudinary_public_id = db.Column(db.String(255))
-    
-    # Metadatos
+    url = db.Column(db.String(255), nullable=False)  # URL de Cloudinary
+    producto_id = db.Column(db.Integer)  # ← USAR producto_id en lugar de imagenable_id
     es_principal = db.Column(db.Boolean, default=False)
     orden = db.Column(db.Integer, default=0)
-    formato = db.Column(db.String(10))  # 'jpg', 'png', etc
-    fecha_subida = db.Column(db.DateTime, default=datetime.utcnow)
-
+    
     def to_dict(self):
         return {
             'id': self.id,
-            'imagenable_type': self.imagenable_type,
-            'imagenable_id': self.imagenable_id,
             'url': self.url,
-            'cloudinary_public_id': self.cloudinary_public_id,
+            'producto_id': self.producto_id,
             'es_principal': self.es_principal,
-            'orden': self.orden,
-            'formato': self.formato,
-            'fecha_subida': self.fecha_subida.isoformat() if self.fecha_subida else None
+            'orden': self.orden
         }
 
 
@@ -115,13 +101,6 @@ class CategoriaProducto(db.Model):
     descripcion = db.Column(db.String(100))
     estado = db.Column(db.Boolean, default=True)
     productos = db.relationship('Producto', backref='categoria', lazy=True)
-    imagenes_relacionadas = db.relationship(
-        'Imagen',
-        primaryjoin="and_(Imagen.imagenable_id==CategoriaProducto.id, "
-                   "Imagen.imagenable_type=='categoria')",
-        foreign_keys=[Imagen.imagenable_id],
-        lazy=True
-    )
 
     def to_dict(self):
         return {
@@ -129,7 +108,7 @@ class CategoriaProducto(db.Model):
             'nombre': self.nombre,
             'descripcion': self.descripcion,
             'estado': self.estado,
-            'imagen_url': self.imagenes_relacionadas[0].url if self.imagenes_relacionadas else None
+
         }
 
 class Producto(db.Model):
@@ -144,7 +123,13 @@ class Producto(db.Model):
     stock_minimo = db.Column(db.Integer, default=0)
     descripcion = db.Column(db.String(120))
     estado = db.Column(db.Boolean, default=True)
-    imagenes_relacionadas = db.relationship('Imagen',primaryjoin="and_(Imagen.imagenable_id==Producto.id,Imagen.imagenable_type=='producto')",foreign_keys=[Imagen.imagenable_id],order_by='Imagen.orden',lazy=True)
+    imagenes_relacionadas = db.relationship(
+        'Imagen',
+        primaryjoin="Imagen.producto_id==Producto.id",  # ← USAR producto_id
+        foreign_keys="[Imagen.producto_id]",  # ← CORREGIDO
+        order_by='Imagen.orden',
+        lazy=True
+    )
 
     def to_dict(self):
         return {

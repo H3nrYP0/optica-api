@@ -238,73 +238,25 @@ def convertir_pedido_a_venta(id):
 
 @main_bp.route('/imagenes', methods=['POST'])
 def crear_imagen():
-    """Crear una nueva imagen (Flutter envía URL después de subir a Cloudinary)"""
+    """Crear una nueva imagen - VERSIÓN SIMPLIFICADA"""
     try:
         data = request.get_json()
-        required_fields = ['url', 'imagenable_type', 'imagenable_id', 'cloudinary_public_id']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"error": f"El campo {field} es requerido"}), 400
         
-        # Validar tipo de imagen
-        if data['imagenable_type'] not in ['producto', 'categoria']:
-            return jsonify({"error": "Tipo de imagen no válido. Use 'producto' o 'categoria'"}), 400
+        # Validar campos requeridos
+        if 'url' not in data or 'producto_id' not in data:
+            return jsonify({"error": "Los campos 'url' y 'producto_id' son requeridos"}), 400
         
-        # Validar formato (opcional)
-        formato = data.get('formato', 'jpg')
-        if formato.lower() not in ['jpg', 'jpeg', 'png', 'webp']:
-            return jsonify({"error": "Formato de imagen no permitido. Use jpg, jpeg, png o webp"}), 400
+        # Verificar que el producto exista
+        producto = Producto.query.get(data['producto_id'])
+        if not producto:
+            return jsonify({"error": "Producto no encontrado"}), 404
         
-        # Para productos: verificar límite de 5 imágenes
-        if data['imagenable_type'] == 'producto':
-            count = Imagen.query.filter_by(
-                imagenable_type='producto',
-                imagenable_id=data['imagenable_id']
-            ).count()
-            if count >= 5:
-                return jsonify({"error": "Límite máximo de 5 imágenes por producto"}), 400
-        
-        # Para categorías: verificar límite de 1 imagen
-        if data['imagenable_type'] == 'categoria':
-            count = Imagen.query.filter_by(
-                imagenable_type='categoria',
-                imagenable_id=data['imagenable_id']
-            ).count()
-            if count >= 1:
-                # Si ya existe, reemplazar la existente
-                existente = Imagen.query.filter_by(
-                    imagenable_type='categoria',
-                    imagenable_id=data['imagenable_id']
-                ).first()
-                if existente:
-                    existente.url = data['url']
-                    existente.cloudinary_public_id = data['cloudinary_public_id']
-                    existente.formato = formato
-                    db.session.commit()
-                    return jsonify({
-                        "message": "Imagen de categoría actualizada",
-                        "imagen": existente.to_dict()
-                    })
-        
-        # Determinar orden automático (solo para productos)
-        orden = data.get('orden', 0)
-        if data['imagenable_type'] == 'producto' and orden == 0:
-            # Asignar el siguiente orden disponible
-            ultima_imagen = Imagen.query.filter_by(
-                imagenable_type='producto',
-                imagenable_id=data['imagenable_id']
-            ).order_by(Imagen.orden.desc()).first()
-            orden = ultima_imagen.orden + 1 if ultima_imagen else 1
-        
-        # Crear nueva imagen
+        # Crear imagen
         imagen = Imagen(
             url=data['url'],
-            cloudinary_public_id=data['cloudinary_public_id'],
-            imagenable_type=data['imagenable_type'],
-            imagenable_id=data['imagenable_id'],
-            es_principal=data.get('es_principal', False),
-            orden=orden,
-            formato=formato
+            producto_id=data['producto_id'],
+            es_principal=data.get('es_principal', True),
+            orden=data.get('orden', 0)
         )
         
         db.session.add(imagen)
@@ -323,199 +275,32 @@ def crear_imagen():
 def get_imagenes_producto(producto_id):
     """Obtener todas las imágenes de un producto"""
     try:
-        imagenes = Imagen.query.filter_by(
-            imagenable_type='producto',
-            imagenable_id=producto_id
-        ).order_by(Imagen.orden).all()
-        
+        imagenes = Imagen.query.filter_by(producto_id=producto_id).order_by(Imagen.orden).all()
         return jsonify([img.to_dict() for img in imagenes])
     except Exception as e:
         return jsonify({"error": f"Error al obtener imágenes: {str(e)}"}), 500
 
-@main_bp.route('/imagenes/categoria/<int:categoria_id>', methods=['GET'])
-def get_imagen_categoria(categoria_id):
-    """Obtener la imagen de una categoría"""
-    try:
-        imagen = Imagen.query.filter_by(
-            imagenable_type='categoria',
-            imagenable_id=categoria_id
-        ).first()
-        
-        if not imagen:
-            return jsonify({"imagen": None})
-            
-        return jsonify(imagen.to_dict())
-    except Exception as e:
-        return jsonify({"error": f"Error al obtener imagen: {str(e)}"}), 500
 
-@main_bp.route('/imagenes/<int:id>', methods=['GET'])
-def get_imagen(id):
-    """Obtener una imagen específica por ID"""
-    try:
-        imagen = Imagen.query.get(id)
-        if not imagen:
-            return jsonify({"error": "Imagen no encontrada"}), 404
-            
-        return jsonify(imagen.to_dict())
-    except Exception as e:
-        return jsonify({"error": f"Error al obtener imagen: {str(e)}"}), 500
-
-@main_bp.route('/imagenes/<int:id>', methods=['PUT'])
-def update_imagen(id):
-    """Actualizar imagen (principalmente orden y es_principal)"""
-    try:
-        imagen = Imagen.query.get(id)
-        if not imagen:
-            return jsonify({"error": "Imagen no encontrada"}), 404
-        
-        data = request.get_json()
-        
-        if 'es_principal' in data:
-            imagen.es_principal = data['es_principal']
-            # Si se marca como principal, quitar principal de otras imágenes del mismo producto/categoria
-            if data['es_principal']:
-                Imagen.query.filter(
-                    Imagen.imagenable_type == imagen.imagenable_type,
-                    Imagen.imagenable_id == imagen.imagenable_id,
-                    Imagen.id != id
-                ).update({Imagen.es_principal: False})
-        
-        if 'orden' in data:
-            imagen.orden = data['orden']
-        
-        if 'url' in data:
-            imagen.url = data['url']
-            
-        if 'cloudinary_public_id' in data:
-            imagen.cloudinary_public_id = data['cloudinary_public_id']
-            
-        if 'formato' in data:
-            imagen.formato = data['formato']
-
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Imagen actualizada",
-            "imagen": imagen.to_dict()
-        })
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": f"Error al actualizar imagen: {str(e)}"}), 500
-
-@main_bp.route('/imagenes/<int:id>', methods=['DELETE'])
-def delete_imagen(id):
-    """Eliminar una imagen (solo de la base de datos, Cloudinary se maneja aparte)"""
-    try:
-        imagen = Imagen.query.get(id)
-        if not imagen:
-            return jsonify({"error": "Imagen no encontrada"}), 404
-        
-        # Guardar info para eliminar de Cloudinary después
-        cloudinary_data = {
-            'public_id': imagen.cloudinary_public_id,
-            'imagenable_type': imagen.imagenable_type,
-            'imagenable_id': imagen.imagenable_id
-        }
-        
-        db.session.delete(imagen)
-        db.session.commit()
-        
-        # Reorganizar órdenes si es una imagen de producto
-        if imagen.imagenable_type == 'producto':
-            # Reordenar las imágenes restantes
-            imagenes_restantes = Imagen.query.filter_by(
-                imagenable_type='producto',
-                imagenable_id=imagen.imagenable_id
-            ).order_by(Imagen.orden).all()
-            
-            for idx, img in enumerate(imagenes_restantes, 1):
-                img.orden = idx
-            db.session.commit()
-        
-        return jsonify({
-            "message": "Imagen eliminada",
-            "cloudinary_data": cloudinary_data
-        })
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": f"Error al eliminar imagen: {str(e)}"}), 500
-
-@main_bp.route('/imagenes/<int:id>/principal', methods=['PUT'])
-def set_imagen_principal(id):
-    """Marcar una imagen como principal"""
-    try:
-        imagen = Imagen.query.get(id)
-        if not imagen:
-            return jsonify({"error": "Imagen no encontrada"}), 404
-        
-        # Quitar principal de todas las imágenes del mismo producto/categoria
-        Imagen.query.filter(
-            Imagen.imagenable_type == imagen.imagenable_type,
-            Imagen.imagenable_id == imagen.imagenable_id
-        ).update({Imagen.es_principal: False})
-        
-        # Marcar esta como principal
-        imagen.es_principal = True
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Imagen marcada como principal",
-            "imagen": imagen.to_dict()
-        })
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": f"Error al marcar imagen como principal: {str(e)}"}), 500
-
-@main_bp.route('/imagenes/reordenar/<int:imagenable_id>', methods=['PUT'])
-def reordenar_imagenes(imagenable_id):
-    """Reordenar imágenes de un producto"""
-    try:
-        data = request.get_json()
-        if 'imagenable_type' not in data or 'nuevo_orden' not in data:
-            return jsonify({"error": "Se requieren imagenable_type y nuevo_orden"}), 400
-        
-        imagenable_type = data['imagenable_type']
-        nuevo_orden = data['nuevo_orden']  # Lista de IDs en el nuevo orden
-        
-        if imagenable_type != 'producto':
-            return jsonify({"error": "Solo se puede reordenar imágenes de productos"}), 400
-        
-        # Actualizar el orden de cada imagen
-        for orden, imagen_id in enumerate(nuevo_orden, 1):
-            imagen = Imagen.query.get(imagen_id)
-            if imagen and imagen.imagenable_id == imagenable_id and imagen.imagenable_type == imagenable_type:
-                imagen.orden = orden
-        
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Imágenes reordenadas exitosamente"
-        })
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": f"Error al reordenar imágenes: {str(e)}"}), 500
-
-
-
-@main_bp.route('/productos-con-imagenes', methods=['GET'])
-def get_productos_con_imagenes():
-    """Obtener todos los productos con sus imágenes"""
+@main_bp.route('/productos-imagenes', methods=['GET'])
+def get_productos_imagenes():
+    """Obtener productos con sus imágenes - SIMPLIFICADO"""
     try:
         productos = Producto.query.all()
-        productos_data = []
+        resultado = []
         
         for producto in productos:
             producto_dict = producto.to_dict()
-            # Ya incluye imágenes por la relación imagenes_relacionadas
-            productos_data.append(producto_dict)
+            
+            # Obtener imágenes usando la relación corregida
+            imagenes = Imagen.query.filter_by(producto_id=producto.id).all()
+            producto_dict['imagenes'] = [img.to_dict() for img in imagenes]
+            producto_dict['imagen_principal'] = imagenes[0].url if imagenes else None
+            
+            resultado.append(producto_dict)
         
-        return jsonify(productos_data)
+        return jsonify(resultado)
     except Exception as e:
-        return jsonify({"error": f"Error al obtener productos: {str(e)}"}), 500
+        return jsonify({"error": f"Error: {str(e)}"}), 500
 
 @main_bp.route('/categorias-con-imagenes', methods=['GET'])
 def get_categorias_con_imagenes():
