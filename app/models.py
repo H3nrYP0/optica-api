@@ -379,6 +379,7 @@ class Cita(db.Model):
             'servicio_id': self.servicio_id,
             'empleado_id': self.empleado_id,
             'metodo_pago': self.metodo_pago,
+            'hora': self.hora,
             'fecha': self.fecha.isoformat()
         }
 
