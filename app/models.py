@@ -77,17 +77,18 @@ class Marca(db.Model):
 
 # ===== MODIFICACIÓN DEL MODELO IMAGEN (POLIMÓRFICO) =====
 class Imagen(db.Model):
+
     __tablename__ = 'imagen'
+    
     id = db.Column(db.Integer, primary_key=True)
-    url = db.Column(db.String(500), nullable=False)      
-    producto_id = db.Column(db.Integer, nullable=False)  
+    producto_id = db.Column(db.Integer, nullable=False) 
+    url = db.Column(db.String(255), nullable=False)     
     
     def to_dict(self):
         return {
             'id': self.id,
-            'url': self.url,
             'producto_id': self.producto_id,
-
+            'url': self.url
         }
 
 
@@ -110,6 +111,8 @@ class CategoriaProducto(db.Model):
 
 class Producto(db.Model):
     __tablename__ = 'producto'
+    
+    # Mantener todos los campos como están
     id = db.Column(db.Integer, primary_key=True)
     categoria_producto_id = db.Column(db.Integer, db.ForeignKey('categoria_producto.id'), nullable=False)
     marca_id = db.Column(db.Integer, db.ForeignKey('marca.id'), nullable=False)
@@ -118,16 +121,12 @@ class Producto(db.Model):
     precio_compra = db.Column(db.Float, nullable=False)
     stock = db.Column(db.Integer, default=0)
     stock_minimo = db.Column(db.Integer, default=0)
-    descripcion = db.Column(db.String(120))
+    description = db.Column(db.String(120))  # ← CORREGIR: 'description' no 'descripcion'
     estado = db.Column(db.Boolean, default=True)
-    imagenes_relacionadas = db.relationship(
-        'Imagen',
-        primaryjoin="Imagen.producto_id==Producto.id",  # ← USAR producto_id
-        foreign_keys="[Imagen.producto_id]",  # ← CORREGIDO
-        order_by='Imagen.orden',
-        lazy=True
-    )
-
+    
+    # Relación con imágenes (OPCIONAL, pero útil)
+    imagenes = db.relationship('Imagen', backref='producto_rel', lazy=True)
+    
     def to_dict(self):
         return {
             'id': self.id,
@@ -136,11 +135,11 @@ class Producto(db.Model):
             'precio_compra': self.precio_compra,
             'stock': self.stock,
             'stock_minimo': self.stock_minimo,
-            'descripcion': self.descripcion,
+            'descripcion': self.description,  # ← Usar 'description' pero mantener nombre en JSON
             'estado': self.estado,
             'categoria_id': self.categoria_producto_id,
             'marca_id': self.marca_id,
-            'imagenes': [img.to_dict() for img in self.imagenes_relacionadas] if self.imagenes_relacionadas else []
+            'imagenes': [img.to_dict() for img in self.imagenes] if self.imagenes else []
         }
 
 

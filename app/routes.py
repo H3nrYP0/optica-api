@@ -239,20 +239,27 @@ def convertir_pedido_a_venta(id):
 # ===== IMÁGENES - ENDPOINTS SUPER SIMPLES =====
 
 @main_bp.route('/imagen', methods=['POST'])
-def crear_imagen_simple():
-    """Crear imagen usando SOLO columnas que SÍ existen"""
+def crear_imagen():
+    """Crear imagen - SOLO campos que EXISTEN"""
     try:
         data = request.get_json()
         
-        # Validar mínimo absoluto
-        if not data.get('url') or not data.get('producto_id'):
-            return jsonify({"error": "url y producto_id requeridos"}), 400
+        # Validar campos que SÍ existen
+        if not data.get('url'):
+            return jsonify({"error": "Se requiere 'url' (URL de Cloudinary)"}), 400
+        if not data.get('producto_id'):
+            return jsonify({"error": "Se requiere 'producto_id'"}), 400
         
-        # Crear con SOLO campos que sabemos existen
+        # Verificar que producto existe
+        producto = Producto.query.get(data['producto_id'])
+        if not producto:
+            return jsonify({"error": "Producto no encontrado"}), 404
+        
+        # Crear con campos EXACTOS de la BD
         imagen = Imagen(
             url=data['url'],
             producto_id=data['producto_id']
-            # NO incluir es_principal, orden, etc.
+            # ¡NO incluir otros campos que NO existen!
         )
         
         db.session.add(imagen)
@@ -260,11 +267,8 @@ def crear_imagen_simple():
         
         return jsonify({
             "success": True,
-            "imagen": {
-                "id": imagen.id,
-                "url": imagen.url,
-                "producto_id": imagen.producto_id
-            }
+            "message": "Imagen creada exitosamente",
+            "imagen": imagen.to_dict()
         }), 201
         
     except Exception as e:
@@ -272,82 +276,35 @@ def crear_imagen_simple():
         return jsonify({"error": str(e)}), 500
 
 @main_bp.route('/imagen/producto/<int:producto_id>', methods=['GET'])
-def imagenes_producto(producto_id):
+def obtener_imagenes_producto(producto_id):
     """Obtener imágenes de un producto"""
     try:
-        imagenes = Imagen.query.filter_by(producto_id=producto_id).order_by(Imagen.orden).all()
+        imagenes = Imagen.query.filter_by(producto_id=producto_id).all()
         return jsonify([img.to_dict() for img in imagenes])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @main_bp.route('/productos-con-imagenes', methods=['GET'])
 def productos_con_imagenes():
-    """Productos CON sus imágenes"""
+    """Productos CON sus imágenes (para Flutter)"""
     try:
         productos = Producto.query.all()
         resultado = []
         
         for producto in productos:
             # Crear dict del producto
-            producto_dict = {
-                'id': producto.id,
-                'nombre': producto.nombre,
-                'precio_venta': producto.precio_venta,
-                'precio_compra': producto.precio_compra,
-                'stock': producto.stock,
-                'descripcion': producto.descripcion,
-                'categoria_id': producto.categoria_producto_id,
-                'marca_id': producto.marca_id
-            }
+            producto_dict = producto.to_dict()
             
-            # Obtener imágenes
+            # Obtener imágenes (usando relación o query directa)
             imagenes = Imagen.query.filter_by(producto_id=producto.id).all()
             producto_dict['imagenes'] = [img.to_dict() for img in imagenes]
             
-            # Imagen principal (la primera o la marcada como principal)
-            imagen_principal = next((img for img in imagenes if img.es_principal), 
-                                   imagenes[0] if imagenes else None)
-            producto_dict['imagen_principal'] = imagen_principal.url if imagen_principal else None
+            # Imagen principal (primera imagen o null)
+            producto_dict['imagen_principal'] = imagenes[0].url if imagenes else None
             
             resultado.append(producto_dict)
         
         return jsonify(resultado)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@main_bp.route('/debug/imagen-estructura', methods=['GET'])
-def debug_imagen_estructura():
-    """Ver estructura REAL de la tabla imagen"""
-    try:
-        from sqlalchemy import text, inspect
-        from app.database import db
-        
-        conn = db.engine.connect()
-        
-        # Opción 1: Usar inspección de SQLAlchemy
-        inspector = inspect(db.engine)
-        columnas = inspector.get_columns('imagen')
-        
-        # Opción 2: SQL directo (si falla la inspección)
-        if not columnas:
-            result = conn.execute(text("""
-                SELECT * FROM imagen LIMIT 1
-            """))
-            if result.rowcount > 0:
-                columnas = [{'name': key, 'type': 'unknown'} for key in result.keys()]
-        
-        # Ver también si hay datos
-        count_result = conn.execute(text("SELECT COUNT(*) FROM imagen"))
-        count = count_result.scalar()
-        
-        conn.close()
-        
-        return jsonify({
-            'columnas': columnas,
-            'total_imagenes': count,
-            'tabla': 'imagen'
-        })
-        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
