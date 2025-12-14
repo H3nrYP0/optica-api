@@ -236,26 +236,28 @@ def convertir_pedido_a_venta(id):
         db.session.rollback()
         return jsonify({"error": f"Error al convertir pedido a venta: {str(e)}"}), 500
 
-@main_bp.route('/imagenes', methods=['POST'])
+# ===== IMÁGENES - ENDPOINTS SUPER SIMPLES =====
+
+@main_bp.route('/imagen', methods=['POST'])
 def crear_imagen():
-    """Crear una nueva imagen - VERSIÓN SIMPLIFICADA"""
+    """Crear imagen - SOLO 3 campos requeridos"""
     try:
         data = request.get_json()
         
-        # Validar campos requeridos
-        if 'url' not in data or 'producto_id' not in data:
-            return jsonify({"error": "Los campos 'url' y 'producto_id' son requeridos"}), 400
+        # Solo validar lo ABSOLUTAMENTE necesario
+        if not data.get('url'):
+            return jsonify({"error": "Falta 'url' de Cloudinary"}), 400
+        if not data.get('producto_id'):
+            return jsonify({"error": "Falta 'producto_id'"}), 400
         
-        # Verificar que el producto exista
-        producto = Producto.query.get(data['producto_id'])
-        if not producto:
-            return jsonify({"error": "Producto no encontrado"}), 404
+        # Verificar producto rápido
+        if not Producto.query.get(data['producto_id']):
+            return jsonify({"error": "Producto no existe"}), 404
         
-        # Crear imagen
         imagen = Imagen(
             url=data['url'],
             producto_id=data['producto_id'],
-            es_principal=data.get('es_principal', True),
+            es_principal=data.get('es_principal', False),
             orden=data.get('orden', 0)
         )
         
@@ -263,44 +265,57 @@ def crear_imagen():
         db.session.commit()
         
         return jsonify({
-            "message": "Imagen creada exitosamente",
+            "success": True,
             "imagen": imagen.to_dict()
         }), 201
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": f"Error al crear imagen: {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
 
-@main_bp.route('/imagenes/producto/<int:producto_id>', methods=['GET'])
-def get_imagenes_producto(producto_id):
-    """Obtener todas las imágenes de un producto"""
+@main_bp.route('/imagen/producto/<int:producto_id>', methods=['GET'])
+def imagenes_producto(producto_id):
+    """Obtener imágenes de un producto"""
     try:
         imagenes = Imagen.query.filter_by(producto_id=producto_id).order_by(Imagen.orden).all()
         return jsonify([img.to_dict() for img in imagenes])
     except Exception as e:
-        return jsonify({"error": f"Error al obtener imágenes: {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
 
-
-@main_bp.route('/productos-imagenes', methods=['GET'])
-def get_productos_imagenes():
-    """Obtener productos con sus imágenes - SIMPLIFICADO"""
+@main_bp.route('/productos-con-imagenes', methods=['GET'])
+def productos_con_imagenes():
+    """Productos CON sus imágenes"""
     try:
         productos = Producto.query.all()
         resultado = []
         
         for producto in productos:
-            producto_dict = producto.to_dict()
+            # Crear dict del producto
+            producto_dict = {
+                'id': producto.id,
+                'nombre': producto.nombre,
+                'precio_venta': producto.precio_venta,
+                'precio_compra': producto.precio_compra,
+                'stock': producto.stock,
+                'descripcion': producto.descripcion,
+                'categoria_id': producto.categoria_producto_id,
+                'marca_id': producto.marca_id
+            }
             
-            # Obtener imágenes usando la relación corregida
+            # Obtener imágenes
             imagenes = Imagen.query.filter_by(producto_id=producto.id).all()
             producto_dict['imagenes'] = [img.to_dict() for img in imagenes]
-            producto_dict['imagen_principal'] = imagenes[0].url if imagenes else None
+            
+            # Imagen principal (la primera o la marcada como principal)
+            imagen_principal = next((img for img in imagenes if img.es_principal), 
+                                   imagenes[0] if imagenes else None)
+            producto_dict['imagen_principal'] = imagen_principal.url if imagen_principal else None
             
             resultado.append(producto_dict)
         
         return jsonify(resultado)
     except Exception as e:
-        return jsonify({"error": f"Error: {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
 
 @main_bp.route('/categorias-con-imagenes', methods=['GET'])
 def get_categorias_con_imagenes():

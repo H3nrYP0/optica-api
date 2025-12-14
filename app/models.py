@@ -79,10 +79,10 @@ class Marca(db.Model):
 class Imagen(db.Model):
     __tablename__ = 'imagen'
     id = db.Column(db.Integer, primary_key=True)
-    url = db.Column(db.String(255), nullable=False)  # URL de Cloudinary
-    producto_id = db.Column(db.Integer)  # ← USAR producto_id en lugar de imagenable_id
-    es_principal = db.Column(db.Boolean, default=False)
-    orden = db.Column(db.Integer, default=0)
+    url = db.Column(db.String(500), nullable=False)      
+    producto_id = db.Column(db.Integer, nullable=False)  
+    es_principal = db.Column(db.Boolean, default=False)  
+    orden = db.Column(db.Integer, default=0)  
     
     def to_dict(self):
         return {
