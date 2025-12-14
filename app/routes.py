@@ -910,22 +910,41 @@ def create_cita():
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
 
+        # ========== CORRECCIÓN AQUÍ ==========
+        # Manejar diferentes formatos de fecha
+        fecha_str = data['fecha']
+        try:
+            # Intentar formato ISO (con T): "2025-12-17T08:00:00"
+            if 'T' in fecha_str:
+                fecha_dt = datetime.fromisoformat(fecha_str.replace('Z', '+00:00'))
+            else:
+                # Intentar formato SQL (con espacio): "2025-12-17 08:00:00"
+                try:
+                    fecha_dt = datetime.strptime(fecha_str, '%Y-%m-%d %H:%M:%S')
+                except ValueError:
+                    # Formato sin segundos: "2025-12-17 08:00"
+                    fecha_dt = datetime.strptime(fecha_str, '%Y-%m-%d %H:%M')
+        except ValueError as e:
+            return jsonify({"error": f"Formato de fecha inválido: {fecha_str}. Use 'YYYY-MM-DD HH:MM' o 'YYYY-MM-DDTHH:MM:SS'"}), 400
+        # ========== FIN CORRECCIÓN ==========
+
         cita = Cita(
             cliente_id=data['cliente_id'],
             servicio_id=data['servicio_id'],
             empleado_id=data['empleado_id'],
             estado_cita_id=data['estado_cita_id'],
             metodo_pago=data.get('metodo_pago'),
-            hora=datetime.strptime(data['hora'], '%H:%M').time() if data.get('hora') else None,
+            hora=fecha_dt.time(),  # Extraer la hora del DateTime
             duracion=data.get('duracion'),
-            fecha=datetime.strptime(data['fecha'], '%Y-%m-%d %H:%M')
+            fecha=fecha_dt  # Usar el DateTime parseado
         )
         db.session.add(cita)
         db.session.commit()
         return jsonify({"message": "Cita creada", "cita": cita.to_dict()}), 201
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al crear cita"}), 500
+        # Cambia esta línea para ver el error real en logs
+        return jsonify({"error": f"Error al crear cita: {str(e)}"}), 500
 
 @main_bp.route('/citas/<int:id>', methods=['PUT'])
 def update_cita(id):
