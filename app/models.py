@@ -366,9 +366,9 @@ class Cita(db.Model):
     servicio_id = db.Column(db.Integer, db.ForeignKey('servicio.id'), nullable=False)
     empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=False)
     metodo_pago = db.Column(db.String(15))  # 'Efectivo', 'Tarjeta', 'Transferencia'
-    hora = db.Column(db.Time)  # Cambié de Date a Time
+    hora = db.Column(db.Time, nullable=False)  # ← Hacer NOT NULL
     duracion = db.Column(db.Integer)
-    fecha = db.Column(db.DateTime, nullable=False)
+    fecha = db.Column(db.Date, nullable=False)  # ← Cambiar de DateTime a Date
     estado_cita_id = db.Column(db.Integer, db.ForeignKey('estado_cita.id'), nullable=False)
     ventas = db.relationship('Venta', backref='cita', lazy=True)
 
@@ -379,8 +379,14 @@ class Cita(db.Model):
             'servicio_id': self.servicio_id,
             'empleado_id': self.empleado_id,
             'metodo_pago': self.metodo_pago,
-            'hora': self.hora,
-            'fecha': self.fecha.isoformat()
+            'hora': self.hora.isoformat() if self.hora else None,  # ← Agregar hora
+            'duracion': self.duracion,
+            'fecha': self.fecha.isoformat() if self.fecha else None,  # ← Solo fecha
+            'estado_cita_id': self.estado_cita_id,
+            'estado_nombre': self.estado_cita.nombre if self.estado_cita else None,
+            'cliente_nombre': f"{self.cliente.nombre} {self.cliente.apellido}" if self.cliente else None,
+            'servicio_nombre': self.servicio.nombre if self.servicio else None,
+            'empleado_nombre': self.empleado.nombre if self.empleado else None
         }
 
 # ===== TABLAS DE VENTAS =====
