@@ -81,16 +81,13 @@ class Imagen(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     url = db.Column(db.String(500), nullable=False)      
     producto_id = db.Column(db.Integer, nullable=False)  
-    es_principal = db.Column(db.Boolean, default=False)  
-    orden = db.Column(db.Integer, default=0)  
     
     def to_dict(self):
         return {
             'id': self.id,
             'url': self.url,
             'producto_id': self.producto_id,
-            'es_principal': self.es_principal,
-            'orden': self.orden
+
         }
 
 

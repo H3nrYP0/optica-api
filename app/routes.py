@@ -239,26 +239,20 @@ def convertir_pedido_a_venta(id):
 # ===== IMÁGENES - ENDPOINTS SUPER SIMPLES =====
 
 @main_bp.route('/imagen', methods=['POST'])
-def crear_imagen():
-    """Crear imagen - SOLO 3 campos requeridos"""
+def crear_imagen_simple():
+    """Crear imagen usando SOLO columnas que SÍ existen"""
     try:
         data = request.get_json()
         
-        # Solo validar lo ABSOLUTAMENTE necesario
-        if not data.get('url'):
-            return jsonify({"error": "Falta 'url' de Cloudinary"}), 400
-        if not data.get('producto_id'):
-            return jsonify({"error": "Falta 'producto_id'"}), 400
+        # Validar mínimo absoluto
+        if not data.get('url') or not data.get('producto_id'):
+            return jsonify({"error": "url y producto_id requeridos"}), 400
         
-        # Verificar producto rápido
-        if not Producto.query.get(data['producto_id']):
-            return jsonify({"error": "Producto no existe"}), 404
-        
+        # Crear con SOLO campos que sabemos existen
         imagen = Imagen(
             url=data['url'],
-            producto_id=data['producto_id'],
-            es_principal=data.get('es_principal', False),
-            orden=data.get('orden', 0)
+            producto_id=data['producto_id']
+            # NO incluir es_principal, orden, etc.
         )
         
         db.session.add(imagen)
@@ -266,7 +260,11 @@ def crear_imagen():
         
         return jsonify({
             "success": True,
-            "imagen": imagen.to_dict()
+            "imagen": {
+                "id": imagen.id,
+                "url": imagen.url,
+                "producto_id": imagen.producto_id
+            }
         }), 201
         
     except Exception as e:
@@ -316,6 +314,43 @@ def productos_con_imagenes():
         return jsonify(resultado)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@main_bp.route('/debug/imagen-estructura', methods=['GET'])
+def debug_imagen_estructura():
+    """Ver estructura REAL de la tabla imagen"""
+    try:
+        from sqlalchemy import text, inspect
+        from app.database import db
+        
+        conn = db.engine.connect()
+        
+        # Opción 1: Usar inspección de SQLAlchemy
+        inspector = inspect(db.engine)
+        columnas = inspector.get_columns('imagen')
+        
+        # Opción 2: SQL directo (si falla la inspección)
+        if not columnas:
+            result = conn.execute(text("""
+                SELECT * FROM imagen LIMIT 1
+            """))
+            if result.rowcount > 0:
+                columnas = [{'name': key, 'type': 'unknown'} for key in result.keys()]
+        
+        # Ver también si hay datos
+        count_result = conn.execute(text("SELECT COUNT(*) FROM imagen"))
+        count = count_result.scalar()
+        
+        conn.close()
+        
+        return jsonify({
+            'columnas': columnas,
+            'total_imagenes': count,
+            'tabla': 'imagen'
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @main_bp.route('/categorias-con-imagenes', methods=['GET'])
 def get_categorias_con_imagenes():
