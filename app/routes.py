@@ -240,26 +240,26 @@ def convertir_pedido_a_venta(id):
 
 @main_bp.route('/imagen', methods=['POST'])
 def crear_imagen():
-    """Crear imagen - SOLO campos que EXISTEN"""
+    """Crear imagen - SIN usar relaciones SQLAlchemy"""
     try:
         data = request.get_json()
         
-        # Validar campos que SÍ existen
-        if not data.get('url'):
-            return jsonify({"error": "Se requiere 'url' (URL de Cloudinary)"}), 400
-        if not data.get('producto_id'):
-            return jsonify({"error": "Se requiere 'producto_id'"}), 400
+        if not data.get('url') or not data.get('producto_id'):
+            return jsonify({"error": "url y producto_id requeridos"}), 400
         
-        # Verificar que producto existe
+        # Verificar producto con query directa
+        from app.models import Producto
+        from sqlalchemy import text
+        
         producto = Producto.query.get(data['producto_id'])
         if not producto:
             return jsonify({"error": "Producto no encontrado"}), 404
         
-        # Crear con campos EXACTOS de la BD
+        # Crear imagen (modelo simple funciona)
+        from app.models import Imagen
         imagen = Imagen(
             url=data['url'],
             producto_id=data['producto_id']
-            # ¡NO incluir otros campos que NO existen!
         )
         
         db.session.add(imagen)
@@ -267,7 +267,6 @@ def crear_imagen():
         
         return jsonify({
             "success": True,
-            "message": "Imagen creada exitosamente",
             "imagen": imagen.to_dict()
         }), 201
         
@@ -284,27 +283,73 @@ def obtener_imagenes_producto(producto_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@main_bp.route('/productos-con-imagenes', methods=['GET'])
+@main_bp.route('/productos-imagenes', methods=['GET'])
 def productos_con_imagenes():
-    """Productos CON sus imágenes (para Flutter)"""
+    """Productos CON imágenes - usando JOIN manual"""
     try:
-        productos = Producto.query.all()
-        resultado = []
+        from sqlalchemy import text
         
-        for producto in productos:
-            # Crear dict del producto
-            producto_dict = producto.to_dict()
-            
-            # Obtener imágenes (usando relación o query directa)
-            imagenes = Imagen.query.filter_by(producto_id=producto.id).all()
-            producto_dict['imagenes'] = [img.to_dict() for img in imagenes]
-            
-            # Imagen principal (primera imagen o null)
-            producto_dict['imagen_principal'] = imagenes[0].url if imagenes else None
-            
-            resultado.append(producto_dict)
+        # Query SQL directo para evitar problemas de relaciones
+        query = text("""
+            SELECT 
+                p.id,
+                p.nombre,
+                p.precio_venta,
+                p.precio_compra,
+                p.stock,
+                p.stock_minimo,
+                p.description as descripcion,
+                p.estado,
+                p.categoria_producto_id as categoria_id,
+                p.marca_id,
+                i.url as imagen_url,
+                i.id as imagen_id
+            FROM producto p
+            LEFT JOIN imagen i ON p.id = i.producto_id
+            ORDER BY p.id
+        """)
         
-        return jsonify(resultado)
+        conn = db.engine.connect()
+        result = conn.execute(query)
+        
+        # Agrupar por producto
+        productos_dict = {}
+        for row in result:
+            producto_id = row['id']
+            
+            if producto_id not in productos_dict:
+                productos_dict[producto_id] = {
+                    'id': producto_id,
+                    'nombre': row['nombre'],
+                    'precio_venta': float(row['precio_venta']),
+                    'precio_compra': float(row['precio_compra']),
+                    'stock': row['stock'],
+                    'stock_minimo': row['stock_minimo'],
+                    'descripcion': row['descripcion'],
+                    'estado': row['estado'],
+                    'categoria_id': row['categoria_id'],
+                    'marca_id': row['marca_id'],
+                    'imagenes': [],
+                    'imagen_principal': None
+                }
+            
+            # Agregar imagen si existe
+            if row['imagen_url']:
+                imagen_data = {
+                    'id': row['imagen_id'],
+                    'url': row['imagen_url'],
+                    'producto_id': producto_id
+                }
+                productos_dict[producto_id]['imagenes'].append(imagen_data)
+                
+                # Primera imagen como principal
+                if not productos_dict[producto_id]['imagen_principal']:
+                    productos_dict[producto_id]['imagen_principal'] = row['imagen_url']
+        
+        conn.close()
+        
+        return jsonify(list(productos_dict.values()))
+        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

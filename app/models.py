@@ -124,9 +124,6 @@ class Producto(db.Model):
     description = db.Column(db.String(120))  # ← CORREGIR: 'description' no 'descripcion'
     estado = db.Column(db.Boolean, default=True)
     
-    # Relación con imágenes (OPCIONAL, pero útil)
-    imagenes = db.relationship('Imagen', backref='producto_rel', lazy=True)
-    
     def to_dict(self):
         return {
             'id': self.id,
@@ -138,8 +135,7 @@ class Producto(db.Model):
             'descripcion': self.description,  # ← Usar 'description' pero mantener nombre en JSON
             'estado': self.estado,
             'categoria_id': self.categoria_producto_id,
-            'marca_id': self.marca_id,
-            'imagenes': [img.to_dict() for img in self.imagenes] if self.imagenes else []
+            'marca_id': self.marca_id
         }
 
 
