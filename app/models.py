@@ -506,3 +506,28 @@ class Abono(db.Model):
             'monto_abonado': self.monto_abonado,
             'fecha': self.fecha.isoformat()
         }
+    
+class Multimedia(db.Model):
+    """Para: categorías, comprobantes y otros"""
+    __tablename__ = 'multimedia'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    url = db.Column(db.String(500), nullable=False)  # Cloudinary URL
+    
+    # Categorías
+    categoria_id = db.Column(db.Integer, nullable=True)
+    
+    # Comprobantes
+    pedido_id = db.Column(db.Integer, nullable=True)
+    
+    # Tipo (OBLIGATORIO)
+    tipo = db.Column(db.String(20), nullable=False)  # 'categoria', 'comprobante', 'otro'
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'url': self.url,
+            'categoria_id': self.categoria_id,
+            'pedido_id': self.pedido_id,
+            'tipo': self.tipo
+        }

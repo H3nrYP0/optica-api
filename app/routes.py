@@ -3,6 +3,7 @@ from app.database import db
 from app.models import (
     # Tablas existentes
     Marca, CategoriaProducto, Producto, Imagen,
+    Multimedia,
     # Nuevas tablas principales
     Usuario, Rol, Cliente, Empleado, Proveedor, 
     Venta, Cita, Servicio, EstadoCita, EstadoVenta,
@@ -1740,6 +1741,146 @@ def delete_permiso(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al eliminar permiso"}), 500
+
+# ===== MULTIMEDIA - SUPER SIMPLE =====
+
+@main_bp.route('/multimedia', methods=['POST'])
+def crear_multimedia():
+    """Crear multimedia - Solo 2 campos requeridos: url y tipo"""
+    try:
+        data = request.get_json()
+        
+        if not data.get('url'):
+            return jsonify({"error": "URL requerida"}), 400
+        if not data.get('tipo'):
+            return jsonify({"error": "Tipo requerido: 'categoria', 'comprobante' u 'otro'"}), 400
+        
+        # Validar tipo
+        tipo = data['tipo']
+        if tipo not in ['categoria', 'comprobante', 'otro']:
+            return jsonify({"error": "Tipo debe ser: 'categoria', 'comprobante' u 'otro'"}), 400
+        
+        # Validaciones por tipo
+        if tipo == 'categoria' and not data.get('categoria_id'):
+            return jsonify({"error": "Para tipo 'categoria' se requiere categoria_id"}), 400
+        
+        if tipo == 'comprobante' and not data.get('pedido_id'):
+            return jsonify({"error": "Para tipo 'comprobante' se requiere pedido_id"}), 400
+        
+        # Verificar que no exista ya (para categorías y comprobantes)
+        if tipo == 'categoria':
+            existente = Multimedia.query.filter_by(
+                tipo='categoria', 
+                categoria_id=data['categoria_id']
+            ).first()
+            if existente:
+                # Actualizar URL existente
+                existente.url = data['url']
+                db.session.commit()
+                return jsonify({
+                    "success": True,
+                    "message": "Imagen de categoría actualizada",
+                    "multimedia": existente.to_dict()
+                })
+        
+        if tipo == 'comprobante':
+            existente = Multimedia.query.filter_by(
+                tipo='comprobante',
+                pedido_id=data['pedido_id']
+            ).first()
+            if existente:
+                return jsonify({
+                    "error": "Este pedido ya tiene un comprobante"
+                }), 400
+        
+        # Crear nuevo
+        multimedia = Multimedia(
+            url=data['url'],
+            tipo=tipo,
+            categoria_id=data.get('categoria_id'),
+            pedido_id=data.get('pedido_id')
+        )
+        
+        db.session.add(multimedia)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "multimedia": multimedia.to_dict()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+@main_bp.route('/multimedia/<string:tipo>', methods=['GET'])
+def obtener_multimedia_tipo(tipo):
+    """Obtener multimedia por tipo"""
+    try:
+        if tipo not in ['categoria', 'comprobante', 'otro']:
+            return jsonify({"error": "Tipo no válido"}), 400
+        
+        items = Multimedia.query.filter_by(tipo=tipo).all()
+        return jsonify([item.to_dict() for item in items])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@main_bp.route('/multimedia/categoria/<int:categoria_id>', methods=['GET'])
+def obtener_imagen_categoria(categoria_id):
+    """Obtener imagen de una categoría específica"""
+    try:
+        imagen = Multimedia.query.filter_by(
+            tipo='categoria', 
+            categoria_id=categoria_id
+        ).first()
+        
+        if not imagen:
+            return jsonify({"imagen": None})
+        
+        return jsonify(imagen.to_dict())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@main_bp.route('/multimedia/comprobante/pedido/<int:pedido_id>', methods=['GET'])
+def obtener_comprobante_pedido(pedido_id):
+    """Obtener comprobante de un pedido"""
+    try:
+        comprobante = Multimedia.query.filter_by(
+            tipo='comprobante', 
+            pedido_id=pedido_id
+        ).first()
+        
+        if not comprobante:
+            return jsonify({"comprobante": None})
+        
+        return jsonify(comprobante.to_dict())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ===== ENDPOINT ÚTIL PARA FLUTTER =====
+
+@main_bp.route('/categorias-con-imagen', methods=['GET'])
+def categorias_con_imagen():
+    """Todas las categorías CON su imagen (si tienen)"""
+    try:
+        categorias = CategoriaProducto.query.all()
+        resultado = []
+        
+        for categoria in categorias:
+            cat_dict = categoria.to_dict()
+            
+            # Buscar imagen
+            imagen = Multimedia.query.filter_by(
+                tipo='categoria',
+                categoria_id=categoria.id
+            ).first()
+            
+            cat_dict['imagen_url'] = imagen.url if imagen else None
+            resultado.append(cat_dict)
+        
+        return jsonify(resultado)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ===== TABLAS DE PERMISOS - PERMISO POR ROL - COMPLETAR CRUD =====
 @main_bp.route('/permiso-rol', methods=['GET'])
