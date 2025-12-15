@@ -1890,6 +1890,7 @@ def get_detalles_pedido(pedido_id):
 # ===== ACTUALIZAR LA RUTA DE ENDPOINTS PARA INCLUIR PUT Y DELETE =====
 @main_bp.route('/endpoints', methods=['GET'])
 def get_all_endpoints():
+    """Documentación ACTUALIZADA de endpoints REALES"""
     return jsonify({
         "modulos_principales": {
             "clientes": "GET/POST /clientes, PUT/DELETE /clientes/{id}",
@@ -1899,16 +1900,26 @@ def get_all_endpoints():
             "citas": "GET/POST /citas, PUT/DELETE /citas/{id}",
             "servicios": "GET/POST /servicios, PUT/DELETE /servicios/{id}",
             "usuarios": "GET/POST /usuarios, PUT/DELETE /usuarios/{id}",
+            
+            # CATÁLOGO
             "productos": "GET/POST /productos, PUT/DELETE /productos/{id}",
             "marcas": "GET/POST /marcas, PUT/DELETE /marcas/{id}",
             "categorias": "GET/POST /categorias, PUT/DELETE /categorias/{id}",
-            "compras": "GET/POST /compras, PUT/DELETE /compras/{id}",
-            "roles": "GET/POST /roles, PUT/DELETE /roles/{id}",
+            
+            # PEDIDOS
             "pedidos": "GET/POST /pedidos, PUT/DELETE /pedidos/{id}, GET /pedidos/usuario/{id}",
-            "imagenes": "GET/POST /imagenes, PUT/DELETE /imagenes/{id}, GET /imagenes/producto/{id}, GET /imagenes/categoria/{id}",
-            "productos-con-imagenes": "GET /productos-con-imagenes",
-            "categorias-con-imagenes": "GET /categorias-con-imagenes"
+            
+            # IMÁGENES (¡NUEVOS Y FUNCIONALES!)
+            "imagen": "POST /imagen - Crear imagen para producto",
+            "imagenes_producto": "GET /imagen/producto/{id} - Imágenes de un producto",
+            "productos_imagenes": "GET /productos-imagenes - Productos CON sus imágenes",
+            "categorias_imagenes": "GET /categorias-con-imagenes - Categorías básicas",
+            
+            # OTROS
+            "compras": "GET/POST /compras, PUT/DELETE /compras/{id}",
+            "roles": "GET/POST /roles, PUT/DELETE /roles/{id}"
         },
+        
         "modulos_secundarios": {
             "detalle_venta": "GET/POST /detalle-venta, PUT/DELETE /detalle-venta/{id}",
             "detalle_compra": "GET/POST /detalle-compra, PUT/DELETE /detalle-compra/{id}",
@@ -1921,18 +1932,29 @@ def get_all_endpoints():
             "permiso": "GET/POST /permiso, PUT/DELETE /permiso/{id}",
             "permiso_rol": "GET/POST /permiso-rol, PUT/DELETE /permiso-rol/{id}"
         },
+        
         "relaciones": {
             "detalles_venta": "GET /ventas/{id}/detalles",
             "detalles_compra": "GET /compras/{id}/detalles",
             "detalles_pedido": "GET /pedidos/{id}/detalles",
-            "imagenes_producto": "GET /imagenes/producto/{id}",
-            "imagenes_categoria": "GET /imagenes/categoria/{id}",
+            
+            # RELACIONES DE IMÁGENES (funcionales)
+            "imagenes_de_producto": "GET /imagen/producto/{id}",
+            
             "historial_cliente": "GET /clientes/{id}/historial",
             "horarios_empleado": "GET /empleados/{id}/horarios"
         },
+        
         "utilidades": {
             "dashboard": "GET /dashboard/estadisticas",
             "elemento_especifico": "GET /{tabla}/{id}",
-            "todos_endpoints": "GET /endpoints"
+            "todos_endpoints": "GET /endpoints",
+            "status_imagenes": "GET /status-imagenes (diagnóstico)"
+        },
+        
+        "notas_importantes": {
+            "imagenes": "Sistema Cloudinary activo. POST /imagen requiere: url (Cloudinary) y producto_id",
+            "productos_imagenes": "Devuelve productos CON array de imágenes e imagen_principal",
+            "cloudinary": "URLs: https://res.cloudinary.com/drhhthuqq/image/upload/..."
         }
     })
