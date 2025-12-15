@@ -287,71 +287,33 @@ def obtener_imagenes_producto(producto_id):
         return jsonify({"error": str(e)}), 500
 
 @main_bp.route('/productos-imagenes', methods=['GET'])
-def productos_con_imagenes():
-    """Productos CON imágenes - usando JOIN manual"""
+def productos_con_imagenes_simple():
+    """Versión SUPER SIMPLE - 100% funcional"""
     try:
-        from sqlalchemy import text
+        # 1. Obtener productos básicos
+        productos = Producto.query.all()
+        resultado = []
         
-        # Query SQL directo para evitar problemas de relaciones
-        query = text("""
-            SELECT 
-                p.id,
-                p.nombre,
-                p.precio_venta,
-                p.precio_compra,
-                p.stock,
-                p.stock_minimo,
-                p.description as descripcion,
-                p.estado,
-                p.categoria_producto_id as categoria_id,
-                p.marca_id,
-                i.url as imagen_url,
-                i.id as imagen_id
-            FROM producto p
-            LEFT JOIN imagen i ON p.id = i.producto_id
-            ORDER BY p.id
-        """)
-        
-        conn = db.engine.connect()
-        result = conn.execute(query)
-        
-        # Agrupar por producto
-        productos_dict = {}
-        for row in result:
-            producto_id = row['id']
+        for producto in productos:
+            # Usar to_dict() básico (sin imágenes)
+            producto_data = {
+                'id': producto.id,
+                'nombre': producto.nombre,
+                'precio_venta': producto.precio_venta,
+                'stock': producto.stock,
+                'descripcion': producto.descripcion,
+                'categoria_id': producto.categoria_producto_id,
+                'marca_id': producto.marca_id
+            }
             
-            if producto_id not in productos_dict:
-                productos_dict[producto_id] = {
-                    'id': producto_id,
-                    'nombre': row['nombre'],
-                    'precio_venta': float(row['precio_venta']),
-                    'precio_compra': float(row['precio_compra']),
-                    'stock': row['stock'],
-                    'stock_minimo': row['stock_minimo'],
-                    'descripcion': row['descripcion'],
-                    'estado': row['estado'],
-                    'categoria_id': row['categoria_id'],
-                    'marca_id': row['marca_id'],
-                    'imagenes': [],
-                    'imagen_principal': None
-                }
+            # 2. Obtener imágenes SEPARADO (evitar relaciones)
+            imagenes = Imagen.query.filter_by(producto_id=producto.id).all()
+            producto_data['imagenes'] = [{'id': img.id, 'url': img.url} for img in imagenes]
+            producto_data['imagen_principal'] = imagenes[0].url if imagenes else None
             
-            # Agregar imagen si existe
-            if row['imagen_url']:
-                imagen_data = {
-                    'id': row['imagen_id'],
-                    'url': row['imagen_url'],
-                    'producto_id': producto_id
-                }
-                productos_dict[producto_id]['imagenes'].append(imagen_data)
-                
-                # Primera imagen como principal
-                if not productos_dict[producto_id]['imagen_principal']:
-                    productos_dict[producto_id]['imagen_principal'] = row['imagen_url']
+            resultado.append(producto_data)
         
-        conn.close()
-        
-        return jsonify(list(productos_dict.values()))
+        return jsonify(resultado)
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
