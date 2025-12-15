@@ -240,23 +240,26 @@ def convertir_pedido_a_venta(id):
 
 @main_bp.route('/imagen', methods=['POST'])
 def crear_imagen():
-    """Crear imagen - SIN usar relaciones SQLAlchemy"""
+    """Crear imagen - SOLO verificar que producto existe"""
     try:
         data = request.get_json()
         
         if not data.get('url') or not data.get('producto_id'):
             return jsonify({"error": "url y producto_id requeridos"}), 400
         
-        # Verificar producto con query directa
-        from app.models import Producto
+        # Verificar producto con SQL directo (evitar modelo si hay problemas)
         from sqlalchemy import text
         
-        producto = Producto.query.get(data['producto_id'])
-        if not producto:
+        conn = db.engine.connect()
+        result = conn.execute(text("SELECT id FROM producto WHERE id = :id"), 
+                            {'id': data['producto_id']})
+        producto_existe = result.fetchone() is not None
+        conn.close()
+        
+        if not producto_existe:
             return jsonify({"error": "Producto no encontrado"}), 404
         
-        # Crear imagen (modelo simple funciona)
-        from app.models import Imagen
+        # Crear imagen (modelo simple SÍ funciona)
         imagen = Imagen(
             url=data['url'],
             producto_id=data['producto_id']

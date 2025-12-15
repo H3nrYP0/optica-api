@@ -121,7 +121,7 @@ class Producto(db.Model):
     precio_compra = db.Column(db.Float, nullable=False)
     stock = db.Column(db.Integer, default=0)
     stock_minimo = db.Column(db.Integer, default=0)
-    description = db.Column(db.String(120))  # ← CORREGIR: 'description' no 'descripcion'
+    descripcion = db.Column(db.String(120))  # ← CORREGIR: 'description' no 'descripcion'
     estado = db.Column(db.Boolean, default=True)
     
     def to_dict(self):
@@ -132,7 +132,7 @@ class Producto(db.Model):
             'precio_compra': self.precio_compra,
             'stock': self.stock,
             'stock_minimo': self.stock_minimo,
-            'descripcion': self.description,  # ← Usar 'description' pero mantener nombre en JSON
+            'descripcion': self.descripcion,  # ← Usar 'description' pero mantener nombre en JSON
             'estado': self.estado,
             'categoria_id': self.categoria_producto_id,
             'marca_id': self.marca_id
