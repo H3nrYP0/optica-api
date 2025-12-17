@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: optica-api-productos
+    name: optica-api
     env: python
     plan: free
     buildCommand: |
@@ -10,13 +10,13 @@ services:
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: optica-db
+          name: optica-database  # ← CAMBIA AQUÍ
           property: connectionString
       - key: SECRET_KEY
         generateValue: true
 
 databases:
-  - name: optica-db
-    databaseName: optica
+  - name: optica-database  # ← CAMBIA AQUÍ
+    databaseName: optica_db_yovp  # Nombre real de tu BD
     plan: free
     postgresMajorVersion: 14
