@@ -922,7 +922,7 @@ def create_usuario():
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
         
-        estado = data.get('estado', True)
+        estado = data.get('estado')
         
         # Verificar si el correo ya existe
         usuario_existente = Usuario.query.filter_by(correo=data['correo']).first()
@@ -939,21 +939,21 @@ def create_usuario():
             # Dividir nombre para nombre y apellido
             nombre_parts = data['nombre'].split(' ')
             primer_nombre = nombre_parts[0] if nombre_parts else data['nombre']
-            apellido = nombre_parts[1] if len(nombre_parts) > 1 else 'Usuario'
+            apellido = nombre_parts[1] if len(nombre_parts) > 1 else ''
             
             cliente = Cliente(
                 nombre=primer_nombre,
                 apellido=apellido,
                 correo=data['correo'],
-                numero_documento=f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                fecha_nacimiento=datetime.strptime('1990-01-01', '%Y-%m-%d').date(),
-                genero='Otro',
-                telefono='',
-                municipio='',
-                direccion='',
-                ocupacion='',
-                telefono_emergencia='',
-                estado=True
+                numero_documento=data.get('numero_documento'),
+                fecha_nacimiento=data.get('fecha_nacimiento'),
+                genero=data.get('genero'),
+                telefono=data.get('telefono'),
+                municipio=data.get('municipio'),
+                direccion=data.get('direccion'),
+                ocupacion=data.get('ocupacion'),
+                telefono_emergencia=data.get('telefono_emergencia'),
+                estado=data.get('estado_cliente')
             )
             db.session.add(cliente)
             db.session.flush()
