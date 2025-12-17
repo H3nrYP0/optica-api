@@ -1881,6 +1881,91 @@ def categorias_con_imagen():
         return jsonify(resultado)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+# ===== MULTIMEDIA - ENDPOINTS PUT Y DELETE =====
+@main_bp.route('/multimedia/<int:id>', methods=['PUT'])
+def actualizar_multimedia(id):
+    """Actualizar un elemento multimedia existente"""
+    try:
+        multimedia = Multimedia.query.get(id)
+        if not multimedia:
+            return jsonify({"error": "Elemento multimedia no encontrado"}), 404
+        
+        data = request.get_json()
+        
+        # Validaciones básicas
+        if not data:
+            return jsonify({"error": "Datos requeridos"}), 400
+        
+        # Actualizar campos
+        if 'url' in data:
+            multimedia.url = data['url']
+        
+        if 'tipo' in data:
+            # Validar tipo
+            tipo = data['tipo']
+            if tipo not in ['categoria', 'comprobante', 'otro']:
+                return jsonify({"error": "Tipo debe ser: 'categoria', 'comprobante' u 'otro'"}), 400
+            multimedia.tipo = tipo
+        
+        # Actualizar relaciones según tipo
+        if multimedia.tipo == 'categoria':
+            if 'categoria_id' in data:
+                multimedia.categoria_id = data['categoria_id']
+            # Limpiar otros campos
+            multimedia.pedido_id = None
+        
+        elif multimedia.tipo == 'comprobante':
+            if 'pedido_id' in data:
+                multimedia.pedido_id = data['pedido_id']
+            # Limpiar otros campos
+            multimedia.categoria_id = None
+        
+        else:  # tipo 'otro'
+            multimedia.categoria_id = None
+            multimedia.pedido_id = None
+        
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Multimedia actualizado correctamente",
+            "multimedia": multimedia.to_dict()
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al actualizar multimedia: {str(e)}"}), 500
+
+@main_bp.route('/multimedia/<int:id>', methods=['DELETE'])
+def eliminar_multimedia(id):
+    """Eliminar un elemento multimedia"""
+    try:
+        multimedia = Multimedia.query.get(id)
+        if not multimedia:
+            return jsonify({"error": "Elemento multimedia no encontrado"}), 404
+        
+        db.session.delete(multimedia)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": f"Multimedia con ID {id} eliminado correctamente"
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al eliminar multimedia: {str(e)}"}), 500
+
+@main_bp.route('/multimedia', methods=['GET'])
+def obtener_todo_multimedia():
+    """Obtener TODO el contenido multimedia (adicional a los GET existentes)"""
+    try:
+        items = Multimedia.query.all()
+        return jsonify([item.to_dict() for item in items])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 # ===== TABLAS DE PERMISOS - PERMISO POR ROL - COMPLETAR CRUD =====
 @main_bp.route('/permiso-rol', methods=['GET'])
