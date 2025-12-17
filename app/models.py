@@ -25,6 +25,10 @@ class Usuario(db.Model):
     nombre = db.Column(db.String(25), nullable=False)
     correo = db.Column(db.String(27), nullable=False)
     contrasenia = db.Column(db.String(255), nullable=False)
+
+    cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=True)
+    cliente = db.relationship('Cliente', backref='usuario', lazy=True)
+
     estado = db.Column(db.Boolean, default=True)
 
     def to_dict(self):
@@ -34,6 +38,9 @@ class Usuario(db.Model):
             'nombre': self.nombre,
             'correo': self.correo,
             'contrasenia': self.contrasenia,
+
+            'cliente_id': self.cliente_id,
+            
             'estado': self.estado
         }
 
@@ -121,7 +128,7 @@ class Producto(db.Model):
     precio_compra = db.Column(db.Float, nullable=False)
     stock = db.Column(db.Integer, default=0)
     stock_minimo = db.Column(db.Integer, default=0)
-    descripcion = db.Column(db.String(120))  # ← CORREGIR: 'description' no 'descripcion'
+    descripcion = db.Column(db.String(120)) 
     estado = db.Column(db.Boolean, default=True)
     
     def to_dict(self):
@@ -132,7 +139,7 @@ class Producto(db.Model):
             'precio_compra': self.precio_compra,
             'stock': self.stock,
             'stock_minimo': self.stock_minimo,
-            'descripcion': self.descripcion,  # ← Usar 'description' pero mantener nombre en JSON
+            'descripcion': self.descripcion,  
             'estado': self.estado,
             'categoria_id': self.categoria_producto_id,
             'marca_id': self.marca_id
@@ -344,6 +351,9 @@ class Cliente(db.Model):
     ocupacion = db.Column(db.String(20))
     telefono_emergencia = db.Column(db.String(20))  # Cambié a String
     estado = db.Column(db.Boolean, default=True)
+
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=True, unique=True)
+
     citas = db.relationship('Cita', backref='cliente', lazy=True)
     ventas = db.relationship('Venta', backref='cliente', lazy=True)
     historiales = db.relationship('HistorialFormula', backref='cliente', lazy=True)
@@ -363,6 +373,9 @@ class Cliente(db.Model):
             'direccion': self.direccion,
             'ocupacion': self.ocupacion,
             'telefono_emergencia': self.telefono_emergencia,
+
+            'usuario_id': self.usuario_id,
+
             'estado': self.estado
         }
 

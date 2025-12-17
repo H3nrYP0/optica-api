@@ -579,6 +579,8 @@ def update_cliente(id):
             return jsonify({"error": "Cliente no encontrado"}), 404
 
         data = request.get_json()
+        
+        # Campos actualizables
         if 'nombre' in data:
             cliente.nombre = data['nombre']
         if 'apellido' in data:
@@ -605,10 +607,18 @@ def update_cliente(id):
             cliente.telefono_emergencia = data['telefono_emergencia']
 
         db.session.commit()
-        return jsonify({"message": "Cliente actualizado", "cliente": cliente.to_dict()})
+        return jsonify({
+            "success": True,
+            "message": "Cliente actualizado exitosamente",
+            "cliente": cliente.to_dict()
+        })
+        
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al actualizar cliente"}), 500
+        return jsonify({
+            "success": False,
+            "error": f"Error al actualizar cliente: {str(e)}"
+        }), 500
 
 @main_bp.route('/clientes/<int:id>', methods=['DELETE'])
 def delete_cliente(id):
@@ -802,9 +812,18 @@ def create_usuario():
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
-            
+        
         estado = data.get('estado', True)
-
+        
+        # 1. Verificar si el correo ya existe
+        usuario_existente = Usuario.query.filter_by(correo=data['correo']).first()
+        if usuario_existente:
+            return jsonify({
+                "success": False,
+                "error": "El correo ya está registrado"
+            }), 400
+        
+        # 2. Crear usuario primero
         usuario = Usuario(
             nombre=data['nombre'],
             correo=data['correo'],
@@ -813,11 +832,77 @@ def create_usuario():
             estado=estado
         )
         db.session.add(usuario)
+        db.session.flush()  # Para obtener el ID sin hacer commit
+        
+        cliente_id = None
+        
+        # 3. Si el rol es cliente (rol_id == 2), crear cliente automáticamente
+        if data['rol_id'] == 2:
+            # Dividir nombre para nombre y apellido del cliente
+            nombre_parts = data['nombre'].split(' ')
+            primer_nombre = nombre_parts[0] if nombre_parts else data['nombre']
+            apellido = nombre_parts[1] if len(nombre_parts) > 1 else 'Usuario'
+            
+            cliente = Cliente(
+                nombre=primer_nombre,
+                apellido=apellido,
+                correo=data['correo'],
+                numero_documento=f"TEMP_{usuario.id}",
+                fecha_nacimiento=datetime.strptime('1990-01-01', '%Y-%m-%d').date(),
+                genero='Otro',
+                telefono='',
+                municipio='',
+                direccion='',
+                ocupacion='',
+                telefono_emergencia='',
+                estado=True,
+                usuario_id=usuario.id  # ⬅️ VINCULAR CON EL USUARIO
+            )
+            db.session.add(cliente)
+            db.session.flush()
+            
+            # 4. Actualizar usuario con el cliente_id
+            usuario.cliente_id = cliente.id
+            cliente_id = cliente.id
+        
         db.session.commit()
-        return jsonify({"message": "Usuario creado", "usuario": usuario.to_dict()}), 201
+        
+        return jsonify({
+            "success": True,
+            "message": "Usuario registrado exitosamente",
+            "usuario": usuario.to_dict(),
+            "cliente_id": cliente_id
+        }), 201
+        
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al crear usuario"}), 500
+        return jsonify({
+            "success": False,
+            "error": f"Error al crear usuario: {str(e)}"
+        }), 500
+    
+@main_bp.route('/clientes/usuario/<int:usuario_id>', methods=['GET'])
+def get_cliente_by_usuario(usuario_id):
+    """Obtener cliente por ID de usuario"""
+    try:
+        cliente = Cliente.query.filter_by(usuario_id=usuario_id).first()
+        
+        if not cliente:
+            return jsonify({
+                "success": False,
+                "error": "No se encontró cliente para este usuario"
+            }), 404
+        
+        return jsonify({
+            "success": True,
+            "cliente": cliente.to_dict()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Error al obtener cliente: {str(e)}"
+        }), 500
 
 @main_bp.route('/usuarios/<int:id>', methods=['PUT'])
 def update_usuario(id):
