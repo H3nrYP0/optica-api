@@ -945,8 +945,8 @@ def create_usuario():
                 nombre=primer_nombre,
                 apellido=apellido,
                 correo=data['correo'],
-                numero_documento=data.get('numero_documento'),
-                fecha_nacimiento=data.get('fecha_nacimiento'),
+                numero_documento=data.get('numero_documento', 'PENDIENTE'),  # ← Valor por defecto
+                fecha_nacimiento=data.get('fecha_nacimiento', datetime.now().date()),  # ← Valor por defecto
                 genero=data.get('genero'),
                 telefono=data.get('telefono'),
                 municipio=data.get('municipio'),
