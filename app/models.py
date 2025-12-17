@@ -339,10 +339,10 @@ class Cliente(db.Model):
     __tablename__ = 'cliente'
     id = db.Column(db.Integer, primary_key=True)
     tipo_documento = db.Column(db.String(4))
-    numero_documento = db.Column(db.String(20), nullable=False)  # Cambié a String
+    numero_documento = db.Column(db.String(20), nullable=True)  # Cambié a String
     nombre = db.Column(db.String(25), nullable=False)
     apellido = db.Column(db.String(20), nullable=False)
-    fecha_nacimiento = db.Column(db.Date, nullable=False)
+    fecha_nacimiento = db.Column(db.Date, nullable=True)
     genero = db.Column(db.String(10))  # 'Masculino', 'Femenino', 'Otro'
     telefono = db.Column(db.String(20))
     correo = db.Column(db.String(30))
