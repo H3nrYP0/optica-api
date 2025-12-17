@@ -550,6 +550,14 @@ def create_cliente():
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
 
+        # Verificar si ya existe cliente con este documento
+        cliente_existente = Cliente.query.filter_by(numero_documento=data['numero_documento']).first()
+        if cliente_existente:
+            return jsonify({
+                "success": False,
+                "error": "Ya existe un cliente con este número de documento"
+            }), 400
+
         cliente = Cliente(
             nombre=data['nombre'],
             apellido=data['apellido'],
@@ -562,14 +570,24 @@ def create_cliente():
             municipio=data.get('municipio'),
             direccion=data.get('direccion'),
             ocupacion=data.get('ocupacion'),
-            telefono_emergencia=data.get('telefono_emergencia')
+            telefono_emergencia=data.get('telefono_emergencia'),
+            estado=data.get('estado', True)
         )
         db.session.add(cliente)
         db.session.commit()
-        return jsonify({"message": "Cliente creado", "cliente": cliente.to_dict()}), 201
+        
+        return jsonify({
+            "success": True,
+            "message": "Cliente creado exitosamente",
+            "cliente": cliente.to_dict()
+        }), 201
+        
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al crear cliente"}), 500
+        return jsonify({
+            "success": False,
+            "error": f"Error al crear cliente: {str(e)}"
+        }), 500
 
 @main_bp.route('/clientes/<int:id>', methods=['PUT'])
 def update_cliente(id):
@@ -796,6 +814,7 @@ def delete_proveedor(id):
         return jsonify({"error": "Error al eliminar proveedor"}), 500
 
 # ===== MÓDULO USUARIOS - COMPLETAR CRUD =====
+
 @main_bp.route('/usuarios', methods=['GET'])
 def get_usuarios():
     try:
@@ -803,6 +822,73 @@ def get_usuarios():
         return jsonify([usuario.to_dict() for usuario in usuarios])
     except Exception as e:
         return jsonify({"error": "Error al obtener usuarios"}), 500
+    
+@main_bp.route('/usuarios/<int:id>/completo', methods=['GET'])
+def get_usuario_completo(id):
+    """Obtener usuario con datos completos del cliente incluido"""
+    try:
+        usuario = Usuario.query.get(id)
+        
+        if not usuario:
+            return jsonify({
+                "success": False,
+                "error": "Usuario no encontrado"
+            }), 404
+        
+        # Preparar respuesta
+        respuesta = {
+            "usuario": usuario.to_dict(),
+            "cliente": None
+        }
+        
+        # Si tiene cliente, obtener datos
+        if usuario.cliente_id:
+            cliente = Cliente.query.get(usuario.cliente_id)
+            if cliente:
+                respuesta["cliente"] = cliente.to_dict()
+        
+        return jsonify({
+            "success": True,
+            "data": respuesta
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Error al obtener usuario completo: {str(e)}"
+        }), 500
+    
+@main_bp.route('/usuarios/email/<string:email>', methods=['GET'])
+def get_usuario_por_email(email):
+    """Obtener usuario por email (para recuperación de contraseña)"""
+    try:
+        usuario = Usuario.query.filter_by(correo=email).first()
+        
+        if not usuario:
+            return jsonify({
+                "success": False,
+                "error": "Usuario no encontrado"
+            }), 404
+        
+        # Preparar respuesta básica
+        respuesta = {
+            "id": usuario.id,
+            "nombre": usuario.nombre,
+            "correo": usuario.correo,
+            "rol_id": usuario.rol_id,
+            "cliente_id": usuario.cliente_id
+        }
+        
+        return jsonify({
+            "success": True,
+            "usuario": respuesta
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Error al buscar usuario: {str(e)}"
+        }), 500
 
 @main_bp.route('/usuarios', methods=['POST'])
 def create_usuario():
@@ -815,7 +901,7 @@ def create_usuario():
         
         estado = data.get('estado', True)
         
-        # 1. Verificar si el correo ya existe
+        # Verificar si el correo ya existe
         usuario_existente = Usuario.query.filter_by(correo=data['correo']).first()
         if usuario_existente:
             return jsonify({
@@ -823,22 +909,11 @@ def create_usuario():
                 "error": "El correo ya está registrado"
             }), 400
         
-        # 2. Crear usuario primero
-        usuario = Usuario(
-            nombre=data['nombre'],
-            correo=data['correo'],
-            contrasenia=data['contrasenia'],
-            rol_id=data['rol_id'],
-            estado=estado
-        )
-        db.session.add(usuario)
-        db.session.flush()  # Para obtener el ID sin hacer commit
-        
         cliente_id = None
         
-        # 3. Si el rol es cliente (rol_id == 2), crear cliente automáticamente
+        # Si el rol es cliente (rol_id == 2), crear cliente PRIMERO
         if data['rol_id'] == 2:
-            # Dividir nombre para nombre y apellido del cliente
+            # Dividir nombre para nombre y apellido
             nombre_parts = data['nombre'].split(' ')
             primer_nombre = nombre_parts[0] if nombre_parts else data['nombre']
             apellido = nombre_parts[1] if len(nombre_parts) > 1 else 'Usuario'
@@ -847,7 +922,7 @@ def create_usuario():
                 nombre=primer_nombre,
                 apellido=apellido,
                 correo=data['correo'],
-                numero_documento=f"TEMP_{usuario.id}",
+                numero_documento=f"TEMP_{datetime.now().strftime('%Y%m%d%H%M%S')}",
                 fecha_nacimiento=datetime.strptime('1990-01-01', '%Y-%m-%d').date(),
                 genero='Otro',
                 telefono='',
@@ -855,15 +930,22 @@ def create_usuario():
                 direccion='',
                 ocupacion='',
                 telefono_emergencia='',
-                estado=True,
-                usuario_id=usuario.id  # ⬅️ VINCULAR CON EL USUARIO
+                estado=True
             )
             db.session.add(cliente)
             db.session.flush()
-            
-            # 4. Actualizar usuario con el cliente_id
-            usuario.cliente_id = cliente.id
             cliente_id = cliente.id
+        
+        # Crear usuario CON cliente_id (si aplica)
+        usuario = Usuario(
+            nombre=data['nombre'],
+            correo=data['correo'],
+            contrasenia=data['contrasenia'],
+            rol_id=data['rol_id'],
+            estado=estado,
+            cliente_id=cliente_id  # ⬅️ ASIGNAR cliente_id SI EXISTE
+        )
+        db.session.add(usuario)
         
         db.session.commit()
         
@@ -885,12 +967,29 @@ def create_usuario():
 def get_cliente_by_usuario(usuario_id):
     """Obtener cliente por ID de usuario"""
     try:
-        cliente = Cliente.query.filter_by(usuario_id=usuario_id).first()
+        # Buscar usuario primero
+        usuario = Usuario.query.get(usuario_id)
+        
+        if not usuario:
+            return jsonify({
+                "success": False,
+                "error": "Usuario no encontrado"
+            }), 404
+        
+        # Si no tiene cliente_id, no hay cliente
+        if not usuario.cliente_id:
+            return jsonify({
+                "success": False,
+                "error": "Este usuario no tiene cliente asociado"
+            }), 404
+        
+        # Buscar cliente por cliente_id
+        cliente = Cliente.query.get(usuario.cliente_id)
         
         if not cliente:
             return jsonify({
                 "success": False,
-                "error": "No se encontró cliente para este usuario"
+                "error": "Cliente no encontrado"
             }), 404
         
         return jsonify({

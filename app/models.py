@@ -40,7 +40,7 @@ class Usuario(db.Model):
             'contrasenia': self.contrasenia,
 
             'cliente_id': self.cliente_id,
-            
+
             'estado': self.estado
         }
 
@@ -351,9 +351,6 @@ class Cliente(db.Model):
     ocupacion = db.Column(db.String(20))
     telefono_emergencia = db.Column(db.String(20))  # Cambié a String
     estado = db.Column(db.Boolean, default=True)
-
-    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=True, unique=True)
-
     citas = db.relationship('Cita', backref='cliente', lazy=True)
     ventas = db.relationship('Venta', backref='cliente', lazy=True)
     historiales = db.relationship('HistorialFormula', backref='cliente', lazy=True)
@@ -373,9 +370,6 @@ class Cliente(db.Model):
             'direccion': self.direccion,
             'ocupacion': self.ocupacion,
             'telefono_emergencia': self.telefono_emergencia,
-
-            'usuario_id': self.usuario_id,
-
             'estado': self.estado
         }
 
