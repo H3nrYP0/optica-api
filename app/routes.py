@@ -818,10 +818,33 @@ def delete_proveedor(id):
 @main_bp.route('/usuarios', methods=['GET'])
 def get_usuarios():
     try:
+        print("🔍 Intentando obtener usuarios...")
         usuarios = Usuario.query.all()
-        return jsonify([usuario.to_dict() for usuario in usuarios])
+        print(f"✅ Encontrados {len(usuarios)} usuarios")
+        
+        # Convertir a dict uno por uno para debug
+        usuarios_list = []
+        for usuario in usuarios:
+            try:
+                usuario_dict = usuario.to_dict()
+                usuarios_list.append(usuario_dict)
+            except Exception as e:
+                print(f"❌ Error convirtiendo usuario {usuario.id}: {e}")
+                # Agregar versión básica
+                usuarios_list.append({
+                    'id': usuario.id,
+                    'nombre': usuario.nombre,
+                    'correo': usuario.correo,
+                    'rol_id': usuario.rol_id,
+                    'estado': usuario.estado
+                })
+        
+        return jsonify(usuarios_list)
     except Exception as e:
-        return jsonify({"error": "Error al obtener usuarios"}), 500
+        print(f"❌ ERROR CRÍTICO en get_usuarios: {str(e)}")
+        import traceback
+        traceback.print_exc()  # Esto mostrará el stack trace completo
+        return jsonify({"error": f"Error al obtener usuarios: {str(e)}"}), 500
     
 @main_bp.route('/usuarios/<int:id>/completo', methods=['GET'])
 def get_usuario_completo(id):
