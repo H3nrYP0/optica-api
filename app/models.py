@@ -9,12 +9,18 @@ class Rol(db.Model):
     descripcion = db.Column(db.String(60))
     estado = db.Column(db.Boolean, default=True)
     usuarios = db.relationship('Usuario', backref='rol', lazy=True)
+    permisos = db.relationship(
+        'Permiso',
+        secondary='permiso_por_rol',
+        lazy=True
+    )
 
     def to_dict(self):
         return {
             'id': self.id,
             'nombre': self.nombre,
             'descripcion': self.descripcion,
+            'permisos': [p.to_dict() for p in self.permisos],
             'estado': self.estado
         }
 
@@ -25,10 +31,8 @@ class Usuario(db.Model):
     nombre = db.Column(db.String(25), nullable=False)
     correo = db.Column(db.String(27), nullable=False)
     contrasenia = db.Column(db.String(255), nullable=False)
-
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=True)
     cliente = db.relationship('Cliente', backref='usuario', lazy=True)
-
     estado = db.Column(db.Boolean, default=True)
 
     def to_dict(self):
@@ -38,9 +42,7 @@ class Usuario(db.Model):
             'nombre': self.nombre,
             'correo': self.correo,
             'contrasenia': self.contrasenia,
-
             'cliente_id': self.cliente_id,
-
             'estado': self.estado
         }
 
