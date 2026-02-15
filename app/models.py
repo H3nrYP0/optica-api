@@ -470,6 +470,7 @@ class Horario(db.Model):
         db.Integer,
         db.ForeignKey('empleado.id'),
         nullable=False
+    )
     dia = db.Column(db.Integer, nullable=False)  # 0-6
     hora_inicio = db.Column(db.Time, nullable=False)
     hora_final = db.Column(db.Time, nullable=False)
