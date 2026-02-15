@@ -1690,7 +1690,7 @@ def delete_estado_venta(id):
 @main_bp.route('/horario', methods=['GET'])
 def get_horarios():
     try:
-        horarios = Horario.query.all()
+        horarios = Horario.query.filter_by(activo=True).all()
         return jsonify([horario.to_dict() for horario in horarios])
     except Exception as e:
         return jsonify({"error": "Error al obtener horarios"}), 500
@@ -1699,23 +1699,43 @@ def get_horarios():
 def create_horario():
     try:
         data = request.get_json()
+
         required_fields = ['empleado_id', 'hora_inicio', 'hora_final', 'dia']
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
 
+        # 🔹 Validar día (0-6)
+        if not isinstance(data['dia'], int) or data['dia'] not in range(0, 7):
+            return jsonify({"error": "El día debe ser un número entre 0 (lunes) y 6 (domingo)"}), 400
+
+        hora_inicio = datetime.strptime(data['hora_inicio'], '%H:%M').time()
+        hora_final = datetime.strptime(data['hora_final'], '%H:%M').time()
+
+        # 🔹 Validar rango horario
+        if hora_final <= hora_inicio:
+            return jsonify({"error": "La hora final debe ser mayor que la hora inicio"}), 400
+
         horario = Horario(
             empleado_id=data['empleado_id'],
-            hora_inicio=datetime.strptime(data['hora_inicio'], '%H:%M').time(),
-            hora_final=datetime.strptime(data['hora_final'], '%H:%M').time(),
-            dia=data['dia']
+            dia=data['dia'],
+            hora_inicio=hora_inicio,
+            hora_final=hora_final,
+            activo=True
         )
+
         db.session.add(horario)
         db.session.commit()
-        return jsonify({"message": "Horario creado", "horario": horario.to_dict()}), 201
+
+        return jsonify({
+            "message": "Horario creado",
+            "horario": horario.to_dict()
+        }), 201
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al crear horario"}), 500
+
 
 @main_bp.route('/horario/<int:id>', methods=['PUT'])
 def update_horario(id):
@@ -1725,20 +1745,36 @@ def update_horario(id):
             return jsonify({"error": "Horario no encontrado"}), 404
 
         data = request.get_json()
+
         if 'empleado_id' in data:
             horario.empleado_id = data['empleado_id']
-        if 'hora_inicio' in data:
-            horario.hora_inicio = datetime.strptime(data['hora_inicio'], '%H:%M').time()
-        if 'hora_final' in data:
-            horario.hora_final = datetime.strptime(data['hora_final'], '%H:%M').time()
+
         if 'dia' in data:
+            if not isinstance(data['dia'], int) or data['dia'] not in range(0, 7):
+                return jsonify({"error": "El día debe ser un número entre 0 (lunes) y 6 (domingo)"}), 400
             horario.dia = data['dia']
 
+        if 'hora_inicio' in data:
+            horario.hora_inicio = datetime.strptime(data['hora_inicio'], '%H:%M').time()
+
+        if 'hora_final' in data:
+            horario.hora_final = datetime.strptime(data['hora_final'], '%H:%M').time()
+
+        # 🔹 Validar que el rango siga siendo correcto
+        if horario.hora_final <= horario.hora_inicio:
+            return jsonify({"error": "La hora final debe ser mayor que la hora inicio"}), 400
+
         db.session.commit()
-        return jsonify({"message": "Horario actualizado", "horario": horario.to_dict()})
+
+        return jsonify({
+            "message": "Horario actualizado",
+            "horario": horario.to_dict()
+        })
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al actualizar horario"}), 500
+
 
 @main_bp.route('/horario/<int:id>', methods=['DELETE'])
 def delete_horario(id):
@@ -1753,6 +1789,19 @@ def delete_horario(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al eliminar horario"}), 500
+    
+@main_bp.route('/horario/empleado/<int:empleado_id>', methods=['GET'])
+def get_horarios_por_empleado(empleado_id):
+    try:
+        horarios = Horario.query.filter_by(
+            empleado_id=empleado_id,
+            activo=True
+        ).all()
+
+        return jsonify([h.to_dict() for h in horarios])
+    except Exception:
+        return jsonify({"error": "Error al obtener horarios"}), 500
+
 
 # ===== TABLAS DEL SISTEMA - HISTORIAL FORMULA - COMPLETAR CRUD =====
 @main_bp.route('/historial-formula', methods=['GET'])

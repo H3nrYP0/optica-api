@@ -466,18 +466,23 @@ class DetalleVenta(db.Model):
 class Horario(db.Model):
     __tablename__ = 'horario'
     id = db.Column(db.Integer, primary_key=True)
-    empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=False)
+    empleado_id = db.Column(
+        db.Integer,
+        db.ForeignKey('empleado.id'),
+        nullable=False
+    dia = db.Column(db.Integer, nullable=False)  # 0-6
     hora_inicio = db.Column(db.Time, nullable=False)
     hora_final = db.Column(db.Time, nullable=False)
-    dia = db.Column(db.String(10), nullable=False)
+    activo = db.Column(db.Boolean, default=True)  # recomendado
 
     def to_dict(self):
         return {
             'id': self.id,
             'empleado_id': self.empleado_id,
+            'dia': self.dia,
             'hora_inicio': self.hora_inicio.isoformat(),
             'hora_final': self.hora_final.isoformat(),
-            'dia': self.dia
+            'activo': self.activo
         }
 
 class HistorialFormula(db.Model):
