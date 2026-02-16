@@ -337,7 +337,7 @@ def get_categorias_con_imagenes():
 
 
 
-# ===== MÓDULO MARCAS - COMPLETAR CRUD =====
+# ===== MÓDULO MARCAS - COMPLETAR CRUD =====# ===== MÓDULO MARCAS CON ESTADO =====
 @main_bp.route('/marcas', methods=['GET'])
 def get_marcas():
     try:
@@ -353,7 +353,11 @@ def create_marca():
         if not data.get('nombre'):
             return jsonify({"error": "El nombre es requerido"}), 400
         
-        marca = Marca(nombre=data['nombre'])
+        # Crear marca con estado (por defecto true si no se envía)
+        marca = Marca(
+            nombre=data['nombre'],
+            estado=data.get('estado', True)  # Recibir estado o usar True por defecto
+        )
         db.session.add(marca)
         db.session.commit()
         return jsonify({"message": "Marca creada", "marca": marca.to_dict()}), 201
@@ -371,6 +375,8 @@ def update_marca(id):
         data = request.get_json()
         if 'nombre' in data:
             marca.nombre = data['nombre']
+        if 'estado' in data:  # Permitir actualizar estado
+            marca.estado = data['estado']
 
         db.session.commit()
         return jsonify({"message": "Marca actualizada", "marca": marca.to_dict()})

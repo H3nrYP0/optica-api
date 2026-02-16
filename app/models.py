@@ -75,12 +75,14 @@ class Marca(db.Model):
     __tablename__ = 'marca'
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(23), nullable=False)
+    estado = db.Column(db.Boolean, default=True)  
     productos = db.relationship('Producto', backref='marca', lazy=True)
 
     def to_dict(self):
         return {
             'id': self.id,
-            'nombre': self.nombre
+            'nombre': self.nombre,
+            'estado': self.estado, 
         }
 
 
