@@ -1082,20 +1082,48 @@ def get_roles():
 def create_rol():
     try:
         data = request.get_json()
-        if not data.get('nombre'):
+
+        if not data or not data.get('nombre'):
             return jsonify({"error": "El nombre es requerido"}), 400
+
+        # Validar duplicado
+        if Rol.query.filter_by(nombre=data['nombre']).first():
+            return jsonify({"error": "El rol ya existe"}), 400
+
+        permisos_ids = data.get('permisos', [])
+
+        # Obtener permisos válidos
+        permisos = []
+        if permisos_ids:
+            permisos = Permiso.query.filter(
+                Permiso.id.in_(permisos_ids)
+            ).all()
+
+            if len(permisos) != len(permisos_ids):
+                return jsonify({"error": "Uno o más permisos no existen"}), 400
 
         rol = Rol(
             nombre=data['nombre'],
             descripcion=data.get('descripcion', ''),
             estado=data.get('estado', True)
         )
+
+        # 🔥 AQUÍ ESTÁ LA CLAVE
+        rol.permisos = permisos
+
         db.session.add(rol)
         db.session.commit()
-        return jsonify({"message": "Rol creado", "rol": rol.to_dict()}), 201
+
+        return jsonify({
+            "message": "Rol creado",
+            "rol": rol.to_dict()
+        }), 201
+
     except Exception as e:
         db.session.rollback()
+        print("ERROR:", e)
         return jsonify({"error": "Error al crear rol"}), 500
+
 
 @main_bp.route('/roles/<int:id>', methods=['PUT'])
 def update_rol(id):
