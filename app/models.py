@@ -321,6 +321,7 @@ class Empleado(db.Model):
     direccion = db.Column(db.String(30))
     fecha_ingreso = db.Column(db.Date, nullable=False)
     cargo = db.Column(db.String(10))
+    correo = db.Column(db.String(50)) 
     estado = db.Column(db.Boolean, default=True)
     citas = db.relationship('Cita', backref='empleado', lazy=True)
     ventas = db.relationship('Venta', backref='empleado', lazy=True)
@@ -334,6 +335,7 @@ class Empleado(db.Model):
             'numero_documento': self.numero_documento,
             'telefono': self.telefono,
             'direccion': self.direccion,
+            'correo': self.correo,  
             'fecha_ingreso': self.fecha_ingreso.isoformat() if self.fecha_ingreso else None,
             'cargo': self.cargo,
             'estado': self.estado

@@ -685,9 +685,11 @@ def create_empleado():
             tipo_documento=data.get('tipo_documento'),
             numero_documento=data['numero_documento'],
             telefono=data.get('telefono'),
+            correo=data.get('correo'),  # 👈 AGREGAR ESTA LÍNEA
             direccion=data.get('direccion'),
             fecha_ingreso=datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date(),
-            cargo=data.get('cargo')
+            cargo=data.get('cargo'),
+            estado=data.get('estado', True)  # 👈 AGREGAR ESTADO
         )
         db.session.add(empleado)
         db.session.commit()
@@ -704,6 +706,8 @@ def update_empleado(id):
             return jsonify({"error": "Empleado no encontrado"}), 404
 
         data = request.get_json()
+        
+        # Actualizar campos si vienen en la petición
         if 'nombre' in data:
             empleado.nombre = data['nombre']
         if 'tipo_documento' in data:
@@ -712,12 +716,16 @@ def update_empleado(id):
             empleado.numero_documento = data['numero_documento']
         if 'telefono' in data:
             empleado.telefono = data['telefono']
+        if 'correo' in data:  # 👈 AGREGAR ESTA LÍNEA
+            empleado.correo = data['correo']
         if 'direccion' in data:
             empleado.direccion = data['direccion']
         if 'fecha_ingreso' in data:
             empleado.fecha_ingreso = datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date()
         if 'cargo' in data:
             empleado.cargo = data['cargo']
+        if 'estado' in data:  # 👈 AGREGAR ESTA LÍNEA para cambio de estado
+            empleado.estado = data['estado']
 
         db.session.commit()
         return jsonify({"message": "Empleado actualizado", "empleado": empleado.to_dict()})
