@@ -414,9 +414,11 @@ def create_categoria():
         if not data.get('nombre'):
             return jsonify({"error": "El nombre es requerido"}), 400
         
+        # Crear categoría con estado (por defecto true si no se envía)
         categoria = CategoriaProducto(
             nombre=data['nombre'],
-            descripcion=data.get('descripcion', '')
+            descripcion=data.get('descripcion', ''),  # Campo adicional que tiene categorías
+            estado=data.get('estado', True)  # Recibir estado o usar True por defecto
         )
         db.session.add(categoria)
         db.session.commit()
@@ -435,8 +437,10 @@ def update_categoria(id):
         data = request.get_json()
         if 'nombre' in data:
             categoria.nombre = data['nombre']
-        if 'descripcion' in data:
+        if 'descripcion' in data:  # Campo adicional de categorías
             categoria.descripcion = data['descripcion']
+        if 'estado' in data:  # Permitir actualizar estado
+            categoria.estado = data['estado']
 
         db.session.commit()
         return jsonify({"message": "Categoría actualizada", "categoria": categoria.to_dict()})
