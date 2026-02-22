@@ -1736,7 +1736,8 @@ def delete_estado_venta(id):
 @main_bp.route('/horario', methods=['GET'])
 def get_horarios():
     try:
-        horarios = Horario.query.filter_by(activo=True).all()
+        # 👇 CAMBIO: Devuelve TODOS (activos e inactivos)
+        horarios = Horario.query.all()
         return jsonify([horario.to_dict() for horario in horarios])
     except Exception as e:
         return jsonify({"error": "Error al obtener horarios"}), 500
@@ -1751,14 +1752,14 @@ def create_horario():
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
 
-        # 🔹 Validar día (0-6)
+        # Validar día (0-6)
         if not isinstance(data['dia'], int) or data['dia'] not in range(0, 7):
             return jsonify({"error": "El día debe ser un número entre 0 (lunes) y 6 (domingo)"}), 400
 
         hora_inicio = datetime.strptime(data['hora_inicio'], '%H:%M').time()
         hora_final = datetime.strptime(data['hora_final'], '%H:%M').time()
 
-        # 🔹 Validar rango horario
+        # Validar rango horario
         if hora_final <= hora_inicio:
             return jsonify({"error": "La hora final debe ser mayor que la hora inicio"}), 400
 
@@ -1806,7 +1807,11 @@ def update_horario(id):
         if 'hora_final' in data:
             horario.hora_final = datetime.strptime(data['hora_final'], '%H:%M').time()
 
-        # 🔹 Validar que el rango siga siendo correcto
+        # 👇 NUEVO: Permitir actualizar estado por PUT
+        if 'activo' in data:
+            horario.activo = data['activo']
+
+        # Validar que el rango siga siendo correcto
         if horario.hora_final <= horario.hora_inicio:
             return jsonify({"error": "La hora final debe ser mayor que la hora inicio"}), 400
 
@@ -1835,13 +1840,14 @@ def delete_horario(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al eliminar horario"}), 500
-    
+
+
 @main_bp.route('/horario/empleado/<int:empleado_id>', methods=['GET'])
 def get_horarios_por_empleado(empleado_id):
     try:
+        # 👇 CAMBIO: Devuelve TODOS del empleado
         horarios = Horario.query.filter_by(
-            empleado_id=empleado_id,
-            activo=True
+            empleado_id=empleado_id
         ).all()
 
         return jsonify([h.to_dict() for h in horarios])
