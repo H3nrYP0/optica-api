@@ -12,7 +12,7 @@ from app.models import (
     # NUEVAS TABLAS PARA PEDIDOS
     Pedido, DetallePedido
 )
-from datetime import datetime
+from datetime import datetime, timedelta 
 
 main_bp = Blueprint('main', __name__)
 
@@ -1246,92 +1246,254 @@ def delete_venta(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar venta"}), 500
 
-# ===== MÓDULO CITAS - COMPLETAR CRUD =====
+
+# ============================================
+# MÓDULO CITAS - COMPLETO CON VALIDACIONES
+# ============================================
+
 @main_bp.route('/citas', methods=['GET'])
 def get_citas():
+    """Obtener todas las citas"""
     try:
         citas = Cita.query.all()
         return jsonify([cita.to_dict() for cita in citas])
     except Exception as e:
         return jsonify({"error": "Error al obtener citas"}), 500
 
+
+@main_bp.route('/citas/<int:id>', methods=['GET'])
+def get_cita_by_id(id):
+    """Obtener una cita por ID"""
+    try:
+        cita = Cita.query.get(id)
+        if not cita:
+            return jsonify({"error": "Cita no encontrada"}), 404
+        return jsonify(cita.to_dict())
+    except Exception as e:
+        return jsonify({"error": "Error al obtener la cita"}), 500
+
+
 @main_bp.route('/citas', methods=['POST'])
 def create_cita():
+    """Crear una nueva cita con validación de horario laboral"""
     try:
         data = request.get_json()
+        
+        # Validar campos requeridos
         required_fields = ['cliente_id', 'servicio_id', 'empleado_id', 
-                          'estado_cita_id', 'fecha', 'hora']  # ← fecha y hora separados
+                          'estado_cita_id', 'fecha', 'hora']
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
 
-        # Parsear fecha (solo fecha: YYYY-MM-DD)
-        fecha_date = datetime.strptime(data['fecha'], '%Y-%m-%d').date()
+        # Parsear fecha (YYYY-MM-DD)
+        try:
+            fecha_date = datetime.strptime(data['fecha'], '%Y-%m-%d').date()
+        except:
+            return jsonify({"error": "Formato de fecha inválido. Use YYYY-MM-DD"}), 400
         
         # Parsear hora (HH:MM o HH:MM:SS)
         hora_str = data['hora']
-        if hora_str.count(':') == 1:
-            # Formato HH:MM
-            hora_time = datetime.strptime(hora_str, '%H:%M').time()
-        else:
-            # Formato HH:MM:SS
-            hora_time = datetime.strptime(hora_str, '%H:%M:%S').time()
+        try:
+            if hora_str.count(':') == 1:
+                hora_time = datetime.strptime(hora_str, '%H:%M').time()
+            else:
+                hora_time = datetime.strptime(hora_str, '%H:%M:%S').time()
+        except:
+            return jsonify({"error": "Formato de hora inválido. Use HH:MM o HH:MM:SS"}), 400
+        
+        duracion = data.get('duracion', 30)
 
+        # ===== VALIDACIÓN DE HORARIO LABORAL =====
+        # Obtener día de la semana (0=lunes, 6=domingo)
+        dia_semana = fecha_date.weekday()
+
+        # 1. Verificar si hay horario laboral activo para ese día
+        horario = Horario.query.filter_by(
+            empleado_id=data['empleado_id'],
+            dia=dia_semana,
+            activo=True
+        ).first()
+
+        if not horario:
+            return jsonify({
+                "error": "El empleado no trabaja este día",
+                "codigo": "SIN_HORARIO_DIA"
+            }), 400
+
+        # 2. Verificar que la cita esté dentro del horario laboral
+        hora_inicio = datetime.combine(fecha_date, horario.hora_inicio)
+        hora_final = datetime.combine(fecha_date, horario.hora_final)
+        hora_cita = datetime.combine(fecha_date, hora_time)
+        hora_fin_cita = hora_cita + timedelta(minutes=duracion)
+
+        if hora_cita < hora_inicio:
+            return jsonify({
+                "error": f"La cita no puede comenzar antes de las {horario.hora_inicio.strftime('%H:%M')}",
+                "codigo": "HORA_INICIO_ANTES_DE_HORARIO"
+            }), 400
+
+        if hora_fin_cita > hora_final:
+            return jsonify({
+                "error": f"La cita no puede terminar después de las {horario.hora_final.strftime('%H:%M')}",
+                "codigo": "HORA_FIN_DESPUES_DE_HORARIO"
+            }), 400
+
+        # 3. Verificar que no haya otra cita en el mismo horario
+        cita_existente = Cita.query.filter(
+            Cita.empleado_id == data['empleado_id'],
+            Cita.fecha == fecha_date,
+            Cita.hora < hora_fin_cita.time(),
+            (datetime.combine(fecha_date, Cita.hora) + timedelta(minutes=Cita.duracion)).time() > hora_time
+        ).first()
+
+        if cita_existente:
+            return jsonify({
+                "error": "El empleado ya tiene una cita en este horario",
+                "codigo": "CONFLICTO_HORARIO"
+            }), 400
+        # ===== FIN VALIDACIÓN =====
+
+        # Crear la cita
         cita = Cita(
             cliente_id=data['cliente_id'],
             servicio_id=data['servicio_id'],
             empleado_id=data['empleado_id'],
             estado_cita_id=data['estado_cita_id'],
             metodo_pago=data.get('metodo_pago'),
-            hora=hora_time,  # ← Hora separada
-            duracion=data.get('duracion', 30),
-            fecha=fecha_date  # ← Solo fecha
+            hora=hora_time,
+            duracion=duracion,
+            fecha=fecha_date
         )
+        
         db.session.add(cita)
         db.session.commit()
-        return jsonify({"message": "Cita creada", "cita": cita.to_dict()}), 201
+        
+        return jsonify({
+            "message": "Cita creada exitosamente",
+            "cita": cita.to_dict()
+        }), 201
+        
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear cita: {str(e)}"}), 500
 
+
 @main_bp.route('/citas/<int:id>', methods=['PUT'])
 def update_cita(id):
+    """Actualizar una cita existente con validación de horario laboral"""
     try:
         cita = Cita.query.get(id)
         if not cita:
             return jsonify({"error": "Cita no encontrada"}), 404
 
         data = request.get_json()
+        
+        # Guardar valores originales
+        empleado_id_original = cita.empleado_id
+        fecha_original = cita.fecha
+        hora_original = cita.hora
+        duracion_original = cita.duracion
+
+        # Variables para nuevos valores
+        nuevo_empleado_id = empleado_id_original
+        nueva_fecha = fecha_original
+        nueva_hora = hora_original
+        nueva_duracion = duracion_original
+
+        # Aplicar cambios
         if 'cliente_id' in data:
             cita.cliente_id = data['cliente_id']
         if 'servicio_id' in data:
             cita.servicio_id = data['servicio_id']
         if 'empleado_id' in data:
             cita.empleado_id = data['empleado_id']
+            nuevo_empleado_id = data['empleado_id']
         if 'estado_cita_id' in data:
             cita.estado_cita_id = data['estado_cita_id']
         if 'metodo_pago' in data:
             cita.metodo_pago = data['metodo_pago']
         if 'hora' in data:
-            # Parsear hora
             hora_str = data['hora']
             if hora_str.count(':') == 1:
-                cita.hora = datetime.strptime(hora_str, '%H:%M').time()
+                nueva_hora = datetime.strptime(hora_str, '%H:%M').time()
             else:
-                cita.hora = datetime.strptime(hora_str, '%H:%M:%S').time()
+                nueva_hora = datetime.strptime(hora_str, '%H:%M:%S').time()
+            cita.hora = nueva_hora
         if 'duracion' in data:
-            cita.duracion = data['duracion']
+            nueva_duracion = data['duracion']
+            cita.duracion = nueva_duracion
         if 'fecha' in data:
-            cita.fecha = datetime.strptime(data['fecha'], '%Y-%m-%d').date()
+            nueva_fecha = datetime.strptime(data['fecha'], '%Y-%m-%d').date()
+            cita.fecha = nueva_fecha
+
+        # ===== VALIDACIÓN (solo si cambió algo relevante) =====
+        if (nuevo_empleado_id != empleado_id_original or 
+            nueva_fecha != fecha_original or 
+            nueva_hora != hora_original or 
+            nueva_duracion != duracion_original):
+            
+            dia_semana = nueva_fecha.weekday()
+
+            # Verificar horario laboral
+            horario = Horario.query.filter_by(
+                empleado_id=nuevo_empleado_id,
+                dia=dia_semana,
+                activo=True
+            ).first()
+
+            if not horario:
+                return jsonify({
+                    "error": "El empleado no trabaja este día",
+                    "codigo": "SIN_HORARIO_DIA"
+                }), 400
+
+            # Verificar rango horario
+            hora_inicio = datetime.combine(nueva_fecha, horario.hora_inicio)
+            hora_final = datetime.combine(nueva_fecha, horario.hora_final)
+            hora_cita = datetime.combine(nueva_fecha, nueva_hora)
+            hora_fin_cita = hora_cita + timedelta(minutes=nueva_duracion)
+
+            if hora_cita < hora_inicio:
+                return jsonify({
+                    "error": f"La cita no puede comenzar antes de las {horario.hora_inicio.strftime('%H:%M')}"
+                }), 400
+
+            if hora_fin_cita > hora_final:
+                return jsonify({
+                    "error": f"La cita no puede terminar después de las {horario.hora_final.strftime('%H:%M')}"
+                }), 400
+
+            # Verificar que no haya otra cita
+            cita_existente = Cita.query.filter(
+                Cita.id != id,
+                Cita.empleado_id == nuevo_empleado_id,
+                Cita.fecha == nueva_fecha,
+                Cita.hora < hora_fin_cita.time(),
+                (datetime.combine(nueva_fecha, Cita.hora) + timedelta(minutes=Cita.duracion)).time() > nueva_hora
+            ).first()
+
+            if cita_existente:
+                return jsonify({
+                    "error": "El empleado ya tiene una cita en este horario",
+                    "codigo": "CONFLICTO_HORARIO"
+                }), 400
+        # ===== FIN VALIDACIÓN =====
 
         db.session.commit()
-        return jsonify({"message": "Cita actualizada", "cita": cita.to_dict()})
+        return jsonify({
+            "message": "Cita actualizada exitosamente",
+            "cita": cita.to_dict()
+        })
+        
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar cita: {str(e)}"}), 500
 
+
 @main_bp.route('/citas/<int:id>', methods=['DELETE'])
 def delete_cita(id):
+    """Eliminar una cita"""
     try:
         cita = Cita.query.get(id)
         if not cita:
@@ -1733,10 +1895,10 @@ def delete_estado_venta(id):
         return jsonify({"error": "Error al eliminar estado de venta"}), 500
 
 # ===== TABLAS DEL SISTEMA - HORARIO - COMPLETAR CRUD =====
+
 @main_bp.route('/horario', methods=['GET'])
 def get_horarios():
     try:
-        # 👇 CAMBIO: Devuelve TODOS (activos e inactivos)
         horarios = Horario.query.all()
         return jsonify([horario.to_dict() for horario in horarios])
     except Exception as e:
@@ -1746,20 +1908,17 @@ def get_horarios():
 def create_horario():
     try:
         data = request.get_json()
-
         required_fields = ['empleado_id', 'hora_inicio', 'hora_final', 'dia']
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
 
-        # Validar día (0-6)
         if not isinstance(data['dia'], int) or data['dia'] not in range(0, 7):
             return jsonify({"error": "El día debe ser un número entre 0 (lunes) y 6 (domingo)"}), 400
 
         hora_inicio = datetime.strptime(data['hora_inicio'], '%H:%M').time()
         hora_final = datetime.strptime(data['hora_final'], '%H:%M').time()
 
-        # Validar rango horario
         if hora_final <= hora_inicio:
             return jsonify({"error": "La hora final debe ser mayor que la hora inicio"}), 400
 
@@ -1773,11 +1932,7 @@ def create_horario():
 
         db.session.add(horario)
         db.session.commit()
-
-        return jsonify({
-            "message": "Horario creado",
-            "horario": horario.to_dict()
-        }), 201
+        return jsonify({"message": "Horario creado", "horario": horario.to_dict()}), 201
 
     except Exception as e:
         db.session.rollback()
@@ -1795,32 +1950,22 @@ def update_horario(id):
 
         if 'empleado_id' in data:
             horario.empleado_id = data['empleado_id']
-
         if 'dia' in data:
             if not isinstance(data['dia'], int) or data['dia'] not in range(0, 7):
                 return jsonify({"error": "El día debe ser un número entre 0 (lunes) y 6 (domingo)"}), 400
             horario.dia = data['dia']
-
         if 'hora_inicio' in data:
             horario.hora_inicio = datetime.strptime(data['hora_inicio'], '%H:%M').time()
-
         if 'hora_final' in data:
             horario.hora_final = datetime.strptime(data['hora_final'], '%H:%M').time()
-
-        # 👇 NUEVO: Permitir actualizar estado por PUT
         if 'activo' in data:
             horario.activo = data['activo']
 
-        # Validar que el rango siga siendo correcto
         if horario.hora_final <= horario.hora_inicio:
             return jsonify({"error": "La hora final debe ser mayor que la hora inicio"}), 400
 
         db.session.commit()
-
-        return jsonify({
-            "message": "Horario actualizado",
-            "horario": horario.to_dict()
-        })
+        return jsonify({"message": "Horario actualizado", "horario": horario.to_dict()})
 
     except Exception as e:
         db.session.rollback()
@@ -1845,11 +1990,7 @@ def delete_horario(id):
 @main_bp.route('/horario/empleado/<int:empleado_id>', methods=['GET'])
 def get_horarios_por_empleado(empleado_id):
     try:
-        # 👇 CAMBIO: Devuelve TODOS del empleado
-        horarios = Horario.query.filter_by(
-            empleado_id=empleado_id
-        ).all()
-
+        horarios = Horario.query.filter_by(empleado_id=empleado_id).all()
         return jsonify([h.to_dict() for h in horarios])
     except Exception:
         return jsonify({"error": "Error al obtener horarios"}), 500
