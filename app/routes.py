@@ -1322,8 +1322,18 @@ def create_cita():
             }), 400
 
         # 2. Verificar que la cita esté dentro del horario laboral
-        hora_inicio = datetime.combine(fecha_date, horario.hora_inicio)
-        hora_final = datetime.combine(fecha_date, horario.hora_final)
+        # ✅ CORREGIDO: Asegurar que sean objetos time
+        hora_inicio_val = horario.hora_inicio
+        hora_final_val = horario.hora_final
+        
+        # Extraer valor si son InstrumentedAttribute
+        if hasattr(hora_inicio_val, 'value'):
+            hora_inicio_val = hora_inicio_val.value
+        if hasattr(hora_final_val, 'value'):
+            hora_final_val = hora_final_val.value
+
+        hora_inicio = datetime.combine(fecha_date, hora_inicio_val)
+        hora_final = datetime.combine(fecha_date, hora_final_val)
         hora_cita = datetime.combine(fecha_date, hora_time)
         hora_fin_cita = hora_cita + timedelta(minutes=duracion)
 
@@ -1448,9 +1458,17 @@ def update_cita(id):
                     "codigo": "SIN_HORARIO_DIA"
                 }), 400
 
-            # Verificar rango horario
-            hora_inicio = datetime.combine(nueva_fecha, horario.hora_inicio)
-            hora_final = datetime.combine(nueva_fecha, horario.hora_final)
+            # ✅ CORREGIDO: Usar nueva_fecha y asegurar objetos time
+            hora_inicio_val = horario.hora_inicio
+            hora_final_val = horario.hora_final
+            
+            if hasattr(hora_inicio_val, 'value'):
+                hora_inicio_val = hora_inicio_val.value
+            if hasattr(hora_final_val, 'value'):
+                hora_final_val = hora_final_val.value
+
+            hora_inicio = datetime.combine(nueva_fecha, hora_inicio_val)
+            hora_final = datetime.combine(nueva_fecha, hora_final_val)
             hora_cita = datetime.combine(nueva_fecha, nueva_hora)
             hora_fin_cita = hora_cita + timedelta(minutes=nueva_duracion)
 
@@ -1489,7 +1507,6 @@ def update_cita(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar cita: {str(e)}"}), 500
-
 
 @main_bp.route('/citas/<int:id>', methods=['DELETE'])
 def delete_cita(id):
