@@ -462,7 +462,7 @@ def delete_categoria(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar categoría"}), 500
 
-# ===== MÓDULO PRODUCTOS - COMPLETAR CRUD =====
+# ===== MÓDULO PRODUCTOS - COMPLETAR CRUD (IGUAL A EMPLEADOS) =====
 @main_bp.route('/productos', methods=['GET'])
 def get_productos():
     try:
@@ -475,7 +475,7 @@ def get_productos():
 def create_producto():
     try:
         data = request.get_json()
-        required_fields = ['nombre', 'precio_venta', 'precio_compra', 'categoria_producto_id', 'marca_id']
+        required_fields = ['nombre', 'precio_venta', 'precio_compra', 'categoria_id', 'marca_id']
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
@@ -487,8 +487,9 @@ def create_producto():
             stock=data.get('stock', 0),
             stock_minimo=data.get('stock_minimo', 5),
             descripcion=data.get('descripcion', ''),
-            categoria_producto_id=data['categoria_producto_id'],
-            marca_id=data['marca_id']
+            categoria_producto_id=data['categoria_id'],
+            marca_id=data['marca_id'],
+            estado=data.get('estado', True)  # 👈 IGUAL QUE EMPLEADOS
         )
         db.session.add(producto)
         db.session.commit()
@@ -505,6 +506,8 @@ def update_producto(id):
             return jsonify({"error": "Producto no encontrado"}), 404
 
         data = request.get_json()
+        
+        # Actualizar campos si vienen en la petición (IGUAL QUE EMPLEADOS)
         if 'nombre' in data:
             producto.nombre = data['nombre']
         if 'precio_venta' in data:
@@ -517,10 +520,12 @@ def update_producto(id):
             producto.stock_minimo = data['stock_minimo']
         if 'descripcion' in data:
             producto.descripcion = data['descripcion']
-        if 'categoria_producto_id' in data:
-            producto.categoria_producto_id = data['categoria_producto_id']
+        if 'categoria_id' in data:
+            producto.categoria_producto_id = data['categoria_id']
         if 'marca_id' in data:
             producto.marca_id = data['marca_id']
+        if 'estado' in data:  # 👈 IGUAL QUE EMPLEADOS para cambio de estado
+            producto.estado = data['estado']
 
         db.session.commit()
         return jsonify({"message": "Producto actualizado", "producto": producto.to_dict()})
@@ -541,7 +546,7 @@ def delete_producto(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al eliminar producto"}), 500
-
+    
 # ===== MÓDULO CLIENTES - COMPLETAR CRUD =====
 @main_bp.route('/clientes', methods=['GET'])
 def get_clientes():
