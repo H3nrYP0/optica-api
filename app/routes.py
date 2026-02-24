@@ -1087,13 +1087,16 @@ def delete_usuario(id):
         return jsonify({"error": "Error al eliminar usuario"}), 500
 
 # ===== MÓDULO ROLES - COMPLETAR CRUD =====
-@main_bp.route('/roles', methods=['GET'])
-def get_roles():
+@main_bp.route('/roles/<int:id>', methods=['GET'])
+def get_rol(id):
     try:
-        roles = Rol.query.all()
-        return jsonify([rol.to_dict() for rol in roles])
+        rol = Rol.query.get(id)
+        if not rol:
+            return jsonify({"error": "Rol no encontrado"}), 404
+        return jsonify(rol.to_dict())
     except Exception as e:
-        return jsonify({"error": "Error al obtener roles"}), 500
+        print("ERROR:", e)
+        return jsonify({"error": "Error al obtener rol"}), 500
 
 @main_bp.route('/roles', methods=['POST'])
 def create_rol():
@@ -1119,13 +1122,19 @@ def create_rol():
             if len(permisos) != len(permisos_ids):
                 return jsonify({"error": "Uno o más permisos no existen"}), 400
 
+        # Convertir estado de string a booleano
+        estado_valor = data.get('estado', True)
+        if isinstance(estado_valor, str):
+            estado_bool = estado_valor == "activo"
+        else:
+            estado_bool = estado_valor
+
         rol = Rol(
             nombre=data['nombre'],
             descripcion=data.get('descripcion', ''),
-            estado=data.get('estado', True)
+            estado=estado_bool
         )
 
-        # 🔥 AQUÍ ESTÁ LA CLAVE
         rol.permisos = permisos
 
         db.session.add(rol)
@@ -1150,17 +1159,36 @@ def update_rol(id):
             return jsonify({"error": "Rol no encontrado"}), 404
 
         data = request.get_json()
+        
+        # Actualizar campos básicos
         if 'nombre' in data:
             rol.nombre = data['nombre']
         if 'descripcion' in data:
             rol.descripcion = data['descripcion']
         if 'estado' in data:
-            rol.estado = data['estado']
+            # Convertir "activo"/"inactivo" a booleano
+            if isinstance(data['estado'], str):
+                rol.estado = data['estado'] == "activo"
+            else:
+                rol.estado = data['estado']
+        
+        # 🔥 ACTUALIZAR PERMISOS (ESTO ES LO NUEVO)
+        if 'permisos' in data:
+            permisos_ids = data['permisos']
+            if permisos_ids:
+                permisos = Permiso.query.filter(Permiso.id.in_(permisos_ids)).all()
+                if len(permisos) != len(permisos_ids):
+                    return jsonify({"error": "Uno o más permisos no existen"}), 400
+                rol.permisos = permisos
+            else:
+                # Si viene lista vacía, quitar todos los permisos
+                rol.permisos = []
 
         db.session.commit()
         return jsonify({"message": "Rol actualizado", "rol": rol.to_dict()})
     except Exception as e:
         db.session.rollback()
+        print("ERROR:", e)
         return jsonify({"error": "Error al actualizar rol"}), 500
 
 @main_bp.route('/roles/<int:id>', methods=['DELETE'])
