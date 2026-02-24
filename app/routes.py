@@ -1087,16 +1087,14 @@ def delete_usuario(id):
         return jsonify({"error": "Error al eliminar usuario"}), 500
 
 # ===== MÓDULO ROLES - COMPLETAR CRUD =====
-@main_bp.route('/roles/<int:id>', methods=['GET'])
-def get_rol(id):
+@main_bp.route('/roles', methods=['GET'])
+def get_roles():
     try:
-        rol = Rol.query.get(id)
-        if not rol:
-            return jsonify({"error": "Rol no encontrado"}), 404
-        return jsonify(rol.to_dict())
+        roles = Rol.query.all()
+        return jsonify([rol.to_dict() for rol in roles])
     except Exception as e:
         print("ERROR:", e)
-        return jsonify({"error": "Error al obtener rol"}), 500
+        return jsonify({"error": "Error al obtener roles"}), 500
 
 @main_bp.route('/roles', methods=['POST'])
 def create_rol():
