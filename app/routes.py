@@ -10,7 +10,7 @@ from app.models import (
     DetalleVenta, Compra, DetalleCompra, HistorialFormula, Horario, Abono, Permiso,
     PermisoPorRol,
     # NUEVAS TABLAS PARA PEDIDOS
-    Pedido, DetallePedido
+    Pedido, DetallePedido, CampanaSalud
 )
 from datetime import datetime
 
@@ -1890,6 +1890,100 @@ def get_horarios_por_empleado(empleado_id):
         return jsonify([h.to_dict() for h in horarios])
     except Exception:
         return jsonify({"error": "Error al obtener horarios"}), 500
+
+
+# ===== MÓDULO CAMPAÑAS DE SALUD =====
+@main_bp.route('/campanas-salud', methods=['GET'])
+def get_campanas_salud():
+    try:
+        campanas = CampanaSalud.query.all()
+        return jsonify([campana.to_dict() for campana in campanas])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener campañas"}), 500
+
+@main_bp.route('/campanas-salud', methods=['POST'])
+def create_campana_salud():
+    try:
+        data = request.get_json()
+        required_fields = ['empleado_id', 'empresa', 'fecha', 'hora']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        # Parsear fecha y hora
+        fecha = datetime.strptime(data['fecha'], '%Y-%m-%d').date()
+        hora = datetime.strptime(data['hora'], '%H:%M').time()
+
+        campana = CampanaSalud(
+            empleado_id=data['empleado_id'],
+            empresa=data['empresa'],
+            contacto=data.get('contacto'),
+            fecha=fecha,
+            hora=hora,
+            direccion=data.get('direccion'),
+            estado=data.get('estado', True),
+            observaciones=data.get('observaciones')
+        )
+        db.session.add(campana)
+        db.session.commit()
+        return jsonify({"message": "Campaña creada", "campana": campana.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al crear campaña: {str(e)}"}), 500
+
+@main_bp.route('/campanas-salud/<int:id>', methods=['PUT'])
+def update_campana_salud(id):
+    try:
+        campana = CampanaSalud.query.get(id)
+        if not campana:
+            return jsonify({"error": "Campaña no encontrada"}), 404
+
+        data = request.get_json()
+        
+        if 'empleado_id' in data:
+            campana.empleado_id = data['empleado_id']
+        if 'empresa' in data:
+            campana.empresa = data['empresa']
+        if 'contacto' in data:
+            campana.contacto = data['contacto']
+        if 'fecha' in data:
+            campana.fecha = datetime.strptime(data['fecha'], '%Y-%m-%d').date()
+        if 'hora' in data:
+            campana.hora = datetime.strptime(data['hora'], '%H:%M').time()
+        if 'direccion' in data:
+            campana.direccion = data['direccion']
+        if 'estado' in data:
+            campana.estado = data['estado']
+        if 'observaciones' in data:
+            campana.observaciones = data['observaciones']
+
+        db.session.commit()
+        return jsonify({"message": "Campaña actualizada", "campana": campana.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al actualizar campaña: {str(e)}"}), 500
+
+@main_bp.route('/campanas-salud/<int:id>', methods=['DELETE'])
+def delete_campana_salud(id):
+    try:
+        campana = CampanaSalud.query.get(id)
+        if not campana:
+            return jsonify({"error": "Campaña no encontrada"}), 404
+
+        db.session.delete(campana)
+        db.session.commit()
+        return jsonify({"message": "Campaña eliminada correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar campaña"}), 500
+
+@main_bp.route('/empleados/<int:empleado_id>/campanas', methods=['GET'])
+def get_campanas_por_empleado(empleado_id):
+    try:
+        campanas = CampanaSalud.query.filter_by(empleado_id=empleado_id).all()
+        return jsonify([campana.to_dict() for campana in campanas])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener campañas del empleado"}), 500
 
 
 # ===== TABLAS DEL SISTEMA - HISTORIAL FORMULA - COMPLETAR CRUD =====

@@ -526,6 +526,36 @@ class Abono(db.Model):
             'fecha': self.fecha.isoformat()
         }
     
+class CampanaSalud(db.Model):
+    __tablename__ = 'campana_salud'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=False)
+    empresa = db.Column(db.String(20), nullable=False)
+    contacto = db.Column(db.String(15))
+    fecha = db.Column(db.DateTime, nullable=False)
+    hora = db.Column(db.Time, nullable=False)
+    direccion = db.Column(db.String(30))
+    estado = db.Column(db.Boolean, default=True)
+    observaciones = db.Column(db.String(100))
+    
+    # Relación con empleado
+    empleado = db.relationship('Empleado', backref='campanas_salud', lazy=True)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'empleado_id': self.empleado_id,
+            'empleado_nombre': self.empleado.nombre if self.empleado else None,
+            'empresa': self.empresa,
+            'contacto': self.contacto,
+            'fecha': self.fecha.isoformat() if self.fecha else None,
+            'hora': self.hora.isoformat() if self.hora else None,
+            'direccion': self.direccion,
+            'estado': self.estado,
+            'observaciones': self.observaciones
+        }
+    
 class Multimedia(db.Model):
     """Para: categorías, comprobantes y otros"""
     __tablename__ = 'multimedia'
