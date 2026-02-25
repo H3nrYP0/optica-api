@@ -233,10 +233,15 @@ class Proveedor(db.Model):
         return {
             'id': self.id,
             'tipo_proveedor': self.tipo_proveedor,
+            'tipo_documento': self.tipo_documento,      # ← agregar
             'documento': self.documento,
             'razon_social_o_nombre': self.razon_social_o_nombre,
+            'contacto': self.contacto,                  # ← agregar
             'telefono': self.telefono,
             'correo': self.correo,
+            'departamento': self.departamento,          # ← agregar
+            'municipio': self.municipio,                # ← agregar
+            'direccion': self.direccion,                # ← agregar
             'estado': self.estado
         }
 
