@@ -667,90 +667,78 @@ def delete_cliente(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar cliente"}), 500
 
-# ===== MÓDULO EMPLEADOS - COMPLETAR CRUD =====
-@main_bp.route('/empleados', methods=['GET'])
-def get_empleados():
+# ===== MÓDULO SERVICIOS - COMPLETAR CRUD CON ESTADO =====
+@main_bp.route('/servicios', methods=['GET'])
+def get_servicios():
     try:
-        empleados = Empleado.query.all()
-        return jsonify([empleado.to_dict() for empleado in empleados])
+        servicios = Servicio.query.all()
+        return jsonify([servicio.to_dict() for servicio in servicios])
     except Exception as e:
-        return jsonify({"error": "Error al obtener empleados"}), 500
+        return jsonify({"error": "Error al obtener servicios"}), 500
 
-@main_bp.route('/empleados', methods=['POST'])
-def create_empleado():
+@main_bp.route('/servicios', methods=['POST'])
+def create_servicio():
     try:
         data = request.get_json()
-        required_fields = ['nombre', 'numero_documento', 'fecha_ingreso']
+        required_fields = ['nombre', 'duracion_min', 'precio']
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
 
-        empleado = Empleado(
+        servicio = Servicio(
             nombre=data['nombre'],
-            tipo_documento=data.get('tipo_documento'),
-            numero_documento=data['numero_documento'],
-            telefono=data.get('telefono'),
-            correo=data.get('correo'),  # 👈 AGREGAR ESTA LÍNEA
-            direccion=data.get('direccion'),
-            fecha_ingreso=datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date(),
-            cargo=data.get('cargo'),
-            estado=data.get('estado', True)  # 👈 AGREGAR ESTADO
+            duracion_min=data['duracion_min'],
+            precio=float(data['precio']),
+            descripcion=data.get('descripcion', ''),
+            estado=data.get('estado', True)  # 👈 AGREGAR ESTADO (por defecto True)
         )
-        db.session.add(empleado)
+        db.session.add(servicio)
         db.session.commit()
-        return jsonify({"message": "Empleado creado", "empleado": empleado.to_dict()}), 201
+        return jsonify({"message": "Servicio creado", "servicio": servicio.to_dict()}), 201
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al crear empleado"}), 500
+        return jsonify({"error": "Error al crear servicio"}), 500
 
-@main_bp.route('/empleados/<int:id>', methods=['PUT'])
-def update_empleado(id):
+@main_bp.route('/servicios/<int:id>', methods=['PUT'])
+def update_servicio(id):
     try:
-        empleado = Empleado.query.get(id)
-        if not empleado:
-            return jsonify({"error": "Empleado no encontrado"}), 404
+        servicio = Servicio.query.get(id)
+        if not servicio:
+            return jsonify({"error": "Servicio no encontrado"}), 404
 
         data = request.get_json()
         
         # Actualizar campos si vienen en la petición
         if 'nombre' in data:
-            empleado.nombre = data['nombre']
-        if 'tipo_documento' in data:
-            empleado.tipo_documento = data['tipo_documento']
-        if 'numero_documento' in data:
-            empleado.numero_documento = data['numero_documento']
-        if 'telefono' in data:
-            empleado.telefono = data['telefono']
-        if 'correo' in data:  # 👈 AGREGAR ESTA LÍNEA
-            empleado.correo = data['correo']
-        if 'direccion' in data:
-            empleado.direccion = data['direccion']
-        if 'fecha_ingreso' in data:
-            empleado.fecha_ingreso = datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date()
-        if 'cargo' in data:
-            empleado.cargo = data['cargo']
+            servicio.nombre = data['nombre']
+        if 'duracion_min' in data:
+            servicio.duracion_min = data['duracion_min']
+        if 'precio' in data:
+            servicio.precio = float(data['precio'])
+        if 'descripcion' in data:
+            servicio.descripcion = data['descripcion']
         if 'estado' in data:  # 👈 AGREGAR ESTA LÍNEA para cambio de estado
-            empleado.estado = data['estado']
+            servicio.estado = data['estado']
 
         db.session.commit()
-        return jsonify({"message": "Empleado actualizado", "empleado": empleado.to_dict()})
+        return jsonify({"message": "Servicio actualizado", "servicio": servicio.to_dict()})
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al actualizar empleado"}), 500
+        return jsonify({"error": "Error al actualizar servicio"}), 500
 
-@main_bp.route('/empleados/<int:id>', methods=['DELETE'])
-def delete_empleado(id):
+@main_bp.route('/servicios/<int:id>', methods=['DELETE'])
+def delete_servicio(id):
     try:
-        empleado = Empleado.query.get(id)
-        if not empleado:
-            return jsonify({"error": "Empleado no encontrado"}), 404
+        servicio = Servicio.query.get(id)
+        if not servicio:
+            return jsonify({"error": "Servicio no encontrado"}), 404
 
-        db.session.delete(empleado)
+        db.session.delete(servicio)
         db.session.commit()
-        return jsonify({"message": "Empleado eliminado correctamente"})
+        return jsonify({"message": "Servicio eliminado correctamente"})
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al eliminar empleado"}), 500
+        return jsonify({"error": "Error al eliminar servicio"}), 500
 
 # ===== MÓDULO PROVEEDORES - COMPLETAR CRUD =====
 @main_bp.route('/proveedores', methods=['GET'])
