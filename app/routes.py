@@ -751,8 +751,9 @@ def delete_empleado(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al eliminar empleado"}), 500
+    
 
-# ===== MÓDULO PROVEEDORES - COMPLETAR CRUD =====
+# ===== MÓDULO PROVEEDORES - COMPLETAR CRUD CON ESTADO =====
 @main_bp.route('/proveedores', methods=['GET'])
 def get_proveedores():
     try:
@@ -778,7 +779,8 @@ def create_proveedor():
             correo=data.get('correo'),
             departamento=data.get('departamento'),
             municipio=data.get('municipio'),
-            direccion=data.get('direccion')
+            direccion=data.get('direccion'),
+            estado=data.get('estado', True)  # 👈 AGREGAR ESTADO (por defecto True)
         )
         db.session.add(proveedor)
         db.session.commit()
@@ -795,6 +797,8 @@ def update_proveedor(id):
             return jsonify({"error": "Proveedor no encontrado"}), 404
 
         data = request.get_json()
+        
+        # Actualizar campos si vienen en la petición
         if 'tipo_proveedor' in data:
             proveedor.tipo_proveedor = data['tipo_proveedor']
         if 'tipo_documento' in data:
@@ -815,6 +819,8 @@ def update_proveedor(id):
             proveedor.municipio = data['municipio']
         if 'direccion' in data:
             proveedor.direccion = data['direccion']
+        if 'estado' in data:  # 👈 AGREGAR ESTA LÍNEA para cambio de estado
+            proveedor.estado = data['estado']
 
         db.session.commit()
         return jsonify({"message": "Proveedor actualizado", "proveedor": proveedor.to_dict()})
