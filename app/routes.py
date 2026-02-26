@@ -1071,13 +1071,15 @@ def update_usuario(id):
             usuario.contrasenia = data['contrasenia']
         if 'rol_id' in data:
             usuario.rol_id = data['rol_id']
+        if 'estado' in data:  # ← ESTA LÍNEA FALTABA
+            usuario.estado = data['estado']
 
         db.session.commit()
         return jsonify({"message": "Usuario actualizado", "usuario": usuario.to_dict()})
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al actualizar usuario"}), 500
-
+    
 @main_bp.route('/usuarios/<int:id>', methods=['DELETE'])
 def delete_usuario(id):
     try:

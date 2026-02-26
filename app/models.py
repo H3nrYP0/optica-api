@@ -166,7 +166,6 @@ class Pedido(db.Model):
     estado = db.Column(db.String(20), default='pendiente')  # 'pendiente', 'confirmado', 'en_preparacion', 'enviado', 'entregado', 'cancelado'
     transferencia_comprobante = db.Column(db.String(255))  # URL de la imagen del comprobante
     venta_id = db.Column(db.Integer, db.ForeignKey('venta.id'), nullable=True)  # Relación con venta cuando se procesa
-    
     cliente = db.relationship('Cliente', backref='pedidos')
     usuario = db.relationship('Usuario', backref='pedidos')
     venta = db.relationship('Venta', backref='pedido', uselist=False)
