@@ -6,8 +6,14 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # CORS
-    CORS(app)
+    # ── CORS — permitir frontend local y producción ──
+    CORS(app, resources={
+        r"/*": {
+            "origins": "https://optica-api-vad8.onrender.com",  
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"]
+        }
+    })
 
     # Inicializar base de datos
     from app.database import init_db
@@ -33,8 +39,3 @@ def create_app():
             print(f"❌ Error creando tablas: {e}")
 
     return app
-
-{
-    "correo": "superadmin@visualoutlet.com",
-    "contrasenia": "Pruebas123!"
-}
