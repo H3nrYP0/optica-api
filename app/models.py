@@ -164,7 +164,6 @@ class Pedido(db.Model):
     direccion_entrega = db.Column(db.String(255))
     estado = db.Column(db.String(20), default='pendiente')  # pendiente, confirmado, en_preparacion, enviado, entregado, cancelado
     transferencia_comprobante = db.Column(db.String(255))    # URL del comprobante
-
     # Relaciones
     cliente = db.relationship('Cliente', backref='pedidos')
     items = db.relationship('DetallePedido', backref='pedido', lazy=True, cascade='all, delete-orphan')
