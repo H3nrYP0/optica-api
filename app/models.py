@@ -412,7 +412,6 @@ class EstadoVenta(db.Model):
     __tablename__ = 'estado_venta'
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(23), nullable=False)
-    ventas = db.relationship('Venta', backref='estado_venta', lazy=True)
 
     def to_dict(self):
         return {
