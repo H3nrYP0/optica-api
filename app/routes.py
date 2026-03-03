@@ -32,7 +32,7 @@ def home():
             "usuarios": "GET/POST /usuarios",
             "roles": "GET/POST /roles",
             "productos": "GET/POST /productos, /marcas, /categorias",
-            "pedidos": "GET/POST /pedidos, /pedidos/usuario/{id}"  # ← NUEVO
+            "pedidos": "GET/POST /pedidos, /pedidos/cliente/{id}"  # ← NUEVO
         },
         "modulos_secundarios": {
             "compras": "GET/POST /compras",
@@ -60,182 +60,207 @@ def home():
         "documentacion_completa": "GET /endpoints para ver todos los endpoints disponibles"
     })
 
-# ===== MÓDULO PEDIDOS - NUEVO CRUD COMPLETO =====
+# ===== MÓDULO PEDIDOS - CRUD ACTUALIZADO =====
+
 @main_bp.route('/pedidos', methods=['GET'])
 def get_pedidos():
+    """Obtiene todos los pedidos"""
     try:
         pedidos = Pedido.query.all()
         return jsonify([pedido.to_dict() for pedido in pedidos])
     except Exception as e:
         return jsonify({"error": "Error al obtener pedidos"}), 500
 
+
 @main_bp.route('/pedidos', methods=['POST'])
 def create_pedido():
+    """Crea un nuevo pedido (sin usuario)"""
     try:
         data = request.get_json()
-        required_fields = ['cliente_id', 'usuario_id', 'total', 'metodo_pago', 'metodo_entrega']
-        
+
+        # Validar campos obligatorios (sin usuario_id)
+        required_fields = ['cliente_id', 'metodo_pago', 'metodo_entrega']
         for field in required_fields:
             if field not in data:
-                return jsonify({"error": f"El campo {field} es requerido"}), 400
-        
-        # Crear pedido
+                return jsonify({"error": f"El campo '{field}' es requerido"}), 400
+
+        # Crear el pedido (el total se calculará con los items)
         pedido = Pedido(
             cliente_id=data['cliente_id'],
-            usuario_id=data['usuario_id'],
-            total=float(data['total']),
             metodo_pago=data['metodo_pago'],
             metodo_entrega=data['metodo_entrega'],
             direccion_entrega=data.get('direccion_entrega'),
             estado=data.get('estado', 'pendiente'),
             transferencia_comprobante=data.get('transferencia_comprobante')
         )
-        
-        db.session.add(pedido)
-        db.session.commit()
-        
-        # Agregar items del pedido
+
+        # Procesar items si vienen en la petición
+        total_calculado = 0
         if 'items' in data and isinstance(data['items'], list):
             for item_data in data['items']:
+                # Validar campos del item
+                if not all(k in item_data for k in ('producto_id', 'cantidad', 'precio_unitario')):
+                    return jsonify({"error": "Cada item debe tener producto_id, cantidad y precio_unitario"}), 400
+
+                cantidad = int(item_data['cantidad'])
+                precio = float(item_data['precio_unitario'])
+                subtotal = cantidad * precio
+
                 detalle = DetallePedido(
-                    pedido_id=pedido.id,
                     producto_id=item_data['producto_id'],
-                    cantidad=item_data['cantidad'],
-                    precio_unitario=float(item_data['precio_unitario']),
-                    subtotal=float(item_data['cantidad']) * float(item_data['precio_unitario'])
+                    cantidad=cantidad,
+                    precio_unitario=precio,
+                    subtotal=subtotal
                 )
-                db.session.add(detalle)
-        
+                pedido.items.append(detalle)  # Se agrega a la colección, aún sin commit
+                total_calculado += subtotal
+
+            pedido.total = total_calculado
+        else:
+            # Si no hay items, se requiere el campo total
+            if 'total' not in data:
+                return jsonify({"error": "Debe enviar 'total' o la lista de 'items'"}), 400
+            pedido.total = float(data['total'])
+
+        db.session.add(pedido)
         db.session.commit()
-        
+
         return jsonify({
             "message": "Pedido creado exitosamente",
             "pedido": pedido.to_dict()
         }), 201
-        
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear pedido: {str(e)}"}), 500
 
+
 @main_bp.route('/pedidos/<int:id>', methods=['GET'])
 def get_pedido(id):
+    """Obtiene un pedido por su ID"""
     try:
         pedido = Pedido.query.get(id)
         if not pedido:
             return jsonify({"error": "Pedido no encontrado"}), 404
-        
         return jsonify(pedido.to_dict())
     except Exception as e:
         return jsonify({"error": "Error al obtener pedido"}), 500
 
+
 @main_bp.route('/pedidos/<int:id>', methods=['PUT'])
 def update_pedido(id):
+    """Actualiza campos de un pedido. Si el estado cambia a 'entregado', genera la venta."""
     try:
         pedido = Pedido.query.get(id)
         if not pedido:
             return jsonify({"error": "Pedido no encontrado"}), 404
-        
+
         data = request.get_json()
-        
+        estado_anterior = pedido.estado
+        nuevo_estado = data.get('estado', pedido.estado)
+
+        # Verificar si se está marcando como entregado
+        if nuevo_estado == 'entregado' and estado_anterior != 'entregado':
+            # Validar que el pedido pueda ser entregado (estado actual permitido)
+            estados_permitidos = ['enviado', 'confirmado', 'en_preparacion']  # Ajusta según tu flujo
+            if pedido.estado not in estados_permitidos:
+                return jsonify({"error": f"No se puede entregar un pedido en estado '{pedido.estado}'"}), 400
+
+            # Verificar que no tenga ya una venta asociada
+            if hasattr(pedido, 'venta') and pedido.venta:
+                return jsonify({"error": "Este pedido ya generó una venta anteriormente"}), 400
+
+            # Crear la venta copiando datos del pedido
+            venta = Venta(
+                pedido_id=pedido.id,
+                cliente_id=pedido.cliente_id,
+                fecha_pedido=pedido.fecha,
+                fecha_venta=datetime.utcnow(),
+                total=pedido.total,
+                metodo_pago=pedido.metodo_pago,
+                metodo_entrega=pedido.metodo_entrega,
+                direccion_entrega=pedido.direccion_entrega,
+                transferencia_comprobante=pedido.transferencia_comprobante,
+                estado='completada'  # Puedes cambiarlo según tu lógica (ej: 'pendiente_pago')
+            )
+            db.session.add(venta)
+            db.session.flush()  # Para obtener el ID de la venta
+
+            # Copiar detalles del pedido a DetalleVenta
+            for detalle_pedido in pedido.items:
+                detalle_venta = DetalleVenta(
+                    venta_id=venta.id,
+                    producto_id=detalle_pedido.producto_id,
+                    cantidad=detalle_pedido.cantidad,
+                    precio_unitario=detalle_pedido.precio_unitario,
+                    subtotal=detalle_pedido.subtotal
+                )
+                db.session.add(detalle_venta)
+
+            # Opcional: Descontar stock
+            for detalle in pedido.items:
+                producto = Producto.query.get(detalle.producto_id)
+                if producto:
+                    producto.stock -= detalle.cantidad
+                    if producto.stock < 0:
+                        producto.stock = 0
+
+        # Actualizar campos normales (incluyendo estado si ya se cambió)
         if 'estado' in data:
             pedido.estado = data['estado']
-        if 'venta_id' in data:
-            pedido.venta_id = data['venta_id']
         if 'transferencia_comprobante' in data:
             pedido.transferencia_comprobante = data['transferencia_comprobante']
-        
+        if 'direccion_entrega' in data:
+            pedido.direccion_entrega = data['direccion_entrega']
+        if 'metodo_pago' in data:
+            pedido.metodo_pago = data['metodo_pago']
+        if 'metodo_entrega' in data:
+            pedido.metodo_entrega = data['metodo_entrega']
+        if 'total' in data:
+            pedido.total = float(data['total'])
+
         db.session.commit()
         return jsonify({
             "message": "Pedido actualizado",
             "pedido": pedido.to_dict()
         })
-        
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al actualizar pedido"}), 500
+        return jsonify({"error": f"Error al actualizar pedido: {str(e)}"}), 500
 
 @main_bp.route('/pedidos/<int:id>', methods=['DELETE'])
 def delete_pedido(id):
+    """Elimina un pedido siempre que no tenga una venta asociada"""
     try:
         pedido = Pedido.query.get(id)
         if not pedido:
             return jsonify({"error": "Pedido no encontrado"}), 404
-        
-        # Eliminar detalles del pedido primero
+
+        # Verificar si el pedido ya generó una venta (existe registro en Venta con este pedido_id)        
+        venta_asociada = Venta.query.filter_by(pedido_id=id).first()
+        if venta_asociada:
+            return jsonify({"error": "No se puede eliminar un pedido que ya generó una venta"}), 400
+
+        # Eliminar detalles (aunque cascade debería hacerlo)
         DetallePedido.query.filter_by(pedido_id=id).delete()
-        
         db.session.delete(pedido)
         db.session.commit()
         return jsonify({"message": "Pedido eliminado correctamente"})
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al eliminar pedido"}), 500
+        return jsonify({"error": f"Error al eliminar pedido: {str(e)}"}), 500
 
-@main_bp.route('/pedidos/usuario/<int:usuario_id>', methods=['GET'])
-def get_pedidos_usuario(usuario_id):
+
+@main_bp.route('/pedidos/cliente/<int:cliente_id>', methods=['GET'])
+def get_pedidos_cliente(cliente_id):
+    """Obtiene todos los pedidos de un cliente específico"""
     try:
-        pedidos = Pedido.query.filter_by(usuario_id=usuario_id).order_by(Pedido.fecha.desc()).all()
+        pedidos = Pedido.query.filter_by(cliente_id=cliente_id).order_by(Pedido.fecha.desc()).all()
         return jsonify([pedido.to_dict() for pedido in pedidos])
     except Exception as e:
-        return jsonify({"error": "Error al obtener pedidos del usuario"}), 500
-
-@main_bp.route('/pedidos/<int:id>/convertir-venta', methods=['POST'])
-def convertir_pedido_a_venta(id):
-    try:
-        pedido = Pedido.query.get(id)
-        if not pedido:
-            return jsonify({"error": "Pedido no encontrado"}), 404
-        
-        # Verificar que el pedido esté confirmado
-        if pedido.estado != 'confirmado':
-            return jsonify({"error": "El pedido debe estar confirmado para convertirlo en venta"}), 400
-        
-        # Crear venta
-        venta = Venta(
-            cliente_id=pedido.cliente_id,
-            empleado_id=1,  # ID del empleado que procesa (ajustar según lógica)
-            estado_venta_id=1,  # Estado "pendiente" (ajustar según tu sistema)
-            metodo_pago=pedido.metodo_pago,
-            total_venta=pedido.total
-        )
-        
-        db.session.add(venta)
-        db.session.commit()
-        
-        # Crear detalles de venta
-        for detalle_pedido in pedido.items:
-            detalle_venta = DetalleVenta(
-                venta_id=venta.id,
-                producto_id=detalle_pedido.producto_id,
-                cantidad=detalle_pedido.cantidad,
-                precio_unitario=detalle_pedido.precio_unitario,
-                subtotal=detalle_pedido.subtotal
-            )
-            db.session.add(detalle_venta)
-        
-        # Actualizar stock de productos
-        for detalle_pedido in pedido.items:
-            producto = Producto.query.get(detalle_pedido.producto_id)
-            if producto:
-                producto.stock -= detalle_pedido.cantidad
-                if producto.stock < 0:
-                    producto.stock = 0
-        
-        # Vincular pedido con venta
-        pedido.venta_id = venta.id
-        pedido.estado = 'procesado'
-        
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Pedido convertido a venta exitosamente",
-            "venta_id": venta.id,
-            "pedido": pedido.to_dict()
-        })
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": f"Error al convertir pedido a venta: {str(e)}"}), 500
+        return jsonify({"error": "Error al obtener pedidos del cliente"}), 500
 
 # ===== IMÁGENES - ENDPOINTS SUPER SIMPLES =====
 
@@ -1212,79 +1237,99 @@ def delete_rol(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar rol"}), 500
 
-# ===== MÓDULO VENTAS - COMPLETAR CRUD =====
+# ===== MÓDULO VENTAS - CRUD (SIN CREACIÓN MANUAL) =====
+
 @main_bp.route('/ventas', methods=['GET'])
 def get_ventas():
+    """Obtiene todas las ventas"""
     try:
         ventas = Venta.query.all()
         return jsonify([venta.to_dict() for venta in ventas])
     except Exception as e:
         return jsonify({"error": "Error al obtener ventas"}), 500
 
-@main_bp.route('/ventas', methods=['POST'])
-def create_venta():
-    try:
-        data = request.get_json()
-        required_fields = ['cliente_id', 'empleado_id', 'total_venta', 'estado_venta_id']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"error": f"El campo {field} es requerido"}), 400
 
-        venta = Venta(
-            cliente_id=data['cliente_id'],
-            empleado_id=data['empleado_id'],
-            estado_venta_id=data['estado_venta_id'],
-            cita_id=data.get('cita_id'),
-            metodo_pago=data.get('metodo_pago'),
-            total_venta=float(data['total_venta'])
-        )
-        db.session.add(venta)
-        db.session.commit()
-        return jsonify({"message": "Venta creada", "venta": venta.to_dict()}), 201
+@main_bp.route('/ventas/<int:id>', methods=['GET'])
+def get_venta(id):
+    """Obtiene una venta por su ID"""
+    try:
+        venta = Venta.query.get(id)
+        if not venta:
+            return jsonify({"error": "Venta no encontrada"}), 404
+        return jsonify(venta.to_dict())
     except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": "Error al crear venta"}), 500
+        return jsonify({"error": "Error al obtener venta"}), 500
+
 
 @main_bp.route('/ventas/<int:id>', methods=['PUT'])
 def update_venta(id):
+    """
+    Actualiza campos de una venta.
+    No se puede cambiar el pedido asociado ni el cliente.
+    Solo se permiten actualizaciones en:
+    - estado
+    - metodo_pago
+    - metodo_entrega
+    - direccion_entrega
+    - transferencia_comprobante
+    - total (con precaución)
+    """
     try:
         venta = Venta.query.get(id)
         if not venta:
             return jsonify({"error": "Venta no encontrada"}), 404
 
         data = request.get_json()
-        if 'cliente_id' in data:
-            venta.cliente_id = data['cliente_id']
-        if 'empleado_id' in data:
-            venta.empleado_id = data['empleado_id']
-        if 'estado_venta_id' in data:
-            venta.estado_venta_id = data['estado_venta_id']
-        if 'cita_id' in data:
-            venta.cita_id = data['cita_id']
+
+        # Campos editables (no se permite modificar pedido_id ni cliente_id)
+        if 'estado' in data:
+            venta.estado = data['estado']
         if 'metodo_pago' in data:
             venta.metodo_pago = data['metodo_pago']
-        if 'total_venta' in data:
-            venta.total_venta = float(data['total_venta'])
+        if 'metodo_entrega' in data:
+            venta.metodo_entrega = data['metodo_entrega']
+        if 'direccion_entrega' in data:
+            venta.direccion_entrega = data['direccion_entrega']
+        if 'transferencia_comprobante' in data:
+            venta.transferencia_comprobante = data['transferencia_comprobante']
+        if 'total' in data:
+            # Opcional: podrías validar que el nuevo total no sea menor a lo ya abonado
+            venta.total = float(data['total'])
 
         db.session.commit()
-        return jsonify({"message": "Venta actualizada", "venta": venta.to_dict()})
+        return jsonify({
+            "message": "Venta actualizada",
+            "venta": venta.to_dict()
+        })
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al actualizar venta"}), 500
+        return jsonify({"error": f"Error al actualizar venta: {str(e)}"}), 500
+
 
 @main_bp.route('/ventas/<int:id>', methods=['DELETE'])
 def delete_venta(id):
+    """
+    Elimina una venta solo si no tiene abonos asociados.
+    Previene la pérdida de información financiera.
+    """
     try:
         venta = Venta.query.get(id)
         if not venta:
             return jsonify({"error": "Venta no encontrada"}), 404
 
+        # Verificar si tiene abonos registrados
+        if venta.abonos and len(venta.abonos) > 0:
+            return jsonify({"error": "No se puede eliminar una venta con abonos registrados"}), 400
+
+        # Opcional: verificar detalles, aunque se pueden eliminar en cascada si la BD lo permite
         db.session.delete(venta)
         db.session.commit()
         return jsonify({"message": "Venta eliminada correctamente"})
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al eliminar venta"}), 500
+        return jsonify({"error": f"Error al eliminar venta: {str(e)}"}), 500
 
 # ===== MÓDULO CITAS - COMPLETAR CRUD =====
 @main_bp.route('/citas', methods=['GET'])
@@ -1595,6 +1640,144 @@ def delete_detalle_venta(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al eliminar detalle de venta"}), 500
+
+# ===== TABLAS SECUNDARIAS - DETALLES PEDIDO - CRUD =====
+
+@main_bp.route('/detalle-pedido', methods=['GET'])
+def get_detalles_pedido():
+    """Lista todos los detalles de pedido (opcional: filtrar por pedido_id)"""
+    try:
+        # Si se pasa ?pedido_id=... en la query string, filtrar
+        pedido_id = request.args.get('pedido_id', type=int)
+        if pedido_id:
+            detalles = DetallePedido.query.filter_by(pedido_id=pedido_id).all()
+        else:
+            detalles = DetallePedido.query.all()
+        return jsonify([detalle.to_dict() for detalle in detalles])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener detalles de pedido"}), 500
+
+
+@main_bp.route('/detalle-pedido', methods=['POST'])
+def create_detalle_pedido():
+    """Crea un nuevo detalle para un pedido existente"""
+    try:
+        data = request.get_json()
+        required_fields = ['pedido_id', 'producto_id', 'cantidad', 'precio_unitario']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo '{field}' es requerido"}), 400
+
+        # Verificar que el pedido exista
+        pedido = Pedido.query.get(data['pedido_id'])
+        if not pedido:
+            return jsonify({"error": "El pedido especificado no existe"}), 404
+
+        # Verificar que el pedido no esté ya entregado o cancelado (opcional, según reglas de negocio)
+        if pedido.estado in ['entregado', 'cancelado']:
+            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado}'"}), 400
+
+        # Calcular subtotal
+        cantidad = int(data['cantidad'])
+        precio = float(data['precio_unitario'])
+        subtotal = cantidad * precio
+
+        detalle = DetallePedido(
+            pedido_id=data['pedido_id'],
+            producto_id=data['producto_id'],
+            cantidad=cantidad,
+            precio_unitario=precio,
+            subtotal=subtotal
+        )
+        db.session.add(detalle)
+
+        # Actualizar el total del pedido (sumar el nuevo subtotal)
+        pedido.total += subtotal
+
+        db.session.commit()
+        return jsonify({
+            "message": "Detalle de pedido creado",
+            "detalle": detalle.to_dict()
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al crear detalle de pedido: {str(e)}"}), 500
+
+
+@main_bp.route('/detalle-pedido/<int:id>', methods=['PUT'])
+def update_detalle_pedido(id):
+    """Actualiza un detalle de pedido existente (cantidad, precio, etc.)"""
+    try:
+        detalle = DetallePedido.query.get(id)
+        if not detalle:
+            return jsonify({"error": "Detalle de pedido no encontrado"}), 404
+
+        pedido = Pedido.query.get(detalle.pedido_id)
+        if not pedido:
+            return jsonify({"error": "El pedido asociado no existe"}), 404
+
+        # No permitir modificación si el pedido ya está entregado o cancelado
+        if pedido.estado in ['entregado', 'cancelado']:
+            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado}'"}), 400
+
+        data = request.get_json()
+        # Guardar valores antiguos para actualizar el total del pedido
+        old_subtotal = detalle.subtotal
+
+        # Actualizar campos
+        if 'producto_id' in data:
+            detalle.producto_id = data['producto_id']
+        if 'cantidad' in data:
+            detalle.cantidad = int(data['cantidad'])
+        if 'precio_unitario' in data:
+            detalle.precio_unitario = float(data['precio_unitario'])
+
+        # Recalcular subtotal
+        nuevo_subtotal = detalle.cantidad * detalle.precio_unitario
+        detalle.subtotal = nuevo_subtotal
+
+        # Ajustar el total del pedido (restar antiguo, sumar nuevo)
+        pedido.total = pedido.total - old_subtotal + nuevo_subtotal
+
+        db.session.commit()
+        return jsonify({
+            "message": "Detalle de pedido actualizado",
+            "detalle": detalle.to_dict()
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al actualizar detalle de pedido: {str(e)}"}), 500
+
+
+@main_bp.route('/detalle-pedido/<int:id>', methods=['DELETE'])
+def delete_detalle_pedido(id):
+    """Elimina un detalle de pedido y actualiza el total del pedido"""
+    try:
+        detalle = DetallePedido.query.get(id)
+        if not detalle:
+            return jsonify({"error": "Detalle de pedido no encontrado"}), 404
+
+        pedido = Pedido.query.get(detalle.pedido_id)
+        if not pedido:
+            return jsonify({"error": "El pedido asociado no existe"}), 404
+
+        # No permitir eliminación si el pedido ya está entregado o cancelado
+        if pedido.estado in ['entregado', 'cancelado']:
+            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado}'"}), 400
+
+        # Restar el subtotal del total del pedido
+        pedido.total -= detalle.subtotal
+
+        db.session.delete(detalle)
+        db.session.commit()
+        return jsonify({"message": "Detalle de pedido eliminado correctamente"})
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al eliminar detalle de pedido: {str(e)}"}), 500
+
 
 # ===== TABLAS SECUNDARIAS - DETALLES COMPRA - COMPLETAR CRUD =====
 @main_bp.route('/detalle-compra', methods=['GET'])
@@ -1909,14 +2092,30 @@ def get_campanas_salud():
     except Exception as e:
         return jsonify({"error": "Error al obtener campañas"}), 500
 
+@main_bp.route('/campanas-salud/<int:id>', methods=['GET'])
+def get_campana_salud(id):
+    """Obtiene una campaña de salud por su ID"""
+    try:
+        campana = CampanaSalud.query.get(id)
+        if not campana:
+            return jsonify({"error": "Campaña no encontrada"}), 404
+        return jsonify(campana.to_dict())
+    except Exception as e:
+        return jsonify({"error": f"Error al obtener campaña: {str(e)}"}), 500
+
 @main_bp.route('/campanas-salud', methods=['POST'])
 def create_campana_salud():
     try:
         data = request.get_json()
-        required_fields = ['empleado_id', 'empresa', 'fecha', 'hora']
+        required_fields = ['empleado_id', 'empresa', 'fecha', 'hora', 'estado_cita_id']  # ← agregado estado_cita_id
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        # Validar que estado_cita_id exista
+        estado_cita = EstadoCita.query.get(data['estado_cita_id'])
+        if not estado_cita:
+            return jsonify({"error": "El estado de cita especificado no existe"}), 400
 
         # Parsear fecha y hora
         fecha = datetime.strptime(data['fecha'], '%Y-%m-%d').date()
@@ -1929,8 +2128,8 @@ def create_campana_salud():
             fecha=fecha,
             hora=hora,
             direccion=data.get('direccion'),
-            estado=data.get('estado', True),
-            observaciones=data.get('observaciones')
+            observaciones=data.get('observaciones'),
+            estado_cita_id=data['estado_cita_id']  # ← nuevo campo
         )
         db.session.add(campana)
         db.session.commit()
@@ -1938,7 +2137,7 @@ def create_campana_salud():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear campaña: {str(e)}"}), 500
-
+    
 @main_bp.route('/campanas-salud/<int:id>', methods=['PUT'])
 def update_campana_salud(id):
     try:
@@ -1960,17 +2159,21 @@ def update_campana_salud(id):
             campana.hora = datetime.strptime(data['hora'], '%H:%M').time()
         if 'direccion' in data:
             campana.direccion = data['direccion']
-        if 'estado' in data:
-            campana.estado = data['estado']
         if 'observaciones' in data:
             campana.observaciones = data['observaciones']
+        if 'estado_cita_id' in data:
+            # Validar que exista
+            estado_cita = EstadoCita.query.get(data['estado_cita_id'])
+            if not estado_cita:
+                return jsonify({"error": "El estado de cita especificado no existe"}), 400
+            campana.estado_cita_id = data['estado_cita_id']
 
         db.session.commit()
         return jsonify({"message": "Campaña actualizada", "campana": campana.to_dict()})
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar campaña: {str(e)}"}), 500
-
+    
 @main_bp.route('/campanas-salud/<int:id>', methods=['DELETE'])
 def delete_campana_salud(id):
     try:
@@ -2072,56 +2275,56 @@ def delete_historial_formula(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar historial de fórmula"}), 500
 
-# ===== TABLAS DEL SISTEMA - ABONO - COMPLETAR CRUD =====
-@main_bp.route('/abono', methods=['GET'])
-def get_abonos():
-    try:
-        abonos = Abono.query.all()
-        return jsonify([abono.to_dict() for abono in abonos])
-    except Exception as e:
-        return jsonify({"error": "Error al obtener abonos"}), 500
+#==============Abonos================#
 
-@main_bp.route('/abono', methods=['POST'])
-def create_abono():
+@main_bp.route('/ventas/<int:venta_id>/abonos', methods=['POST'])
+def add_abono(venta_id):
+    """Registra un abono para una venta"""
     try:
+        venta = Venta.query.get(venta_id)
+        if not venta:
+            return jsonify({"error": "Venta no encontrada"}), 404
+
         data = request.get_json()
-        required_fields = ['venta_id', 'monto_abonado']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"error": f"El campo {field} es requerido"}), 400
+        if 'monto_abonado' not in data:
+            return jsonify({"error": "El campo 'monto_abonado' es requerido"}), 400
 
         abono = Abono(
-            venta_id=data['venta_id'],
-            monto_abonado=float(data['monto_abonado'])
+            venta_id=venta.id,
+            monto_abonado=float(data['monto_abonado']),
+            fecha=datetime.utcnow()
         )
         db.session.add(abono)
         db.session.commit()
-        return jsonify({"message": "Abono creado", "abono": abono.to_dict()}), 201
+
+        return jsonify({
+            "message": "Abono registrado",
+            "abono": abono.to_dict()
+        }), 201
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al crear abono"}), 500
+        return jsonify({"error": f"Error al registrar abono: {str(e)}"}), 500
 
-@main_bp.route('/abono/<int:id>', methods=['PUT'])
-def update_abono(id):
+
+@main_bp.route('/ventas/<int:venta_id>/abonos', methods=['GET'])
+def get_abonos(venta_id):
+    """Obtiene todos los abonos de una venta"""
     try:
-        abono = Abono.query.get(id)
-        if not abono:
-            return jsonify({"error": "Abono no encontrado"}), 404
+        venta = Venta.query.get(venta_id)
+        if not venta:
+            return jsonify({"error": "Venta no encontrada"}), 404
 
-        data = request.get_json()
-        if 'venta_id' in data:
-            abono.venta_id = data['venta_id']
-        if 'monto_abonado' in data:
-            abono.monto_abonado = float(data['monto_abonado'])
+        abonos = Abono.query.filter_by(venta_id=venta_id).all()
+        return jsonify([abono.to_dict() for abono in abonos])
 
-        db.session.commit()
-        return jsonify({"message": "Abono actualizado", "abono": abono.to_dict()})
     except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": "Error al actualizar abono"}), 500
+        return jsonify({"error": "Error al obtener abonos"}), 500
 
-@main_bp.route('/abono/<int:id>', methods=['DELETE'])
+
+@main_bp.route('/abonos/<int:id>', methods=['DELETE'])
 def delete_abono(id):
+    """Elimina un abono (uso restringido, solo si es necesario)"""
     try:
         abono = Abono.query.get(id)
         if not abono:
@@ -2129,10 +2332,11 @@ def delete_abono(id):
 
         db.session.delete(abono)
         db.session.commit()
-        return jsonify({"message": "Abono eliminado correctamente"})
+        return jsonify({"message": "Abono eliminado"})
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al eliminar abono"}), 500
+        return jsonify({"error": f"Error al eliminar abono: {str(e)}"}), 500
 
 # ===== TABLAS DE PERMISOS - PERMISO - COMPLETAR CRUD =====
 @main_bp.route('/permiso', methods=['GET'])
@@ -2553,7 +2757,8 @@ def get_horarios_empleado(empleado_id):
         return jsonify({"error": "Error al obtener horarios del empleado"}), 500
 
 @main_bp.route('/pedidos/<int:pedido_id>/detalles', methods=['GET'])
-def get_detalles_pedido(pedido_id):
+def get_detalles_de_pedido(pedido_id):
+    """Obtiene los detalles de un pedido específico"""
     try:
         detalles = DetallePedido.query.filter_by(pedido_id=pedido_id).all()
         return jsonify([detalle.to_dict() for detalle in detalles])
@@ -2580,7 +2785,7 @@ def get_all_endpoints():
             "categorias": "GET/POST /categorias, PUT/DELETE /categorias/{id}",
             
             # PEDIDOS
-            "pedidos": "GET/POST /pedidos, PUT/DELETE /pedidos/{id}, GET /pedidos/usuario/{id}",
+            "pedidos": "GET/POST /pedidos, PUT/DELETE /pedidos/{id}, GET /pedidos/cliente/{id} (PUT también genera venta al entregar)",
             
             # IMÁGENES (¡NUEVOS Y FUNCIONALES!)
             "imagen": "POST /imagen - Crear imagen para producto",

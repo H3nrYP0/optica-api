@@ -154,28 +154,25 @@ class Producto(db.Model):
 
 class Pedido(db.Model):
     __tablename__ = 'pedido'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=False)
-    usuario_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)  # Usuario que hizo el pedido
     fecha = db.Column(db.DateTime, default=datetime.utcnow)
     total = db.Column(db.Float, nullable=False)
-    metodo_pago = db.Column(db.String(20))  # 'efectivo', 'transferencia'
-    metodo_entrega = db.Column(db.String(20))  # 'tienda', 'domicilio'
+    metodo_pago = db.Column(db.String(20))          # 'efectivo', 'transferencia'
+    metodo_entrega = db.Column(db.String(20))       # 'tienda', 'domicilio'
     direccion_entrega = db.Column(db.String(255))
-    estado = db.Column(db.String(20), default='pendiente')  # 'pendiente', 'confirmado', 'en_preparacion', 'enviado', 'entregado', 'cancelado'
-    transferencia_comprobante = db.Column(db.String(255))  # URL de la imagen del comprobante
-    venta_id = db.Column(db.Integer, db.ForeignKey('venta.id'), nullable=True)  # Relación con venta cuando se procesa
+    estado = db.Column(db.String(20), default='pendiente')  # pendiente, confirmado, en_preparacion, enviado, entregado, cancelado
+    transferencia_comprobante = db.Column(db.String(255))    # URL del comprobante
+
+    # Relaciones
     cliente = db.relationship('Cliente', backref='pedidos')
-    usuario = db.relationship('Usuario', backref='pedidos')
-    venta = db.relationship('Venta', backref='pedido', uselist=False)
     items = db.relationship('DetallePedido', backref='pedido', lazy=True, cascade='all, delete-orphan')
-    
+
     def to_dict(self):
         return {
             'id': self.id,
             'cliente_id': self.cliente_id,
-            'usuario_id': self.usuario_id,
             'fecha': self.fecha.isoformat() if self.fecha else None,
             'total': self.total,
             'metodo_pago': self.metodo_pago,
@@ -183,23 +180,22 @@ class Pedido(db.Model):
             'direccion_entrega': self.direccion_entrega,
             'estado': self.estado,
             'transferencia_comprobante': self.transferencia_comprobante,
-            'venta_id': self.venta_id,
             'cliente_nombre': self.cliente.nombre if self.cliente else None,
             'items': [item.to_dict() for item in self.items] if self.items else []
         }
 
 class DetallePedido(db.Model):
     __tablename__ = 'detalle_pedido'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     pedido_id = db.Column(db.Integer, db.ForeignKey('pedido.id'), nullable=False)
     producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=False)
     cantidad = db.Column(db.Integer, nullable=False, default=1)
     precio_unitario = db.Column(db.Float, nullable=False)
     subtotal = db.Column(db.Float, nullable=False)
-    
+
     producto = db.relationship('Producto', backref='detalle_pedidos')
-    
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -429,41 +425,68 @@ class EstadoVenta(db.Model):
 
 class Venta(db.Model):
     __tablename__ = 'venta'
+
     id = db.Column(db.Integer, primary_key=True)
+    pedido_id = db.Column(db.Integer, db.ForeignKey('pedido.id'), nullable=False, unique=True)  # 1 pedido → 1 venta
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=False)
-    estado_venta_id = db.Column(db.Integer, db.ForeignKey('estado_venta.id'), nullable=False)
-    cita_id = db.Column(db.Integer, db.ForeignKey('cita.id'))
-    empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=False)
-    metodo_pago = db.Column(db.String(30))  # Métodos de pago combinados
-    fecha = db.Column(db.DateTime, default=datetime.utcnow)
-    total_venta = db.Column(db.Float, nullable=False)
-    detalles = db.relationship('DetalleVenta', backref='venta', lazy=True)
-    abonos = db.relationship('Abono', backref='venta', lazy=True)
+
+    # Fechas
+    fecha_pedido = db.Column(db.DateTime)                 # fecha original del pedido
+    fecha_venta = db.Column(db.DateTime, default=datetime.utcnow)   # fecha de conversión
+
+    # Datos copiados del pedido
+    total = db.Column(db.Float, nullable=False)
+    metodo_pago = db.Column(db.String(20))
+    metodo_entrega = db.Column(db.String(20))
+    direccion_entrega = db.Column(db.String(255))
+    transferencia_comprobante = db.Column(db.String(255))
+
+    # Estado propio de la venta (sin FK)
+    estado = db.Column(db.String(20), default='completada')   # ej: completada, anulada, pendiente_pago
+
+    # Relaciones
+    cliente = db.relationship('Cliente', backref='ventas')
+    pedido = db.relationship('Pedido', backref='venta', uselist=False)
+    detalles = db.relationship('DetalleVenta', backref='venta', lazy=True, cascade='all, delete-orphan')
+    abonos = db.relationship('Abono', backref='venta', lazy=True, cascade='all, delete-orphan')  # Relación con abonos
 
     def to_dict(self):
         return {
             'id': self.id,
+            'pedido_id': self.pedido_id,
             'cliente_id': self.cliente_id,
-            'total_venta': self.total_venta,
+            'cliente_nombre': self.cliente.nombre if self.cliente else None,
+            'fecha_pedido': self.fecha_pedido.isoformat() if self.fecha_pedido else None,
+            'fecha_venta': self.fecha_venta.isoformat() if self.fecha_venta else None,
+            'total': self.total,
             'metodo_pago': self.metodo_pago,
-            'fecha': self.fecha.isoformat()
+            'metodo_entrega': self.metodo_entrega,
+            'direccion_entrega': self.direccion_entrega,
+            'transferencia_comprobante': self.transferencia_comprobante,
+            'estado': self.estado,
+            'detalles': [item.to_dict() for item in self.detalles] if self.detalles else [],
+            'abonos': [abono.to_dict() for abono in self.abonos] if self.abonos else []
         }
 
 class DetalleVenta(db.Model):
     __tablename__ = 'detalle_venta'
+
     id = db.Column(db.Integer, primary_key=True)
-    producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=False)
     venta_id = db.Column(db.Integer, db.ForeignKey('venta.id'), nullable=False)
+    producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=False)
     cantidad = db.Column(db.Integer, nullable=False)
     precio_unitario = db.Column(db.Float, nullable=False)
-    descuento = db.Column(db.Float, default=0.0)
+    descuento = db.Column(db.Float, default=0.0)      # opcional
     subtotal = db.Column(db.Float, nullable=False)
+
+    producto = db.relationship('Producto', backref='detalle_ventas')
 
     def to_dict(self):
         return {
             'id': self.id,
             'venta_id': self.venta_id,
             'producto_id': self.producto_id,
+            'producto_nombre': self.producto.nombre if self.producto else None,
             'cantidad': self.cantidad,
             'precio_unitario': self.precio_unitario,
             'descuento': self.descuento,
@@ -517,6 +540,7 @@ class HistorialFormula(db.Model):
 
 class Abono(db.Model):
     __tablename__ = 'abono'
+
     id = db.Column(db.Integer, primary_key=True)
     venta_id = db.Column(db.Integer, db.ForeignKey('venta.id'), nullable=False)
     monto_abonado = db.Column(db.Float, nullable=False)
@@ -527,7 +551,7 @@ class Abono(db.Model):
             'id': self.id,
             'venta_id': self.venta_id,
             'monto_abonado': self.monto_abonado,
-            'fecha': self.fecha.isoformat()
+            'fecha': self.fecha.isoformat() if self.fecha else None
         }
     
 class CampanaSalud(db.Model):
@@ -540,11 +564,14 @@ class CampanaSalud(db.Model):
     fecha = db.Column(db.DateTime, nullable=False)
     hora = db.Column(db.Time, nullable=False)
     direccion = db.Column(db.String(30))
-    estado = db.Column(db.Boolean, default=True)
     observaciones = db.Column(db.String(100))
     
-    # Relación con empleado
+    # Nuevo campo: estado_cita_id como FK
+    estado_cita_id = db.Column(db.Integer, db.ForeignKey('estado_cita.id'), nullable=False, default=1)
+    
+    # Relaciones
     empleado = db.relationship('Empleado', backref='campanas_salud', lazy=True)
+    estado_cita = db.relationship('EstadoCita', backref='campanas_salud', lazy=True)
     
     def to_dict(self):
         return {
@@ -556,8 +583,9 @@ class CampanaSalud(db.Model):
             'fecha': self.fecha.isoformat() if self.fecha else None,
             'hora': self.hora.isoformat() if self.hora else None,
             'direccion': self.direccion,
-            'estado': self.estado,
-            'observaciones': self.observaciones
+            'observaciones': self.observaciones,
+            'estado_cita_id': self.estado_cita_id,
+            'estado_nombre': self.estado_cita.nombre if self.estado_cita else None
         }
     
 class Multimedia(db.Model):
