@@ -36,5 +36,5 @@ def create_app():
 
 {
     "correo": "superadmin@visualoutlet.com",
-    "contrasenia": "Pruebas123"
+    "contrasenia": "Pruebas123!"
 }
