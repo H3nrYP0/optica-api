@@ -1,5 +1,9 @@
 from app import create_app
 import os
+from dotenv import load_dotenv
+
+# ── Cargar variables del .env ANTES de crear la app ──
+load_dotenv()
 
 app = create_app()
 
