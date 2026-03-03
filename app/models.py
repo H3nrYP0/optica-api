@@ -324,7 +324,6 @@ class Empleado(db.Model):
     correo = db.Column(db.String(50)) 
     estado = db.Column(db.Boolean, default=True)
     citas = db.relationship('Cita', backref='empleado', lazy=True)
-    ventas = db.relationship('Venta', backref='empleado', lazy=True)
     horarios = db.relationship('Horario', backref='empleado', lazy=True)
 
     def to_dict(self):
@@ -391,7 +390,6 @@ class Cita(db.Model):
     duracion = db.Column(db.Integer)
     fecha = db.Column(db.Date, nullable=False)  # ← Cambiar de DateTime a Date
     estado_cita_id = db.Column(db.Integer, db.ForeignKey('estado_cita.id'), nullable=False)
-    ventas = db.relationship('Venta', backref='cita', lazy=True)
 
     def to_dict(self):
         return {
@@ -559,7 +557,7 @@ class CampanaSalud(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=False)
-    empresa = db.Column(db.String(20), nullable=False)
+    empresa = db.Column(db.String(60), nullable=False)
     contacto = db.Column(db.String(15))
     fecha = db.Column(db.DateTime, nullable=False)
     hora = db.Column(db.Time, nullable=False)
