@@ -357,7 +357,6 @@ class Cliente(db.Model):
     telefono_emergencia = db.Column(db.String(20))  # Cambié a String
     estado = db.Column(db.Boolean, default=True)
     citas = db.relationship('Cita', backref='cliente', lazy=True)
-    ventas = db.relationship('Venta', backref='cliente', lazy=True)
     historiales = db.relationship('HistorialFormula', backref='cliente', lazy=True)
 
     def to_dict(self):
