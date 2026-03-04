@@ -6,10 +6,10 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # ── CORS — permitir frontend local y producción ──
+    # ── CORS ──
     CORS(app, resources={
         r"/*": {
-            "origins": "https://optica-api-vad8.onrender.com",  
+            "origins": "*",
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"]
         }
@@ -19,13 +19,13 @@ def create_app():
     from app.database import init_db
     init_db(app)
 
-    # Inicializar módulo de autenticación (JWT + rutas)
-    from app.auth import init_auth
-    init_auth(app)
-
-    # Blueprint principal
+    # Blueprint principal PRIMERO
     from app.routes import main_bp
     app.register_blueprint(main_bp)
+
+    # Auth DESPUÉS — así no lo intercepta la ruta genérica
+    from app.auth import init_auth
+    init_auth(app)
 
     with app.app_context():
         from app.database import db
