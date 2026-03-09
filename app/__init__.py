@@ -9,9 +9,9 @@ def create_app():
     # ── CORS ──
     CORS(app, resources={
         r"/*": {
-            "origins": "*",
+            "origins": "*", # Permite todas las fuentes (ajustar para luego poner el dominio)
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"]
+            "allow_headers": ["Content-Type", "Authorization", "Cache-Control"]
         }
     })
 
