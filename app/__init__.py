@@ -1,15 +1,28 @@
 from flask import Flask
 from flask_cors import CORS
+from flask_mail import Mail
 from config import Config
+
+mail = Mail()
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
+    # ── Mail ──
+    app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+    app.config['MAIL_PORT'] = 587
+    app.config['MAIL_USE_TLS'] = True
+    app.config['MAIL_USERNAME'] = 'eyessetting@gmail.com'
+    app.config['MAIL_PASSWORD'] = 'anjw fbsu lsgp zrgp'
+    app.config['MAIL_DEFAULT_SENDER'] = 'eyessetting@gmail.com'
+
+    mail.init_app(app)
+
     # ── CORS ──
     CORS(app, resources={
         r"/*": {
-            "origins": "*", # Permite todas las fuentes (ajustar para luego poner el dominio)
+            "origins": "*",
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization", "Cache-Control"]
         }
@@ -23,7 +36,7 @@ def create_app():
     from app.routes import main_bp
     app.register_blueprint(main_bp)
 
-    # Auth DESPUÉS — así no lo intercepta la ruta genérica
+    # Auth DESPUÉS
     from app.auth import init_auth
     init_auth(app)
 

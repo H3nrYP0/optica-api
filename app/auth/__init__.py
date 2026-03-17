@@ -1,3 +1,4 @@
+from app import mail
 from .routes import auth_bp
 from .callbacks import init_callbacks
 
