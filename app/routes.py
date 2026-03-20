@@ -262,105 +262,134 @@ def get_pedidos_cliente(cliente_id):
     except Exception as e:
         return jsonify({"error": "Error al obtener pedidos del cliente"}), 500
 
-# ===== IMÁGENES - ENDPOINTS SUPER SIMPLES =====
 
-@main_bp.route('/imagen', methods=['POST'])
+# ==============================
+# 📸 CRUD IMÁGENES
+# ==============================
+
+# 🔹 Crear imagen
+@main_bp.route('/imagenes', methods=['POST'])
 def crear_imagen():
-    """Crear imagen - SOLO verificar que producto existe"""
     try:
         data = request.get_json()
-        
-        if not data.get('url') or not data.get('producto_id'):
+
+        if not data or not data.get('url') or not data.get('producto_id'):
             return jsonify({"error": "url y producto_id requeridos"}), 400
-        
-        # Verificar producto con SQL directo (evitar modelo si hay problemas)
-        from sqlalchemy import text
-        
-        conn = db.engine.connect()
-        result = conn.execute(text("SELECT id FROM producto WHERE id = :id"), 
-                            {'id': data['producto_id']})
-        producto_existe = result.fetchone() is not None
-        conn.close()
-        
-        if not producto_existe:
+
+        producto = Producto.query.get(data['producto_id'])
+        if not producto:
             return jsonify({"error": "Producto no encontrado"}), 404
-        
-        # Crear imagen (modelo simple SÍ funciona)
+
         imagen = Imagen(
             url=data['url'],
             producto_id=data['producto_id']
         )
-        
+
         db.session.add(imagen)
         db.session.commit()
-        
+
         return jsonify({
-            "success": True,
+            "message": "Imagen creada",
             "imagen": imagen.to_dict()
         }), 201
-        
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-@main_bp.route('/imagen/producto/<int:producto_id>', methods=['GET'])
-def obtener_imagenes_producto(producto_id):
-    """Obtener imágenes de un producto"""
+
+# 🔹 Obtener todas las imágenes
+@main_bp.route('/imagenes', methods=['GET'])
+def get_imagenes():
     try:
-        imagenes = Imagen.query.filter_by(producto_id=producto_id).all()
+        imagenes = Imagen.query.all()
         return jsonify([img.to_dict() for img in imagenes])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@main_bp.route('/productos-imagenes', methods=['GET'])
-def productos_con_imagenes_simple():
-    """Versión SUPER SIMPLE - 100% funcional"""
+
+# 🔹 Obtener una imagen por ID
+@main_bp.route('/imagenes/<int:id>', methods=['GET'])
+def get_imagen(id):
     try:
-        # 1. Obtener productos básicos
-        productos = Producto.query.all()
-        resultado = []
-        
-        for producto in productos:
-            # Usar to_dict() básico (sin imágenes)
-            producto_data = {
-                'id': producto.id,
-                'nombre': producto.nombre,
-                'precio_venta': producto.precio_venta,
-                'stock': producto.stock,
-                'descripcion': producto.descripcion,
-                'categoria_id': producto.categoria_producto_id,
-                'marca_id': producto.marca_id
-            }
-            
-            # 2. Obtener imágenes SEPARADO (evitar relaciones)
-            imagenes = Imagen.query.filter_by(producto_id=producto.id).all()
-            producto_data['imagenes'] = [{'id': img.id, 'url': img.url} for img in imagenes]
-            producto_data['imagen_principal'] = imagenes[0].url if imagenes else None
-            
-            resultado.append(producto_data)
-        
-        return jsonify(resultado)
-        
+        imagen = Imagen.query.get(id)
+
+        if not imagen:
+            return jsonify({"error": "Imagen no encontrada"}), 404
+
+        return jsonify(imagen.to_dict())
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@main_bp.route('/categorias-con-imagenes', methods=['GET'])
-def get_categorias_con_imagenes():
-    """Obtener todas las categorías con sus imágenes"""
+# 🔹 Obtener imágenes por producto
+@main_bp.route('/imagenes/producto/<int:producto_id>', methods=['GET'])
+def get_imagenes_por_producto(producto_id):
     try:
-        categorias = CategoriaProducto.query.all()
-        categorias_data = []
-        
-        for categoria in categorias:
-            categoria_dict = categoria.to_dict()
-            categorias_data.append(categoria_dict)
-        
-        return jsonify(categorias_data)
+        producto = Producto.query.get(producto_id)
+
+        if not producto:
+            return jsonify({"error": "Producto no encontrado"}), 404
+
+        return jsonify({
+            "producto_id": producto_id,
+            "imagenes": [img.to_dict() for img in producto.imagenes]
+        })
+
     except Exception as e:
-        return jsonify({"error": f"Error al obtener categorías: {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
 
 
+# 🔹 Actualizar imagen
+@main_bp.route('/imagenes/<int:id>', methods=['PUT'])
+def update_imagen(id):
+    try:
+        imagen = Imagen.query.get(id)
+
+        if not imagen:
+            return jsonify({"error": "Imagen no encontrada"}), 404
+
+        data = request.get_json()
+
+        if 'url' in data:
+            imagen.url = data['url']
+
+        if 'producto_id' in data:
+            producto = Producto.query.get(data['producto_id'])
+            if not producto:
+                return jsonify({"error": "Producto no encontrado"}), 404
+            imagen.producto_id = data['producto_id']
+
+        db.session.commit()
+
+        return jsonify({
+            "message": "Imagen actualizada",
+            "imagen": imagen.to_dict()
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+# 🔹 Eliminar imagen
+@main_bp.route('/imagenes/<int:id>', methods=['DELETE'])
+def delete_imagen(id):
+    try:
+        imagen = Imagen.query.get(id)
+
+        if not imagen:
+            return jsonify({"error": "Imagen no encontrada"}), 404
+
+        db.session.delete(imagen)
+        db.session.commit()
+
+        return jsonify({"message": "Imagen eliminada correctamente"})
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 # ===== MÓDULO MARCAS - COMPLETAR CRUD =====# ===== MÓDULO MARCAS CON ESTADO =====
 @main_bp.route('/marcas', methods=['GET'])

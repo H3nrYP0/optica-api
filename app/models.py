@@ -88,18 +88,22 @@ class Marca(db.Model):
 
 # ===== MODIFICACIÓN DEL MODELO IMAGEN (POLIMÓRFICO) =====
 class Imagen(db.Model):
-
     __tablename__ = 'imagen'
-    
     id = db.Column(db.Integer, primary_key=True)
-    producto_id = db.Column(db.Integer, nullable=False) 
-    url = db.Column(db.String(255), nullable=False)     
-    
+    url = db.Column(db.String(255), nullable=False)
+    producto_id = db.Column(
+        db.Integer,
+        db.ForeignKey('producto.id'),
+        nullable=False
+    )
+    # RELACIÓN
+    producto = db.relationship('Producto', back_populates='imagenes')
+
     def to_dict(self):
         return {
-            'id': self.id,
-            'producto_id': self.producto_id,
-            'url': self.url
+            "id": self.id,
+            "url": self.url,
+            "producto_id": self.producto_id
         }
 
 
