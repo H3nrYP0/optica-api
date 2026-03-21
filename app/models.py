@@ -97,7 +97,7 @@ class Imagen(db.Model):
         nullable=False
     )
     # RELACIÓN
-    producto = db.relationship('Producto', back_populates='imagenes')
+    producto = db.relationship('Producto', back_populates='imagenes')  # ✅ Esto ahora apunta a la relación 'imagenes' en Producto
 
     def to_dict(self):
         return {
@@ -139,6 +139,9 @@ class Producto(db.Model):
     descripcion = db.Column(db.String(120)) 
     estado = db.Column(db.Boolean, default=True)
     
+    # ✅ AGREGAR ESTA RELACIÓN
+    imagenes = db.relationship('Imagen', back_populates='producto', lazy=True, cascade='all, delete-orphan')
+    
     def to_dict(self):
         return {
             'id': self.id,
@@ -150,7 +153,8 @@ class Producto(db.Model):
             'descripcion': self.descripcion,  
             'estado': self.estado,
             'categoria_id': self.categoria_producto_id,
-            'marca_id': self.marca_id
+            'marca_id': self.marca_id,
+            'imagenes': [img.to_dict() for img in self.imagenes] if self.imagenes else []  # Opcional: incluir imágenes en to_dict
         }
 
 
