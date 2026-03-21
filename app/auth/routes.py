@@ -5,7 +5,7 @@ import secrets
 
 from app.database import db
 from app.models import Usuario, Cliente
-from app.auth import mail
+from app import mail  # ← CORREGIDO: importar mail desde app, no desde app.auth
 from .helpers import (
     verificar_contrasenia,
     generar_token,
