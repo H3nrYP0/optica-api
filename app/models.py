@@ -1,5 +1,5 @@
 from app.database import db
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # ===== TABLAS DE ROLES Y USUARIOS =====
 class Rol(db.Model):

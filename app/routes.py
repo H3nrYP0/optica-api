@@ -12,7 +12,7 @@ from app.models import (
     # NUEVAS TABLAS PARA PEDIDOS
     Pedido, DetallePedido, CampanaSalud
 )
-from datetime import datetime
+from datetime import datetime, timedelta
 
 main_bp = Blueprint('main', __name__)
 
