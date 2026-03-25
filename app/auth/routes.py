@@ -5,7 +5,7 @@ import secrets
 
 from app.database import db
 from app.models import Usuario, Cliente
-from app import mail  # ← CORREGIDO: importar mail desde app, no desde app.auth
+from app import mail
 from .helpers import (
     verificar_contrasenia,
     generar_token,
@@ -18,9 +18,14 @@ auth_bp = Blueprint('auth', __name__)
 
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 
-# Almacenamiento temporal de códigos (en memoria)
+# TODO: Mover codigos_verificacion y codigos_reset a PostgreSQL
+# Actualmente se guardan en memoria RAM — si Render reinicia la API
+# (por inactividad, deploy o crash) los códigos pendientes se pierden.
+# Solución: crear tabla 'codigos_temporales' con columnas:
+# correo, codigo, tipo, expira_en — y borrar al usar o al vencer.
 codigos_verificacion = {}
 codigos_reset = {}
+
 
 # =============================================
 # POST /auth/login
@@ -88,7 +93,7 @@ def login():
             }
         }), 200
 
-    except Exception as e:
+    except Exception:
         return jsonify({"success": False, "error": "Error interno del servidor"}), 500
 
 
@@ -117,7 +122,6 @@ def register():
         if Usuario.query.filter_by(correo=correo).first():
             return jsonify({"success": False, "error": "El correo ya está registrado"}), 400
 
-        # Generar código de 6 dígitos y guardar datos temporalmente
         codigo = str(secrets.randbelow(900000) + 100000)
         codigos_verificacion[correo] = {
             "codigo": codigo,
@@ -139,8 +143,8 @@ def register():
 
         return jsonify({"success": True, "message": "Código enviado al correo"}), 200
 
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Error al enviar código: {str(e)}"}), 500
+    except Exception:
+        return jsonify({"success": False, "error": "No se pudo enviar el código. Intenta de nuevo."}), 500
 
 
 # =============================================
@@ -169,7 +173,6 @@ def verify_register():
 
         contrasenia_hash = generate_password_hash(form_data['contrasenia'])
 
-        # Crear cliente asociado
         nombre_parts = form_data['nombre'].split(' ', 1)
         primer_nombre = nombre_parts[0]
         apellido = nombre_parts[1] if len(nombre_parts) > 1 else ''
@@ -187,7 +190,6 @@ def verify_register():
         db.session.add(cliente)
         db.session.flush()
 
-        # Crear usuario con rol_id=2 (cliente)
         usuario = Usuario(
             nombre=form_data['nombre'],
             correo=correo,
@@ -203,9 +205,9 @@ def verify_register():
 
         return jsonify({"success": True, "message": "Cuenta creada exitosamente"}), 201
 
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        return jsonify({"success": False, "error": f"Error al crear usuario: {str(e)}"}), 500
+        return jsonify({"success": False, "error": "No se pudo crear la cuenta. Intenta de nuevo."}), 500
 
 
 # =============================================
@@ -223,7 +225,7 @@ def forgot_password():
 
         usuario = Usuario.query.filter_by(correo=correo).first()
 
-        # Respuesta genérica para no revelar si el correo existe
+        # Respuesta genérica — no revelar si el correo existe o no en la BD
         if not usuario:
             return jsonify({"success": True, "message": "Si el correo existe, recibirás un código"}), 200
 
@@ -248,8 +250,9 @@ def forgot_password():
 
         return jsonify({"success": True, "message": "Si el correo existe, recibirás un código"}), 200
 
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Error al enviar correo: {str(e)}"}), 500
+    except Exception:
+        # Nunca exponer errores técnicos de BD o psycopg al frontend
+        return jsonify({"success": False, "error": "No se pudo procesar la solicitud. Intenta de nuevo."}), 500
 
 
 # =============================================
@@ -287,6 +290,6 @@ def reset_password():
 
         return jsonify({"success": True, "message": "Contraseña actualizada correctamente"}), 200
 
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        return jsonify({"success": False, "error": f"Error al actualizar contraseña: {str(e)}"}), 500
+        return jsonify({"success": False, "error": "No se pudo actualizar la contraseña. Intenta de nuevo."}), 500
