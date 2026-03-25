@@ -12,7 +12,7 @@ from app.models import (
     # NUEVAS TABLAS PARA PEDIDOS
     Pedido, DetallePedido, CampanaSalud
 )
-from datetime import datetime
+from datetime import datetime, timedelta
 
 main_bp = Blueprint('main', __name__)
 
@@ -2110,6 +2110,110 @@ def get_horarios_por_empleado(empleado_id):
         return jsonify([h.to_dict() for h in horarios])
     except Exception:
         return jsonify({"error": "Error al obtener horarios"}), 500
+
+
+# ===== Verificación de disponibilidad =====
+
+@main_bp.route('/verificar-disponibilidad', methods=['GET'])
+def verificar_disponibilidad():
+    """
+    Verifica si un empleado está disponible en una fecha y hora específicas.
+    Query params:
+        empleado_id (int): ID del empleado
+        fecha (str): YYYY-MM-DD
+        hora (str): HH:MM
+        duracion (int): duración en minutos (opcional, default=30)
+        exclude_cita_id (int): ID de una cita a excluir (para edición)
+    """
+    try:
+        # 1. Obtener parámetros
+        empleado_id = request.args.get('empleado_id', type=int)
+        fecha_str = request.args.get('fecha')
+        hora_str = request.args.get('hora')
+        duracion = request.args.get('duracion', default=30, type=int)
+        exclude_cita_id = request.args.get('exclude_cita_id', type=int)
+
+        # Validaciones
+        if not empleado_id or not fecha_str or not hora_str:
+            return jsonify({
+                "disponible": False,
+                "mensaje": "Faltan parámetros: empleado_id, fecha, hora"
+            }), 400
+
+        # Convertir fecha y hora
+        try:
+            fecha_date = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+            hora_time = datetime.strptime(hora_str, '%H:%M').time()
+        except ValueError:
+            return jsonify({
+                "disponible": False,
+                "mensaje": "Formato de fecha u hora inválido"
+            }), 400
+
+        # 2. Verificar horario del empleado para ese día
+        dia_semana = fecha_date.weekday()  # 0=lunes, 6=domingo (coincide con el modelo)
+
+        horario = Horario.query.filter_by(
+            empleado_id=empleado_id,
+            dia=dia_semana,
+            activo=True
+        ).first()
+
+        if not horario:
+            return jsonify({
+                "disponible": False,
+                "mensaje": "El empleado no tiene horario asignado para este día"
+            })
+
+        # Verificar si la hora está dentro del horario laboral
+        if hora_time < horario.hora_inicio or hora_time > horario.hora_final:
+            return jsonify({
+                "disponible": False,
+                "mensaje": f"El empleado solo trabaja de {horario.hora_inicio.strftime('%H:%M')} a {horario.hora_final.strftime('%H:%M')}"
+            })
+
+        # 3. Verificar si ya tiene citas que se superpongan
+        # Calcular el intervalo de tiempo solicitado
+        inicio_solicitado = datetime.combine(fecha_date, hora_time)
+        fin_solicitado = inicio_solicitado + timedelta(minutes=duracion)
+
+        # Obtener todas las citas del empleado para esa fecha
+        citas = Cita.query.filter(
+            Cita.empleado_id == empleado_id,
+            Cita.fecha == fecha_date
+        ).all()
+
+        for cita in citas:
+            # Excluir la cita que estamos editando si se pasa el parámetro
+            if exclude_cita_id and cita.id == exclude_cita_id:
+                continue
+
+            # Convertir cita a intervalo
+            inicio_cita = datetime.combine(cita.fecha, cita.hora)
+            fin_cita = inicio_cita + timedelta(minutes=cita.duracion or 30)  # Si no tiene duración, asumir 30
+
+            # Verificar superposición
+            if inicio_solicitado < fin_cita and fin_solicitado > inicio_cita:
+                return jsonify({
+                    "disponible": False,
+                    "mensaje": f"El empleado ya tiene una cita programada desde las {cita.hora.strftime('%H:%M')} hasta las {fin_cita.strftime('%H:%M')}"
+                })
+
+        # 4. Si todo está bien
+        return jsonify({
+            "disponible": True,
+            "mensaje": "Horario disponible",
+            "horario": {
+                "inicio": horario.hora_inicio.strftime('%H:%M'),
+                "fin": horario.hora_final.strftime('%H:%M')
+            }
+        })
+
+    except Exception as e:
+        return jsonify({
+            "disponible": False,
+            "mensaje": f"Error al verificar disponibilidad: {str(e)}"
+        }), 500
 
 
 # ===== MÓDULO CAMPAÑAS DE SALUD =====
