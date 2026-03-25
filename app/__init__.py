@@ -20,13 +20,16 @@ def create_app():
     mail.init_app(app)
 
     # ── CORS ──
-    CORS(app, resources={
-        r"/*": {
-            "origins": "*",
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization", "Cache-Control"]
-        }
-    })
+    CORS(app, 
+        origins=[
+            "http://localhost:5173",
+            "http://localhost:3000",
+            #"" ← agrega tu dominio real cuando subas
+        ],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization", "Cache-Control"],
+        supports_credentials=True
+    )   
 
     # Inicializar base de datos
     from app.database import init_db

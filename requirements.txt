@@ -4,7 +4,7 @@ flask-migrate==4.0.4
 flask-cors==4.0.0
 gunicorn==21.2.0
 python-dotenv==1.0.0
-psycopg[binary]==3.2.12
+psycopg2-binary==2.9.9
 bcrypt==4.0.1
 flask-jwt-extended==4.5.2
 Flask-Mail==0.9.1
