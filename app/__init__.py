@@ -9,7 +9,7 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # ── Mail ──
+    # ── Mail ──  ❌❌Configuración pendiente de seguridad: usa variables de entorno para las credenciales en producción
     app.config['MAIL_SERVER'] = 'smtp.gmail.com'
     app.config['MAIL_PORT'] = 587
     app.config['MAIL_USE_TLS'] = True

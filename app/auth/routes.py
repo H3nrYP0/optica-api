@@ -1,7 +1,8 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 from flask_mail import Message
 import re
 import secrets
+import threading
 
 from app.database import db
 from app.models import Usuario, Cliente
@@ -101,6 +102,11 @@ def login():
 # POST /auth/register
 # Envía código de verificación al correo
 # =============================================
+def send_email_async(app, msg):
+    """Envía el correo en un hilo separado para no bloquear el worker"""
+    with app.app_context():
+        mail.send(msg)
+
 @auth_bp.route('/register', methods=['POST'])
 def register():
     try:
@@ -139,13 +145,18 @@ def register():
             f"Si no solicitaste este registro, ignora este mensaje.\n\n"
             f"Visual Outlet"
         )
-        mail.send(msg)
+
+        # ── Envío asíncrono (no bloquea el worker) ──
+        app = current_app._get_current_object()  # ← agrega current_app a tus imports
+        thread = threading.Thread(target=send_email_async, args=(app, msg))
+        thread.daemon = True  # el hilo muere si el servidor se apaga
+        thread.start()
 
         return jsonify({"success": True, "message": "Código enviado al correo"}), 200
 
-    except Exception:
+    except Exception as e:
+        print(f"❌ Error en register: {e}")  # ← útil para ver errores reales en logs
         return jsonify({"success": False, "error": "No se pudo enviar el código. Intenta de nuevo."}), 500
-
 
 # =============================================
 # POST /auth/verify-register
