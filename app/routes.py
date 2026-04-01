@@ -13,6 +13,9 @@ from app.models import (
     Pedido, DetallePedido, CampanaSalud
 )
 from datetime import datetime, timedelta
+from app.auth.decorators import jwt_requerido, rol_requerido
+import re
+EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 
 main_bp = Blueprint('main', __name__)
 
@@ -899,13 +902,13 @@ def delete_proveedor(id):
 # ===== MÓDULO USUARIOS - COMPLETAR CRUD =====
 
 @main_bp.route('/usuarios', methods=['GET'])
+@jwt_requerido
 def get_usuarios():
     try:
         print("🔍 Intentando obtener usuarios...")
         usuarios = Usuario.query.all()
         print(f"✅ Encontrados {len(usuarios)} usuarios")
         
-        # Convertir a dict uno por uno para debug
         usuarios_list = []
         for usuario in usuarios:
             try:
@@ -913,7 +916,6 @@ def get_usuarios():
                 usuarios_list.append(usuario_dict)
             except Exception as e:
                 print(f"❌ Error convirtiendo usuario {usuario.id}: {e}")
-                # Agregar versión básica
                 usuarios_list.append({
                     'id': usuario.id,
                     'nombre': usuario.nombre,
@@ -926,77 +928,59 @@ def get_usuarios():
     except Exception as e:
         print(f"❌ ERROR CRÍTICO en get_usuarios: {str(e)}")
         import traceback
-        traceback.print_exc()  # Esto mostrará el stack trace completo
+        traceback.print_exc()
         return jsonify({"error": f"Error al obtener usuarios: {str(e)}"}), 500
-    
+
+
 @main_bp.route('/usuarios/<int:id>/completo', methods=['GET'])
+@jwt_requerido
 def get_usuario_completo(id):
-    """Obtener usuario con datos completos del cliente incluido"""
     try:
         usuario = Usuario.query.get(id)
-        
         if not usuario:
-            return jsonify({
-                "success": False,
-                "error": "Usuario no encontrado"
-            }), 404
+            return jsonify({"success": False, "error": "Usuario no encontrado"}), 404
         
-        # Preparar respuesta
         respuesta = {
             "usuario": usuario.to_dict(),
             "cliente": None
         }
         
-        # Si tiene cliente, obtener datos
         if usuario.cliente_id:
             cliente = Cliente.query.get(usuario.cliente_id)
             if cliente:
                 respuesta["cliente"] = cliente.to_dict()
         
-        return jsonify({
-            "success": True,
-            "data": respuesta
-        })
+        return jsonify({"success": True, "data": respuesta})
         
     except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": f"Error al obtener usuario completo: {str(e)}"
-        }), 500
-    
+        return jsonify({"success": False, "error": f"Error al obtener usuario completo: {str(e)}"}), 500
+
+
 @main_bp.route('/usuarios/email/<string:email>', methods=['GET'])
+@jwt_requerido
 def get_usuario_por_email(email):
-    """Obtener usuario por email (para recuperación de contraseña)"""
     try:
         usuario = Usuario.query.filter_by(correo=email).first()
-        
         if not usuario:
-            return jsonify({
-                "success": False,
-                "error": "Usuario no encontrado"
-            }), 404
-        
-        # Preparar respuesta básica
-        respuesta = {
-            "id": usuario.id,
-            "nombre": usuario.nombre,
-            "correo": usuario.correo,
-            "rol_id": usuario.rol_id,
-            "cliente_id": usuario.cliente_id
-        }
+            return jsonify({"success": False, "error": "Usuario no encontrado"}), 404
         
         return jsonify({
             "success": True,
-            "usuario": respuesta
+            "usuario": {
+                "id": usuario.id,
+                "nombre": usuario.nombre,
+                "correo": usuario.correo,
+                "rol_id": usuario.rol_id,
+                "cliente_id": usuario.cliente_id
+            }
         })
         
     except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": f"Error al buscar usuario: {str(e)}"
-        }), 500
+        return jsonify({"success": False, "error": f"Error al buscar usuario: {str(e)}"}), 500
+
 
 @main_bp.route('/usuarios', methods=['POST'])
+@rol_requerido('admin', 'superadmin')
 def create_usuario():
     try:
         data = request.get_json()
@@ -1004,112 +988,101 @@ def create_usuario():
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
-        
-        estado = data.get('estado')
-        
-        # Verificar si el correo ya existe
-        usuario_existente = Usuario.query.filter_by(correo=data['correo']).first()
-        if usuario_existente:
-            return jsonify({
-                "success": False,
-                "error": "El correo ya está registrado"
-            }), 400
-        
+
+        # Validar correo
+        if not EMAIL_REGEX.match(data['correo'].strip().lower()):
+            return jsonify({"error": "Formato de correo inválido"}), 400
+
+        # Validar contraseña
+        if len(data['contrasenia']) < 6:
+            return jsonify({"error": "La contraseña debe tener al menos 6 caracteres"}), 400
+
+        # Verificar correo duplicado
+        if Usuario.query.filter_by(correo=data['correo'].strip().lower()).first():
+            return jsonify({"success": False, "error": "El correo ya está registrado"}), 400
+
+        # Verificar que el rol existe y está activo
+        rol = Rol.query.get(data['rol_id'])
+        if not rol:
+            return jsonify({"error": "El rol especificado no existe"}), 400
+        if not rol.estado:
+            return jsonify({"error": "No puedes asignar un rol inactivo"}), 400
+
+        # Encriptar contraseña
+        from werkzeug.security import generate_password_hash
+        contrasenia_hash = generate_password_hash(data['contrasenia'])
+
         cliente_id = None
-        
-        # Si el rol es cliente (rol_id == 2), crear cliente PRIMERO
+
         if data['rol_id'] == 2:
-            # Dividir nombre para nombre y apellido
             nombre_parts = data['nombre'].split(' ')
-            primer_nombre = nombre_parts[0] if nombre_parts else data['nombre']
+            primer_nombre = nombre_parts[0]
             apellido = nombre_parts[1] if len(nombre_parts) > 1 else ''
-            
+
             cliente = Cliente(
                 nombre=primer_nombre,
                 apellido=apellido,
-                correo=data['correo'],
-                numero_documento=data.get('numero_documento', 'PENDIENTE'),  # ← Valor por defecto
-                fecha_nacimiento=data.get('fecha_nacimiento', datetime.now().date()),  # ← Valor por defecto
+                correo=data['correo'].strip().lower(),
+                numero_documento=data.get('numero_documento', 'PENDIENTE'),
+                fecha_nacimiento=data.get('fecha_nacimiento', datetime.now().date()),
                 genero=data.get('genero'),
                 telefono=data.get('telefono'),
                 municipio=data.get('municipio'),
                 direccion=data.get('direccion'),
                 ocupacion=data.get('ocupacion'),
                 telefono_emergencia=data.get('telefono_emergencia'),
-                estado=data.get('estado_cliente')
+                estado=True
             )
             db.session.add(cliente)
             db.session.flush()
             cliente_id = cliente.id
-        
-        # Crear usuario CON cliente_id (si aplica)
+
         usuario = Usuario(
             nombre=data['nombre'],
-            correo=data['correo'],
-            contrasenia=data['contrasenia'],
+            correo=data['correo'].strip().lower(),
+            contrasenia=contrasenia_hash,  # ✅ siempre encriptada
             rol_id=data['rol_id'],
-            estado=estado,
-            cliente_id=cliente_id  # ⬅️ ASIGNAR cliente_id SI EXISTE
+            estado=data.get('estado', True),
+            cliente_id=cliente_id
         )
         db.session.add(usuario)
-        
         db.session.commit()
-        
+
         return jsonify({
             "success": True,
-            "message": "Usuario registrado exitosamente",
+            "message": "Usuario creado exitosamente",
             "usuario": usuario.to_dict(),
             "cliente_id": cliente_id
         }), 201
-        
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({
-            "success": False,
-            "error": f"Error al crear usuario: {str(e)}"
-        }), 500
-    
+        return jsonify({"success": False, "error": f"Error al crear usuario: {str(e)}"}), 500
+
+
 @main_bp.route('/clientes/usuario/<int:usuario_id>', methods=['GET'])
+@jwt_requerido
 def get_cliente_by_usuario(usuario_id):
-    """Obtener cliente por ID de usuario"""
     try:
-        # Buscar usuario primero
         usuario = Usuario.query.get(usuario_id)
-        
         if not usuario:
-            return jsonify({
-                "success": False,
-                "error": "Usuario no encontrado"
-            }), 404
+            return jsonify({"success": False, "error": "Usuario no encontrado"}), 404
         
-        # Si no tiene cliente_id, no hay cliente
         if not usuario.cliente_id:
-            return jsonify({
-                "success": False,
-                "error": "Este usuario no tiene cliente asociado"
-            }), 404
+            return jsonify({"success": False, "error": "Este usuario no tiene cliente asociado"}), 404
         
-        # Buscar cliente por cliente_id
         cliente = Cliente.query.get(usuario.cliente_id)
-        
         if not cliente:
-            return jsonify({
-                "success": False,
-                "error": "Cliente no encontrado"
-            }), 404
+            return jsonify({"success": False, "error": "Cliente no encontrado"}), 404
         
-        return jsonify({
-            "success": True,
-            "cliente": cliente.to_dict()
-        })
+        return jsonify({"success": True, "cliente": cliente.to_dict()})
         
     except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": f"Error al obtener cliente: {str(e)}"
-        }), 500
+        return jsonify({"success": False, "error": f"Error al obtener cliente: {str(e)}"}), 500
+
 
 @main_bp.route('/usuarios/<int:id>', methods=['PUT'])
+@rol_requerido('admin', 'superadmin')
 def update_usuario(id):
     try:
         usuario = Usuario.query.get(id)
@@ -1117,49 +1090,81 @@ def update_usuario(id):
             return jsonify({"error": "Usuario no encontrado"}), 404
 
         data = request.get_json()
+
+        if 'correo' in data:
+            correo = data['correo'].strip().lower()
+            if not EMAIL_REGEX.match(correo):
+                return jsonify({"error": "Formato de correo inválido"}), 400
+            existente = Usuario.query.filter_by(correo=correo).first()
+            if existente and existente.id != id:
+                return jsonify({"error": "El correo ya está registrado"}), 400
+            usuario.correo = correo
+
         if 'nombre' in data:
             usuario.nombre = data['nombre']
-        if 'correo' in data:
-            usuario.correo = data['correo']
+
         if 'contrasenia' in data:
-            usuario.contrasenia = data['contrasenia']
+            if len(data['contrasenia']) < 6:
+                return jsonify({"error": "La contraseña debe tener al menos 6 caracteres"}), 400
+            from werkzeug.security import generate_password_hash
+            usuario.contrasenia = generate_password_hash(data['contrasenia'])
+
         if 'rol_id' in data:
+            rol = Rol.query.get(data['rol_id'])
+            if not rol:
+                return jsonify({"error": "El rol especificado no existe"}), 400
+            if not rol.estado:
+                return jsonify({"error": "No puedes asignar un rol inactivo"}), 400
             usuario.rol_id = data['rol_id']
-        if 'estado' in data:  # ← ESTA LÍNEA FALTABA
+
+        if 'estado' in data:
             usuario.estado = data['estado']
 
         db.session.commit()
         return jsonify({"message": "Usuario actualizado", "usuario": usuario.to_dict()})
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al actualizar usuario"}), 500
-    
+
+
 @main_bp.route('/usuarios/<int:id>', methods=['DELETE'])
+@rol_requerido('admin', 'superadmin')
 def delete_usuario(id):
     try:
         usuario = Usuario.query.get(id)
         if not usuario:
             return jsonify({"error": "Usuario no encontrado"}), 404
 
+        # No eliminar si está activo
+        if usuario.estado:
+            return jsonify({
+                "error": "Debes desactivar el usuario antes de eliminarlo"
+            }), 400
+
         db.session.delete(usuario)
         db.session.commit()
         return jsonify({"message": "Usuario eliminado correctamente"})
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al eliminar usuario"}), 500
-
 # ===== MÓDULO ROLES - COMPLETAR CRUD =====
+# Roles críticos que no se pueden tocar
+ROLES_CRITICOS = ['admin', 'superadmin']
+
 @main_bp.route('/roles', methods=['GET'])
+@jwt_requerido
 def get_roles():
     try:
         roles = Rol.query.all()
         return jsonify([rol.to_dict() for rol in roles])
     except Exception as e:
-        print("ERROR:", e)
         return jsonify({"error": "Error al obtener roles"}), 500
 
 
 @main_bp.route('/roles', methods=['POST'])
+@rol_requerido('admin', 'superadmin')
 def create_rol():
     try:
         data = request.get_json()
@@ -1167,104 +1172,149 @@ def create_rol():
         if not data or not data.get('nombre'):
             return jsonify({"error": "El nombre es requerido"}), 400
 
+        # Validar longitud del nombre
+        nombre = data['nombre'].strip()
+        if len(nombre) < 3 or len(nombre) > 25:
+            return jsonify({"error": "El nombre debe tener entre 3 y 25 caracteres"}), 400
+
+        # No permitir crear roles críticos
+        if nombre.lower() in ROLES_CRITICOS:
+            return jsonify({"error": "No puedes crear un rol con ese nombre"}), 403
+
         # Validar duplicado
-        if Rol.query.filter_by(nombre=data['nombre']).first():
-            return jsonify({"error": "El rol ya existe"}), 400
+        if Rol.query.filter_by(nombre=nombre).first():
+            return jsonify({"error": "Ya existe un rol con ese nombre"}), 400
 
         permisos_ids = data.get('permisos', [])
-
-        # Obtener permisos válidos
         permisos = []
         if permisos_ids:
-            permisos = Permiso.query.filter(
-                Permiso.id.in_(permisos_ids)
-            ).all()
-
+            permisos = Permiso.query.filter(Permiso.id.in_(permisos_ids)).all()
             if len(permisos) != len(permisos_ids):
                 return jsonify({"error": "Uno o más permisos no existen"}), 400
 
-        # Convertir estado de string a booleano
         estado_valor = data.get('estado', True)
         if isinstance(estado_valor, str):
             estado_bool = estado_valor == "activo"
         else:
-            estado_bool = estado_valor
+            estado_bool = bool(estado_valor)
 
         rol = Rol(
-            nombre=data['nombre'],
-            descripcion=data.get('descripcion', ''),
+            nombre=nombre,
+            descripcion=data.get('descripcion', '').strip(),
             estado=estado_bool
         )
-
         rol.permisos = permisos
 
         db.session.add(rol)
         db.session.commit()
 
-        return jsonify({
-            "message": "Rol creado",
-            "rol": rol.to_dict()
-        }), 201
+        return jsonify({"message": "Rol creado", "rol": rol.to_dict()}), 201
 
     except Exception as e:
         db.session.rollback()
-        print("ERROR:", e)
         return jsonify({"error": "Error al crear rol"}), 500
 
 
 @main_bp.route('/roles/<int:id>', methods=['PUT'])
+@rol_requerido('admin', 'superadmin')
 def update_rol(id):
     try:
         rol = Rol.query.get(id)
         if not rol:
             return jsonify({"error": "Rol no encontrado"}), 404
 
+        # No permitir editar roles críticos
+        if rol.nombre.lower() in ROLES_CRITICOS:
+            return jsonify({"error": "No puedes modificar este rol"}), 403
+
         data = request.get_json()
-        
-        # Actualizar campos básicos
+
         if 'nombre' in data:
-            rol.nombre = data['nombre']
+            nombre = data['nombre'].strip()
+            if len(nombre) < 3 or len(nombre) > 25:
+                return jsonify({"error": "El nombre debe tener entre 3 y 25 caracteres"}), 400
+
+            # Verificar duplicado (excluyendo el mismo rol)
+            existente = Rol.query.filter_by(nombre=nombre).first()
+            if existente and existente.id != id:
+                return jsonify({"error": "Ya existe un rol con ese nombre"}), 400
+
+            rol.nombre = nombre
+
         if 'descripcion' in data:
-            rol.descripcion = data['descripcion']
+            rol.descripcion = data['descripcion'].strip()
+
         if 'estado' in data:
-            # Convertir "activo"/"inactivo" a booleano
-            if isinstance(data['estado'], str):
-                rol.estado = data['estado'] == "activo"
-            else:
-                rol.estado = data['estado']
-        
-        # 🔥 ACTUALIZAR PERMISOS (ESTO ES LO NUEVO)
+            nuevo_estado = data['estado']
+            if isinstance(nuevo_estado, str):
+                nuevo_estado = nuevo_estado == "activo"
+
+            # No desactivar si tiene usuarios activos
+            if not nuevo_estado:
+                usuarios_activos = Usuario.query.filter_by(
+                    rol_id=id, estado=True
+                ).count()
+                if usuarios_activos > 0:
+                    return jsonify({
+                        "error": f"No puedes desactivar este rol: tiene {usuarios_activos} usuario(s) activo(s)"
+                    }), 400
+
+            rol.estado = nuevo_estado
+
         if 'permisos' in data:
             permisos_ids = data['permisos']
+            # Eliminar duplicados
+            permisos_ids = list(set(permisos_ids))
+
             if permisos_ids:
                 permisos = Permiso.query.filter(Permiso.id.in_(permisos_ids)).all()
                 if len(permisos) != len(permisos_ids):
                     return jsonify({"error": "Uno o más permisos no existen"}), 400
                 rol.permisos = permisos
             else:
-                # Si viene lista vacía, quitar todos los permisos
                 rol.permisos = []
 
         db.session.commit()
         return jsonify({"message": "Rol actualizado", "rol": rol.to_dict()})
+
     except Exception as e:
         db.session.rollback()
-        print("ERROR:", e)
         return jsonify({"error": "Error al actualizar rol"}), 500
 
+
 @main_bp.route('/roles/<int:id>', methods=['DELETE'])
+@rol_requerido('admin', 'superadmin')
 def delete_rol(id):
     try:
         rol = Rol.query.get(id)
         if not rol:
             return jsonify({"error": "Rol no encontrado"}), 404
 
+        # No eliminar roles críticos
+        if rol.nombre.lower() in ROLES_CRITICOS:
+            return jsonify({"error": "No puedes eliminar este rol"}), 403
+
+        # No eliminar si está activo
+        if rol.estado:
+            return jsonify({
+                "error": "Debes desactivar el rol antes de eliminarlo"
+            }), 400
+
+        # No eliminar si tiene usuarios (activos o inactivos)
+        usuarios_count = Usuario.query.filter_by(rol_id=id).count()
+        if usuarios_count > 0:
+            return jsonify({
+                "error": f"No puedes eliminar este rol: tiene {usuarios_count} usuario(s) asignado(s)"
+            }), 400
+
         db.session.delete(rol)
         db.session.commit()
         return jsonify({"message": "Rol eliminado correctamente"})
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al eliminar rol"}), 500
+
 
 # ===== MÓDULO VENTAS - CRUD (SIN CREACIÓN MANUAL) =====
 
