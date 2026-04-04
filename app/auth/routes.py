@@ -16,28 +16,26 @@ from .helpers import (
 )
 
 auth_bp = Blueprint('auth', __name__)
-
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 
-# TODO: Mover codigos_verificacion y codigos_reset a PostgreSQL
-# Actualmente se guardan en memoria RAM — si Render reinicia la API
-# (por inactividad, deploy o crash) los códigos pendientes se pierden.
-# Solución: crear tabla 'codigos_temporales' con columnas:
-# correo, codigo, tipo, expira_en — y borrar al usar o al vencer.
+# Almacenamiento temporal en memoria.
+# TODO: mover a tabla BD 'codigos_temporales' para sobrevivir reinicios.
 codigos_verificacion = {}
 codigos_reset = {}
 
 
-# =============================================
-# POST /auth/login
-# =============================================
+def send_email_async(app, msg):
+    """Envía el correo en un hilo separado para no bloquear el worker."""
+    with app.app_context():
+        mail.send(msg)
+
+
+# ── POST /auth/login ─────────────────────────────────────────────────────────
 @auth_bp.route('/login', methods=['POST'])
 def login():
     ip_cliente = request.remote_addr
-
     try:
         data = request.get_json()
-
         if not data or not data.get('correo') or not data.get('contrasenia'):
             return jsonify({"success": False, "error": "Correo y contraseña son requeridos"}), 400
 
@@ -46,12 +44,10 @@ def login():
 
         if not EMAIL_REGEX.match(correo):
             return jsonify({"success": False, "error": "Formato de correo inválido"}), 400
-
         if len(contrasenia.strip()) < 6:
             return jsonify({"success": False, "error": "La contraseña debe tener al menos 6 caracteres"}), 400
 
         usuario = Usuario.query.filter_by(correo=correo).first()
-
         if not usuario:
             log_login_fallido("correo no existe", correo, ip_cliente)
             return jsonify({"success": False, "error": "Correo o contraseña incorrectos"}), 401
@@ -60,20 +56,12 @@ def login():
             log_cuenta_inactiva(correo, ip_cliente)
             return jsonify({"success": False, "error": "Tu cuenta está inactiva. Contacta al administrador."}), 403
 
-        contrasenia_valida = verificar_contrasenia(
-            contrasenia,
-            usuario.contrasenia,
-            usuario.id,
-            db
-        )
-
-        if not contrasenia_valida:
+        if not verificar_contrasenia(contrasenia, usuario.contrasenia, usuario.id, db):
             log_login_fallido("contraseña incorrecta", correo, ip_cliente)
             return jsonify({"success": False, "error": "Correo o contraseña incorrectos"}), 401
 
         permisos = []
         nombre_rol = "usuario"
-
         if usuario.rol:
             nombre_rol = usuario.rol.nombre.lower()
             permisos = [p.nombre for p in usuario.rol.permisos]
@@ -98,41 +86,27 @@ def login():
         return jsonify({"success": False, "error": "Error interno del servidor"}), 500
 
 
-# =============================================
-# POST /auth/register
-# Envía código de verificación al correo
-# =============================================
-def send_email_async(app, msg):
-    """Envía el correo en un hilo separado para no bloquear el worker"""
-    with app.app_context():
-        mail.send(msg)
-
+# ── POST /auth/register ──────────────────────────────────────────────────────
+# Envía código de verificación; NO crea el usuario todavía.
 @auth_bp.route('/register', methods=['POST'])
 def register():
     try:
         data = request.get_json()
-
         required_fields = ['nombre', 'correo', 'contrasenia', 'numeroDocumento', 'fechaNacimiento']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({"success": False, "error": f"El campo {field} es requerido"}), 400
 
         correo = data['correo'].strip().lower()
-
         if not EMAIL_REGEX.match(correo):
             return jsonify({"success": False, "error": "Formato de correo inválido"}), 400
-
         if len(data['contrasenia']) < 6:
             return jsonify({"success": False, "error": "La contraseña debe tener al menos 6 caracteres"}), 400
-
         if Usuario.query.filter_by(correo=correo).first():
             return jsonify({"success": False, "error": "El correo ya está registrado"}), 400
 
         codigo = str(secrets.randbelow(900000) + 100000)
-        codigos_verificacion[correo] = {
-            "codigo": codigo,
-            "data": data
-        }
+        codigos_verificacion[correo] = {"codigo": codigo, "data": data}
 
         msg = Message(
             subject="Código de verificación - Visual Outlet",
@@ -146,22 +120,20 @@ def register():
             f"Visual Outlet"
         )
 
-        # ── Envío asíncrono (no bloquea el worker) ──
-        app = current_app._get_current_object()  # ← agrega current_app a tus imports
-        thread = threading.Thread(target=send_email_async, args=(app, msg))
-        thread.daemon = True  # el hilo muere si el servidor se apaga
+        app_instance = current_app._get_current_object()
+        thread = threading.Thread(target=send_email_async, args=(app_instance, msg))
+        thread.daemon = True
         thread.start()
 
         return jsonify({"success": True, "message": "Código enviado al correo"}), 200
 
     except Exception as e:
-        print(f"❌ Error en register: {e}")  # ← útil para ver errores reales en logs
+        print(f"❌ Error en register: {e}")
         return jsonify({"success": False, "error": "No se pudo enviar el código. Intenta de nuevo."}), 500
 
-# =============================================
-# POST /auth/verify-register
-# Verifica código y crea el usuario
-# =============================================
+
+# ── POST /auth/verify-register ───────────────────────────────────────────────
+# Verifica código y crea el usuario + cliente.
 @auth_bp.route('/verify-register', methods=['POST'])
 def verify_register():
     try:
@@ -173,28 +145,24 @@ def verify_register():
             return jsonify({"success": False, "error": "No hay un registro pendiente para este correo"}), 400
 
         registro = codigos_verificacion[correo]
-
         if registro['codigo'] != codigo:
             return jsonify({"success": False, "error": "Código incorrecto"}), 400
 
         form_data = registro['data']
 
         from werkzeug.security import generate_password_hash
-        from datetime import datetime
+        from datetime import datetime as dt
 
         contrasenia_hash = generate_password_hash(form_data['contrasenia'])
-
         nombre_parts = form_data['nombre'].split(' ', 1)
-        primer_nombre = nombre_parts[0]
-        apellido = nombre_parts[1] if len(nombre_parts) > 1 else ''
 
         cliente = Cliente(
-            nombre=primer_nombre,
-            apellido=apellido,
+            nombre=nombre_parts[0],
+            apellido=nombre_parts[1] if len(nombre_parts) > 1 else '',
             correo=correo,
             numero_documento=form_data['numeroDocumento'],
             tipo_documento=form_data.get('tipoDocumento', 'CC'),
-            fecha_nacimiento=datetime.strptime(form_data['fechaNacimiento'], '%Y-%m-%d').date(),
+            fecha_nacimiento=dt.strptime(form_data['fechaNacimiento'], '%Y-%m-%d').date(),
             telefono=form_data.get('telefono'),
             estado=True
         )
@@ -216,15 +184,13 @@ def verify_register():
 
         return jsonify({"success": True, "message": "Cuenta creada exitosamente"}), 201
 
-    except Exception:
+    except Exception as e:
         db.session.rollback()
+        print(f"❌ Error en verify_register: {e}")
         return jsonify({"success": False, "error": "No se pudo crear la cuenta. Intenta de nuevo."}), 500
 
 
-# =============================================
-# POST /auth/forgot-password
-# Envía código de recuperación al correo
-# =============================================
+# ── POST /auth/forgot-password ───────────────────────────────────────────────
 @auth_bp.route('/forgot-password', methods=['POST'])
 def forgot_password():
     try:
@@ -235,16 +201,12 @@ def forgot_password():
             return jsonify({"success": False, "error": "Correo inválido"}), 400
 
         usuario = Usuario.query.filter_by(correo=correo).first()
-
-        # Respuesta genérica — no revelar si el correo existe o no en la BD
+        # Respuesta genérica — no revelar si el correo existe en BD
         if not usuario:
             return jsonify({"success": True, "message": "Si el correo existe, recibirás un código"}), 200
 
         codigo = str(secrets.randbelow(900000) + 100000)
-        codigos_reset[correo] = {
-            "codigo": codigo,
-            "usuario_id": usuario.id
-        }
+        codigos_reset[correo] = {"codigo": codigo, "usuario_id": usuario.id}
 
         msg = Message(
             subject="Recuperar contraseña - Visual Outlet",
@@ -257,19 +219,19 @@ def forgot_password():
             f"Si no solicitaste este cambio, ignora este mensaje.\n\n"
             f"Visual Outlet"
         )
-        mail.send(msg)
+
+        app_instance = current_app._get_current_object()
+        thread = threading.Thread(target=send_email_async, args=(app_instance, msg))
+        thread.daemon = True
+        thread.start()
 
         return jsonify({"success": True, "message": "Si el correo existe, recibirás un código"}), 200
 
     except Exception:
-        # Nunca exponer errores técnicos de BD o psycopg al frontend
         return jsonify({"success": False, "error": "No se pudo procesar la solicitud. Intenta de nuevo."}), 500
 
 
-# =============================================
-# POST /auth/reset-password
-# Verifica código y actualiza contraseña
-# =============================================
+# ── POST /auth/reset-password ────────────────────────────────────────────────
 @auth_bp.route('/reset-password', methods=['POST'])
 def reset_password():
     try:
@@ -280,15 +242,12 @@ def reset_password():
 
         if not all([correo, codigo, nueva_contrasenia]):
             return jsonify({"success": False, "error": "Todos los campos son requeridos"}), 400
-
         if len(nueva_contrasenia) < 6:
             return jsonify({"success": False, "error": "La contraseña debe tener al menos 6 caracteres"}), 400
-
         if correo not in codigos_reset:
             return jsonify({"success": False, "error": "No hay una solicitud de recuperación para este correo"}), 400
 
         reset = codigos_reset[correo]
-
         if reset['codigo'] != codigo:
             return jsonify({"success": False, "error": "Código incorrecto"}), 400
 
