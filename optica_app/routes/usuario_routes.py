@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 from optica_app.database import db
 from optica_app.models import Usuario, Rol, Cliente
-from optica_app.auth.decorators import jwt_requerido, rol_requerido
+#from optica_app.auth.decorators import jwt_requerido, rol_requerido
 from datetime import datetime
 import re
 
@@ -12,7 +12,7 @@ ROLES_CRITICOS = ['admin', 'superadmin']
 
 # ── Listar todos (solo con token) ────────────────────────────────────────────
 @usuario_bp.route('', methods=['GET'])
-@jwt_requerido
+#@jwt_requerido
 def get_usuarios():
     try:
         return jsonify([u.to_dict() for u in Usuario.query.all()])
@@ -22,7 +22,7 @@ def get_usuarios():
 
 # ── GET individual (solo con token) ─────────────────────────────────────────
 @usuario_bp.route('/<int:id>', methods=['GET'])
-@jwt_requerido
+#@jwt_requerido
 def get_usuario(id):
     try:
         usuario = Usuario.query.get(id)
@@ -35,7 +35,7 @@ def get_usuario(id):
 
 # ── GET completo con datos de cliente (solo con token) ───────────────────────
 @usuario_bp.route('/<int:id>/completo', methods=['GET'])
-@jwt_requerido
+#@jwt_requerido
 def get_usuario_completo(id):
     try:
         usuario = Usuario.query.get(id)
@@ -76,7 +76,7 @@ def get_usuario_por_email(email):
 # El registro de clientes lo hace /auth/register (con verificación de email).
 # Este endpoint lo usa el panel admin para crear empleados/admins.
 @usuario_bp.route('', methods=['POST'])
-@rol_requerido('admin', 'superadmin')
+#@rol_requerido('admin', 'superadmin')
 def create_usuario():
     try:
         data = request.get_json()
@@ -147,7 +147,7 @@ def create_usuario():
 
 # ── Actualizar (solo admin) ──────────────────────────────────────────────────
 @usuario_bp.route('/<int:id>', methods=['PUT'])
-@rol_requerido('admin', 'superadmin')
+#@rol_requerido('admin', 'superadmin')
 def update_usuario(id):
     try:
         usuario = Usuario.query.get(id)
@@ -186,7 +186,7 @@ def update_usuario(id):
 
 # ── Eliminar (solo admin, usuario debe estar inactivo) ───────────────────────
 @usuario_bp.route('/<int:id>', methods=['DELETE'])
-@rol_requerido('admin', 'superadmin')
+#@rol_requerido('admin', 'superadmin')
 def delete_usuario(id):
     try:
         usuario = Usuario.query.get(id)

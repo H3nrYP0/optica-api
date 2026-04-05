@@ -71,14 +71,35 @@ def create_app():
     app.register_blueprint(campana_bp,    url_prefix='/campanas-salud')
     app.register_blueprint(historial_bp,  url_prefix='/historial-formula')
     app.register_blueprint(sistema_bp)    # El sistema no suele llevar prefijo
-    # Ruta de bienvenida
+
+
+# ── Ruta de bienvenida y Listado de Endpoints ──
     @app.route('/')
     def index():
-        return jsonify({"message": "API Óptica - Modo Libre de Token", "status": "Ready"}), 200
+        import urllib.parse
+        output = []
+        # Iteramos sobre todas las reglas de URL registradas en la app
+        for rule in app.url_map.iter_rules():
+            # Filtramos para no mostrar rutas internas de Flask (estáticas)
+            if "static" not in rule.endpoint:
+                methods = ','.join(rule.methods)
+                # Formateamos la información de la ruta
+                line = {
+                    "endpoint": rule.endpoint,
+                    "methods": methods.replace("OPTIONS,HEAD,", ""), # Limpiamos ruidos
+                    "route": urllib.parse.unquote(str(rule))
+                }
+                output.append(line)
+        
+        # Ordenamos alfabéticamente por ruta para que sea fácil de leer
+        output.sort(key=lambda x: x['route'])
 
-    # ❌ COMENTADO: Bloqueo de seguridad para volver a la versión anterior
-    # from optica_app.auth import init_auth
-    # init_auth(app)
+        return jsonify({
+            "message": "API Óptica - Modo Libre de Token",
+            "status": "Ready",
+            "version": "3.1 - Refactored",
+            "endpoints_activos": output
+        }), 200
 
     # ── Creación de Tablas ──
     with app.app_context():
