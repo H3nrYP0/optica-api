@@ -1,25 +1,24 @@
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_mail import Mail
 from config import Config
 
 mail = Mail()
 
-
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-    app.config['MAIL_PORT'] = 587
-    app.config['MAIL_USE_TLS'] = True
-    app.config['MAIL_USERNAME'] = 'eyessetting@gmail.com'
-    app.config['MAIL_PASSWORD'] = 'anjw fbsu lsgp zrgp'
-    app.config['MAIL_DEFAULT_SENDER'] = 'eyessetting@gmail.com'
+    # Mail (usa Config)
     mail.init_app(app)
 
+    # CORS
     CORS(app,
-         origins=["http://localhost:5173", "http://localhost:3000"],
+         origins=[
+             "http://localhost:5173",
+             "http://localhost:3000",
+            #"" agrega dominio real aquí
+         ],
          methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
          allow_headers=["Content-Type", "Authorization", "Cache-Control"],
          supports_credentials=True)
@@ -27,7 +26,7 @@ def create_app():
     from app.database import init_db
     init_db(app)
 
-    # ── Blueprints ──────────────────────────────────────────────────────────
+    # Blueprints
     from app.routes.marca_routes      import marca_bp
     from app.routes.categoria_routes  import categoria_bp
     from app.routes.producto_routes   import producto_bp
@@ -55,7 +54,7 @@ def create_app():
     app.register_blueprint(proveedor_bp,  url_prefix='/proveedores')
     app.register_blueprint(compra_bp,     url_prefix='/compras')
     app.register_blueprint(cita_bp,       url_prefix='/citas')
-    app.register_blueprint(servicio_bp,   url_prefix='/servicios')   # ← NUEVO
+    app.register_blueprint(servicio_bp,   url_prefix='/servicios')
     app.register_blueprint(pedido_bp,     url_prefix='/pedidos')
     app.register_blueprint(venta_bp,      url_prefix='/ventas')
     app.register_blueprint(usuario_bp,    url_prefix='/usuarios')
@@ -64,20 +63,26 @@ def create_app():
     app.register_blueprint(horario_bp,    url_prefix='/horario')
     app.register_blueprint(campana_bp,    url_prefix='/campanas-salud')
     app.register_blueprint(historial_bp,  url_prefix='/historial-formula')
-    app.register_blueprint(sistema_bp)    # sin prefijo (rutas mixtas: /estado-cita, /permiso, etc.)
+    app.register_blueprint(sistema_bp)
+
+    @app.route('/')
+    def index():
+        return jsonify({
+            "message": "API Óptica Online",
+            "status": "Ready",
+            "version": "3.1"
+        }), 200
 
     from app.auth import init_auth
     init_auth(app)
 
     with app.app_context():
         from app.database import db
+        import app.models
         try:
             db.create_all()
-            print("✅ Tablas creadas/verificadas")
-            from app.models import Empleado
-            count = Empleado.query.count()
-            print(f"✅ Conexión exitosa. Empleados en BD: {count}")
+            print("✅ Estructura de base de datos verificada")
         except Exception as e:
-            print(f"❌ Error creando tablas: {e}")
+            print(f"❌ Error en base de datos: {e}")
 
     return app

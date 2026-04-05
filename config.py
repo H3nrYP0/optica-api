@@ -16,7 +16,6 @@ class Config:
     if _url.startswith('postgresql+psycopg2://') and 'sslmode' not in _url:
         _url += '?sslmode=require'
 
-    # Si no hay URL de producción, construir ruta absoluta para SQLite
     if not _url:
         _sqlite_path = os.path.join(BASE_DIR, 'instance', 'optica.db')
         _url = f'sqlite:///{_sqlite_path}'
@@ -49,3 +48,11 @@ class Config:
         JWT_SECRET_KEY = JWT_SECRET_KEY or 'dev-jwt-inseguro'
 
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=8)
+
+    # MAIL CONFIG
+    MAIL_SERVER = 'smtp.gmail.com'
+    MAIL_PORT = 587
+    MAIL_USE_TLS = True
+    MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
+    MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
+    MAIL_DEFAULT_SENDER = os.environ.get('MAIL_USERNAME')
