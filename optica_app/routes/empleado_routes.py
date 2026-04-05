@@ -1,97 +1,112 @@
 from flask import Blueprint, jsonify, request
 from optica_app.database import db
-from optica_app.models import Empleado, Horario, CampanaSalud, EstadoCita
-from datetime import datetime, timedelta
-from optica_app.models import Cita
+from optica_app.models import Cliente, Cita # Importamos Cita para validar integridad
 
-empleado_bp = Blueprint('empleados', __name__)
+cliente_bp = Blueprint('clientes', __name__)
 
-@empleado_bp.route('', methods=['GET'])
-def get_empleados():
+@cliente_bp.route('', methods=['GET'])
+def get_clientes():
     try:
-        return jsonify([e.to_dict() for e in Empleado.query.all()])
-    except Exception as e:
-        return jsonify({"error": "Error al obtener empleados"}), 500
+        # Retorna todos los clientes para la tabla principal
+        return jsonify([c.to_dict() for c in Cliente.query.all()]), 200
+    except Exception:
+        return jsonify({"error": "Error al obtener la lista de clientes"}), 500
 
-@empleado_bp.route('', methods=['POST'])
-def create_empleado():
+@cliente_bp.route('', methods=['POST'])
+def create_cliente():
     try:
         data = request.get_json()
-        required = ['nombre', 'numero_documento', 'fecha_ingreso']
-        for field in required:
-            if field not in data:
-                return jsonify({"error": f"El campo {field} es requerido"}), 400
-        empleado = Empleado(
-            nombre=data['nombre'],
+        
+        # 1. VALIDACIÓN: Campos obligatorios de identificación
+        numero_doc = str(data.get('numero_documento', '')).strip()
+        nombre = " ".join(data.get('nombre', '').split()).strip()
+        apellido = " ".join(data.get('apellido', '').split()).strip()
+
+        if not numero_doc or not nombre:
+            return jsonify({"error": "El documento y el nombre son obligatorios"}), 400
+
+        # 2. VALIDACIÓN: Evitar duplicados (Un paciente = Un documento)
+        if Cliente.query.filter_by(numero_documento=numero_doc).first():
+            return jsonify({"error": f"Ya existe un cliente registrado con el documento {numero_doc}"}), 400
+
+        nuevo_cliente = Cliente(
             tipo_documento=data.get('tipo_documento'),
-            numero_documento=data['numero_documento'],
+            numero_documento=numero_doc,
+            nombre=nombre,
+            apellido=apellido,
             telefono=data.get('telefono'),
             correo=data.get('correo'),
             direccion=data.get('direccion'),
-            fecha_ingreso=datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date(),
-            cargo=data.get('cargo'),
+            fecha_nacimiento=data.get('fecha_nacimiento'), # Formato YYYY-MM-DD
+            genero=data.get('genero'),
             estado=data.get('estado', True)
         )
-        db.session.add(empleado)
+        
+        db.session.add(nuevo_cliente)
         db.session.commit()
-        return jsonify({"message": "Empleado creado", "empleado": empleado.to_dict()}), 201
+        
+        # Respuesta limpia para el Front (Objeto único)
+        return jsonify(nuevo_cliente.to_dict()), 201
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al crear empleado"}), 500
+        return jsonify({"error": f"Error al registrar cliente: {str(e)}"}), 500
 
-@empleado_bp.route('/<int:id>', methods=['PUT'])
-def update_empleado(id):
+@cliente_bp.route('/<int:id>', methods=['PUT'])
+def update_cliente(id):
     try:
-        empleado = Empleado.query.get(id)
-        if not empleado:
-            return jsonify({"error": "Empleado no encontrado"}), 404
+        cliente = db.session.get(Cliente, id)
+        if not cliente:
+            return jsonify({"error": "Cliente no encontrado"}), 404
+        
         data = request.get_json()
-        if 'nombre' in data: empleado.nombre = data['nombre']
-        if 'tipo_documento' in data: empleado.tipo_documento = data['tipo_documento']
-        if 'numero_documento' in data: empleado.numero_documento = data['numero_documento']
-        if 'telefono' in data: empleado.telefono = data['telefono']
-        if 'correo' in data: empleado.correo = data['correo']
-        if 'direccion' in data: empleado.direccion = data['direccion']
-        if 'fecha_ingreso' in data: empleado.fecha_ingreso = datetime.strptime(data['fecha_ingreso'], '%Y-%m-%d').date()
-        if 'cargo' in data: empleado.cargo = data['cargo']
-        if 'estado' in data: empleado.estado = data['estado']
+
+        # Si cambia el documento, verificar que no choque con otro cliente
+        if 'numero_documento' in data:
+            nuevo_doc = str(data['numero_documento']).strip()
+            existente = Cliente.query.filter(Cliente.numero_documento == nuevo_doc, Cliente.id != id).first()
+            if existente:
+                return jsonify({"error": "Ese número de documento ya está asignado a otro paciente"}), 400
+            cliente.numero_documento = nuevo_doc
+
+        # Actualización de datos de contacto
+        if 'nombre' in data: cliente.nombre = " ".join(data['nombre'].split()).strip()
+        if 'apellido' in data: cliente.apellido = " ".join(data['apellido'].split()).strip()
+        if 'telefono' in data: cliente.telefono = data['telefono']
+        if 'correo' in data: cliente.correo = data['correo']
+        if 'direccion' in data: cliente.direccion = data['direccion']
+        
+        # Corrección de Estado Null
+        if 'estado' in data:
+            cliente.estado = bool(data['estado'])
+
         db.session.commit()
-        return jsonify({"message": "Empleado actualizado", "empleado": empleado.to_dict()})
+        return jsonify(cliente.to_dict()), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al actualizar empleado"}), 500
+        return jsonify({"error": str(e)}), 500
 
-@empleado_bp.route('/<int:id>', methods=['DELETE'])
-def delete_empleado(id):
+@cliente_bp.route('/<int:id>', methods=['DELETE'])
+def delete_cliente(id):
     try:
-        empleado = Empleado.query.get(id)
-        if not empleado:
-            return jsonify({"error": "Empleado no encontrado"}), 404
-        db.session.delete(empleado)
+        cliente = db.session.get(Cliente, id)
+        if not cliente:
+            return jsonify({"error": "Cliente no encontrado"}), 404
+
+        # REGLA DE ORO: No borrar si tiene historial o citas
+        # Esto protege la integridad de los datos de salud
+        tiene_citas = Cita.query.filter_by(cliente_id=id).first()
+        
+        if tiene_citas:
+            return jsonify({
+                "error": "No se puede eliminar el perfil: El paciente tiene citas registradas. Desactívelo para ocultarlo de la lista actual."
+            }), 400
+
+        db.session.delete(cliente)
         db.session.commit()
-        return jsonify({"message": "Empleado eliminado correctamente"})
-    except Exception as e:
+        return jsonify({"message": "Perfil de cliente eliminado correctamente"}), 200
+    except Exception:
         db.session.rollback()
-        return jsonify({"error": "Error al eliminar empleado"}), 500
-
-@empleado_bp.route('/<int:empleado_id>/horarios', methods=['GET'])
-def get_horarios_empleado(empleado_id):
-    try:
-        horarios = Horario.query.filter_by(empleado_id=empleado_id).all()
-        return jsonify([h.to_dict() for h in horarios])
-    except Exception as e:
-        return jsonify({"error": "Error al obtener horarios del empleado"}), 500
-
-@empleado_bp.route('/<int:empleado_id>/campanas', methods=['GET'])
-def get_campanas_por_empleado(empleado_id):
-    try:
-        campanas = CampanaSalud.query.filter_by(empleado_id=empleado_id).all()
-        return jsonify([c.to_dict() for c in campanas])
-    except Exception as e:
-        return jsonify({"error": "Error al obtener campañas del empleado"}), 500
-
-@empleado_bp.route('/verificar-disponibilidad', methods=['GET'])
-def verificar_disponibilidad():
+        return jsonify({"error": "Error de integridad al intentar eliminar al cliente"}), 500
     try:
         empleado_id = request.args.get('empleado_id', type=int)
         fecha_str = request.args.get('fecha')
