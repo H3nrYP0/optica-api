@@ -12,7 +12,7 @@ class Proveedor(db.Model):
     telefono = db.Column(db.String(10))
     correo = db.Column(db.String(50))
     departamento = db.Column(db.String(15))
-    municipio = db.Column(db.String(15))
+    municipio = db.Column(db.String(100))
     direccion = db.Column(db.String(30))
     estado = db.Column(db.Boolean, default=True)
     compras = db.relationship('Compra', backref='proveedor', lazy=True)

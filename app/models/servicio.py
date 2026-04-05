@@ -4,7 +4,7 @@ from app.database import db
 class Servicio(db.Model):
     __tablename__ = 'servicio'
     id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(65), nullable=False)
+    nombre = db.Column(db.String(50), nullable=False)
     duracion_min = db.Column(db.Integer, nullable=False)
     precio = db.Column(db.Float, nullable=False)
     descripcion = db.Column(db.String(200))

@@ -3,7 +3,7 @@ from app.database import db
 class Marca(db.Model):
     __tablename__ = 'marca'
     id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(23), nullable=False)
+    nombre = db.Column(db.String(50), nullable=False)
     estado = db.Column(db.Boolean, default=True)
     productos = db.relationship('Producto', backref='marca', lazy=True)
 
@@ -17,7 +17,7 @@ class Marca(db.Model):
 class CategoriaProducto(db.Model):
     __tablename__ = 'categoria_producto'
     id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(15), nullable=False)
+    nombre = db.Column(db.String(50), nullable=False)
     descripcion = db.Column(db.String(100))
     estado = db.Column(db.Boolean, default=True)
     productos = db.relationship('Producto', backref='categoria', lazy=True)
@@ -35,7 +35,7 @@ class Producto(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     categoria_producto_id = db.Column(db.Integer, db.ForeignKey('categoria_producto.id'), nullable=False)
     marca_id = db.Column(db.Integer, db.ForeignKey('marca.id'), nullable=False)
-    nombre = db.Column(db.String(20), nullable=False)
+    nombre = db.Column(db.String(50), nullable=False)
     precio_venta = db.Column(db.Float, nullable=False)
     precio_compra = db.Column(db.Float, nullable=False)
     stock = db.Column(db.Integer, default=0)

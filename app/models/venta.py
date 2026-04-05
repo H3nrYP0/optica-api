@@ -4,7 +4,7 @@ from datetime import datetime
 class EstadoVenta(db.Model):
     __tablename__ = 'estado_venta'
     id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(23), nullable=False)
+    nombre = db.Column(db.String(50), nullable=False)
 
     def to_dict(self):
         return {
@@ -20,11 +20,11 @@ class Venta(db.Model):
     fecha_pedido = db.Column(db.DateTime)
     fecha_venta = db.Column(db.DateTime, default=datetime.utcnow)
     total = db.Column(db.Float, nullable=False)
-    metodo_pago = db.Column(db.String(20))
-    metodo_entrega = db.Column(db.String(20))
+    metodo_pago = db.Column(db.String(50))
+    metodo_entrega = db.Column(db.String(50))
     direccion_entrega = db.Column(db.String(255))
     transferencia_comprobante = db.Column(db.String(255))
-    estado = db.Column(db.String(20), default='completada')
+    estado = db.Column(db.String(50), default='completada')
     cliente = db.relationship('Cliente', backref='ventas')
     pedido = db.relationship('Pedido', backref='venta', uselist=False)
     detalles = db.relationship('DetalleVenta', backref='venta', lazy=True, cascade='all, delete-orphan')

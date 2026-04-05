@@ -4,7 +4,7 @@ from app.database import db
 class EstadoCita(db.Model):
     __tablename__ = 'estado_cita'
     id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(23), nullable=False)
+    nombre = db.Column(db.String(50), nullable=False)
     citas = db.relationship('Cita', backref='estado_cita', lazy=True)
 
     def to_dict(self):
@@ -20,7 +20,7 @@ class Cita(db.Model):
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=False)
     servicio_id = db.Column(db.Integer, db.ForeignKey('servicio.id'), nullable=False)
     empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=False)
-    metodo_pago = db.Column(db.String(15))
+    metodo_pago = db.Column(db.String(30))
     hora = db.Column(db.Time, nullable=False)
     duracion = db.Column(db.Integer)
     fecha = db.Column(db.Date, nullable=False)
