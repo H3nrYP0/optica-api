@@ -27,7 +27,7 @@ def verificar_contrasenia(contrasenia_plana, contrasenia_guardada, usuario_id, d
             bcrypt.gensalt()
         )
         # Importar aquí para evitar imports circulares
-        from optica_app.models import Usuario
+        from app.models import Usuario
         usuario = Usuario.query.get(usuario_id)
         usuario.contrasenia = hash_nuevo.decode('utf-8')
         db.session.commit()
