@@ -4,77 +4,96 @@ from optica_app.models import Servicio
 
 servicio_bp = Blueprint('servicios', __name__)
 
-
 @servicio_bp.route('', methods=['GET'])
 def get_servicios():
     try:
-        return jsonify([s.to_dict() for s in Servicio.query.all()])
-    except Exception as e:
+        # Devuelve todos los servicios para que el Front los liste
+        return jsonify([s.to_dict() for s in Servicio.query.all()]), 200
+    except Exception:
         return jsonify({"error": "Error al obtener servicios"}), 500
-
-
-@servicio_bp.route('/<int:id>', methods=['GET'])
-def get_servicio(id):
-    try:
-        servicio = Servicio.query.get(id)
-        if not servicio:
-            return jsonify({"error": "Servicio no encontrado"}), 404
-        return jsonify(servicio.to_dict())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 
 @servicio_bp.route('', methods=['POST'])
 def create_servicio():
     try:
         data = request.get_json()
-        required = ['nombre', 'duracion_min', 'precio']
-        for field in required:
-            if field not in data:
-                return jsonify({"error": f"El campo {field} es requerido"}), 400
-        servicio = Servicio(
-            nombre=data['nombre'],
-            duracion_min=data['duracion_min'],
-            precio=float(data['precio']),
-            descripcion=data.get('descripcion', ''),
+        nombre = " ".join(data.get('nombre', '').split()).strip()
+        precio = float(data.get('precio', 0))
+        duracion = int(data.get('duracion', 30)) # Duración por defecto 30 min
+
+        # 1. VALIDACIÓN: Datos básicos
+        if not nombre or precio <= 0:
+            return jsonify({"error": "Nombre obligatorio y precio debe ser mayor a 0"}), 400
+
+        # 2. VALIDACIÓN: Unicidad
+        if Servicio.query.filter(Servicio.nombre.ilike(nombre)).first():
+            return jsonify({"error": f"El servicio '{nombre}' ya existe"}), 400
+
+        nuevo_servicio = Servicio(
+            nombre=nombre,
+            descripcion=data.get('descripcion', '').strip(),
+            precio=precio,
+            duracion=duracion,
             estado=data.get('estado', True)
         )
-        db.session.add(servicio)
+        
+        db.session.add(nuevo_servicio)
         db.session.commit()
-        return jsonify({"message": "Servicio creado", "servicio": servicio.to_dict()}), 201
+        
+        # Respuesta Limpia (Objeto directo)
+        return jsonify(nuevo_servicio.to_dict()), 201
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al crear servicio"}), 500
-
+        return jsonify({"error": str(e)}), 500
 
 @servicio_bp.route('/<int:id>', methods=['PUT'])
 def update_servicio(id):
     try:
-        servicio = Servicio.query.get(id)
+        servicio = db.session.get(Servicio, id)
         if not servicio:
             return jsonify({"error": "Servicio no encontrado"}), 404
+            
         data = request.get_json()
-        if 'nombre' in data:       servicio.nombre = data['nombre']
-        if 'duracion_min' in data: servicio.duracion_min = data['duracion_min']
-        if 'precio' in data:       servicio.precio = float(data['precio'])
-        if 'descripcion' in data:  servicio.descripcion = data['descripcion']
-        if 'estado' in data:       servicio.estado = data['estado']
+        
+        # Si se intenta cambiar el nombre, validar que no choque con otro
+        if 'nombre' in data:
+            nombre = data['nombre'].strip()
+            existente = Servicio.query.filter(Servicio.nombre.ilike(nombre), Servicio.id != id).first()
+            if existente:
+                return jsonify({"error": "Ya existe otro servicio con ese nombre"}), 400
+            servicio.nombre = nombre
+
+        # Actualización de otros campos con limpieza
+        if 'precio' in data:
+            servicio.precio = float(data['precio'])
+        if 'duracion' in data:
+            servicio.duracion = int(data['duracion'])
+        if 'descripcion' in data:
+            servicio.descripcion = data['descripcion'].strip()
+        if 'estado' in data:
+            servicio.estado = bool(data['estado'])
+
         db.session.commit()
-        return jsonify({"message": "Servicio actualizado", "servicio": servicio.to_dict()})
+        return jsonify(servicio.to_dict()), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al actualizar servicio"}), 500
-
+        return jsonify({"error": str(e)}), 500
 
 @servicio_bp.route('/<int:id>', methods=['DELETE'])
 def delete_servicio(id):
     try:
-        servicio = Servicio.query.get(id)
+        servicio = db.session.get(Servicio, id)
         if not servicio:
             return jsonify({"error": "Servicio no encontrado"}), 404
+
+        # REGLA DE NEGOCIO: No borrar si hay citas programadas con este servicio
+        if len(servicio.citas) > 0:
+            return jsonify({
+                "error": "No se puede eliminar. Este servicio tiene citas registradas. Desactívelo en su lugar."
+            }), 400
+
         db.session.delete(servicio)
         db.session.commit()
-        return jsonify({"message": "Servicio eliminado correctamente"})
-    except Exception as e:
+        return jsonify({"message": "Servicio eliminado correctamente"}), 200
+    except Exception:
         db.session.rollback()
-        return jsonify({"error": "Error al eliminar servicio"}), 500
+        return jsonify({"error": "Error de integridad al eliminar el servicio"}), 500
