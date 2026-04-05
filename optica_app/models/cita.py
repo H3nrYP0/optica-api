@@ -18,27 +18,22 @@ class Cita(db.Model):
     __tablename__ = 'cita'
     id = db.Column(db.Integer, primary_key=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=False)
-    servicio_id = db.Column(db.Integer, db.ForeignKey('servicio.id'), nullable=False)
     empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=False)
-    metodo_pago = db.Column(db.String(30))
-    hora = db.Column(db.Time, nullable=False)
-    duracion = db.Column(db.Integer)
-    fecha = db.Column(db.Date, nullable=False)
-    estado_cita_id = db.Column(db.Integer, db.ForeignKey('estado_cita.id'), nullable=False)
+    fecha_cita = db.Column(db.DateTime, nullable=False)
+    motivo = db.Column(db.String(200))
+    estado = db.Column(db.String(20), default='Pendiente') # Pendiente, Completada, Cancelada
+    activo = db.Column(db.Boolean, default=True)
 
     def to_dict(self):
         return {
             'id': self.id,
             'cliente_id': self.cliente_id,
-            'servicio_id': self.servicio_id,
             'empleado_id': self.empleado_id,
-            'metodo_pago': self.metodo_pago,
-            'hora': self.hora.isoformat() if self.hora else None,
-            'duracion': self.duracion,
-            'fecha': self.fecha.isoformat() if self.fecha else None,
-            'estado_cita_id': self.estado_cita_id,
-            'estado_nombre': self.estado_cita.nombre if self.estado_cita else None,
-            'cliente_nombre': f"{self.cliente.nombre} {self.cliente.apellido}" if self.cliente else None,
-            'servicio_nombre': self.servicio.nombre if self.servicio else None,
-            'empleado_nombre': self.empleado.nombre if self.empleado else None
+            'fecha_cita': self.fecha_cita.isoformat(),
+            'motivo': self.motivo,
+            'estado': self.estado,
+            'activo': self.activo,
+            # Agregamos info extra para que el Front no tenga que buscar nombres
+            'nombre_cliente': self.cliente.nombre if self.cliente else "N/A",
+            'nombre_empleado': self.empleado.nombre if self.empleado else "N/A"
         }

@@ -1,6 +1,8 @@
 from flask import Blueprint, jsonify, request
 from optica_app.database import db
-from optica_app.models import Pedido, DetallePedido, Venta, DetalleVenta, Producto
+from optica_app.models.pedido import Pedido, DetallePedido
+from optica_app.models.venta import Venta, DetalleVenta, Abono
+from optica_app.models.producto import Producto
 from datetime import datetime
 
 pedido_bp = Blueprint('pedidos', __name__)
@@ -9,63 +11,77 @@ pedido_bp = Blueprint('pedidos', __name__)
 def get_pedidos():
     try:
         return jsonify([p.to_dict() for p in Pedido.query.all()])
-    except Exception as e:
+    except Exception:
         return jsonify({"error": "Error al obtener pedidos"}), 500
 
 @pedido_bp.route('/<int:id>', methods=['GET'])
 def get_pedido(id):
-    try:
-        pedido = Pedido.query.get(id)
-        if not pedido:
-            return jsonify({"error": "Pedido no encontrado"}), 404
-        return jsonify(pedido.to_dict())
-    except Exception as e:
-        return jsonify({"error": "Error al obtener pedido"}), 500
+    pedido = Pedido.query.get(id)
+    if not pedido:
+        return jsonify({"error": "Pedido no encontrado"}), 404
+    return jsonify(pedido.to_dict())
 
 @pedido_bp.route('', methods=['POST'])
 def create_pedido():
+    data = request.get_json()
     try:
-        data = request.get_json()
-        required = ['cliente_id', 'metodo_pago', 'metodo_entrega']
+        # 1. Validaciones de integridad inicial
+        required = ['cliente_id', 'metodo_pago', 'items']
         for field in required:
-            if field not in data:
+            if field not in data or not data[field]:
                 return jsonify({"error": f"El campo '{field}' es requerido"}), 400
 
+        # 2. Instancia del Pedido (Cero Nulls)
         pedido = Pedido(
             cliente_id=data['cliente_id'],
             metodo_pago=data['metodo_pago'],
-            metodo_entrega=data['metodo_entrega'],
+            metodo_entrega=data.get('metodo_entrega'),
             direccion_entrega=data.get('direccion_entrega'),
             estado=data.get('estado', 'pendiente'),
             transferencia_comprobante=data.get('transferencia_comprobante'),
             total=0
         )
 
-        total = 0
-        if 'items' in data and isinstance(data['items'], list):
-            for item in data['items']:
-                if not all(k in item for k in ('producto_id', 'cantidad', 'precio_unitario')):
-                    return jsonify({"error": "Cada item debe tener producto_id, cantidad y precio_unitario"}), 400
-                cantidad = int(item['cantidad'])
-                precio = float(item['precio_unitario'])
-                subtotal = cantidad * precio
-                detalle = DetallePedido(
-                    producto_id=item['producto_id'],
-                    cantidad=cantidad,
-                    precio_unitario=precio,
-                    subtotal=subtotal
-                )
-                pedido.items.append(detalle)
-                total += subtotal
-            pedido.total = total
-        else:
-            if 'total' not in data:
-                return jsonify({"error": "Debe enviar 'total' o la lista de 'items'"}), 400
-            pedido.total = float(data['total'])
-
         db.session.add(pedido)
+        db.session.flush()
+
+        total_calculado = 0
+        
+        # 3. Procesamiento Atómico de Items y Stock
+        for item in data['items']:
+            producto = Producto.query.get(item['producto_id'])
+            if not producto:
+                db.session.rollback()
+                return jsonify({"error": f"Producto ID {item['producto_id']} no existe"}), 404
+            
+            cantidad = int(item['cantidad'])
+            
+            # VALIDACIÓN DE STOCK (Blindaje Preventivo)
+            if producto.stock < cantidad:
+                db.session.rollback()
+                return jsonify({"error": f"Stock insuficiente para {producto.nombre}"}), 400
+
+            # Descontar stock inmediatamente para reservar el producto
+            producto.stock -= cantidad
+            
+            precio = float(producto.precio) # Usar precio del servidor por seguridad
+            subtotal = cantidad * precio
+            total_calculado += subtotal
+
+            detalle = DetallePedido(
+                pedido_id=pedido.id,
+                producto_id=producto.id,
+                cantidad=cantidad,
+                precio_unitario=precio,
+                subtotal=subtotal
+            )
+            db.session.add(detalle)
+
+        pedido.total = total_calculado
+        
         db.session.commit()
-        return jsonify({"message": "Pedido creado exitosamente", "pedido": pedido.to_dict()}), 201
+        return jsonify(pedido.to_dict()), 201
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear pedido: {str(e)}"}), 500
@@ -80,13 +96,14 @@ def update_pedido(id):
         data = request.get_json()
         nuevo_estado = data.get('estado', pedido.estado)
 
+        # TRANSICIÓN A VENTA (Blindaje de Lógica de Negocio)
         if nuevo_estado == 'entregado' and pedido.estado != 'entregado':
-            if pedido.estado not in ['enviado', 'confirmado', 'en_preparacion']:
-                return jsonify({"error": f"No se puede entregar un pedido en estado '{pedido.estado}'"}), 400
-            if hasattr(pedido, 'venta') and pedido.venta:
-                return jsonify({"error": "Este pedido ya generó una venta"}), 400
+            # Verificar si ya existe una venta asociada para evitar duplicidad
+            if Venta.query.filter_by(pedido_id=pedido.id).first():
+                return jsonify({"error": "Este pedido ya tiene una venta procesada"}), 400
 
-            venta = Venta(
+            # Crear Venta Automática
+            nueva_venta = Venta(
                 pedido_id=pedido.id,
                 cliente_id=pedido.cliente_id,
                 fecha_pedido=pedido.fecha,
@@ -98,30 +115,39 @@ def update_pedido(id):
                 transferencia_comprobante=pedido.transferencia_comprobante,
                 estado='completada'
             )
-            db.session.add(venta)
+            
+            db.session.add(nueva_venta)
             db.session.flush()
 
+            # Migrar Detalles a Venta
             for dp in pedido.items:
-                db.session.add(DetalleVenta(
-                    venta_id=venta.id,
+                dv = DetalleVenta(
+                    venta_id=nueva_venta.id,
                     producto_id=dp.producto_id,
                     cantidad=dp.cantidad,
                     precio_unitario=dp.precio_unitario,
                     subtotal=dp.subtotal
-                ))
-                producto = Producto.query.get(dp.producto_id)
-                if producto:
-                    producto.stock = max(0, producto.stock - dp.cantidad)
+                )
+                db.session.add(dv)
 
-        if 'estado' in data: pedido.estado = data['estado']
-        if 'transferencia_comprobante' in data: pedido.transferencia_comprobante = data['transferencia_comprobante']
+            # Registrar Abono Inicial si existe pago en el pedido
+            monto_pago = data.get('monto_abono', 0)
+            if monto_pago > 0:
+                abono = Abono(
+                    venta_id=nueva_venta.id,
+                    monto_abonado=monto_pago,
+                    fecha=datetime.utcnow()
+                )
+                db.session.add(abono)
+
+        # Actualización de campos permitidos
+        if 'estado' in data: pedido.estado = nuevo_estado
         if 'direccion_entrega' in data: pedido.direccion_entrega = data['direccion_entrega']
         if 'metodo_pago' in data: pedido.metodo_pago = data['metodo_pago']
-        if 'metodo_entrega' in data: pedido.metodo_entrega = data['metodo_entrega']
-        if 'total' in data: pedido.total = float(data['total'])
 
         db.session.commit()
-        return jsonify({"message": "Pedido actualizado", "pedido": pedido.to_dict()})
+        return jsonify(pedido.to_dict()), 200
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar pedido: {str(e)}"}), 500
@@ -132,28 +158,20 @@ def delete_pedido(id):
         pedido = Pedido.query.get(id)
         if not pedido:
             return jsonify({"error": "Pedido no encontrado"}), 404
+        
+        # Integridad Referencial: No borrar si ya es una venta
         if Venta.query.filter_by(pedido_id=id).first():
-            return jsonify({"error": "No se puede eliminar un pedido que ya generó una venta"}), 400
-        DetallePedido.query.filter_by(pedido_id=id).delete()
+            return jsonify({"error": "No se puede eliminar un pedido que ya generó una factura/venta"}), 400
+
+        # Devolución de Stock antes de eliminar (Rollback manual de inventario)
+        for dp in pedido.items:
+            producto = Producto.query.get(dp.producto_id)
+            if producto:
+                producto.stock += dp.cantidad
+
         db.session.delete(pedido)
         db.session.commit()
-        return jsonify({"message": "Pedido eliminado correctamente"})
+        return jsonify({"message": "Pedido eliminado y stock restaurado"}), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": f"Error al eliminar pedido: {str(e)}"}), 500
-
-@pedido_bp.route('/cliente/<int:cliente_id>', methods=['GET'])
-def get_pedidos_cliente(cliente_id):
-    try:
-        pedidos = Pedido.query.filter_by(cliente_id=cliente_id).order_by(Pedido.fecha.desc()).all()
-        return jsonify([p.to_dict() for p in pedidos])
-    except Exception as e:
-        return jsonify({"error": "Error al obtener pedidos del cliente"}), 500
-
-@pedido_bp.route('/<int:pedido_id>/detalles', methods=['GET'])
-def get_detalles_pedido(pedido_id):
-    try:
-        detalles = DetallePedido.query.filter_by(pedido_id=pedido_id).all()
-        return jsonify([d.to_dict() for d in detalles])
-    except Exception as e:
-        return jsonify({"error": "Error al obtener detalles del pedido"}), 500
+        return jsonify({"error": str(e)}), 500
