@@ -4,53 +4,68 @@ from optica_app.models import Marca
 
 marca_bp = Blueprint('marcas', __name__)
 
-@marca_bp.route('', methods=['GET'])
-def get_marcas():
-    try:
-        return jsonify([m.to_dict() for m in Marca.query.all()])
-    except Exception as e:
-        return jsonify({"error": "Error al obtener marcas"}), 500
-
 @marca_bp.route('', methods=['POST'])
 def create_marca():
     try:
         data = request.get_json()
-        if not data.get('nombre'):
-            return jsonify({"error": "El nombre es requerido"}), 400
-        marca = Marca(nombre=data['nombre'], estado=data.get('estado', True))
-        db.session.add(marca)
+        nombre = " ".join(data.get('nombre', '').split()).strip() # Limpia espacios internos múltiples
+        
+        if len(nombre) < 2:
+            return jsonify({"error": "El nombre de la marca es demasiado corto"}), 400
+
+        # Unicidad estricta
+        if Marca.query.filter(Marca.nombre.ilike(nombre)).first():
+            return jsonify({"error": f"La marca '{nombre}' ya existe en el sistema"}), 400
+
+        nueva_marca = Marca(nombre=nombre, estado=data.get('estado', True))
+        db.session.add(nueva_marca)
         db.session.commit()
-        return jsonify({"message": "Marca creada", "marca": marca.to_dict()}), 201
+        return jsonify(nueva_marca.to_dict()), 201
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al crear marca"}), 500
+        return jsonify({"error": str(e)}), 500
 
 @marca_bp.route('/<int:id>', methods=['PUT'])
 def update_marca(id):
     try:
-        marca = Marca.query.get(id)
+        marca = db.session.get(Marca, id)
         if not marca:
             return jsonify({"error": "Marca no encontrada"}), 404
+        
         data = request.get_json()
         if 'nombre' in data:
-            marca.nombre = data['nombre']
+            nombre = " ".join(data['nombre'].split()).strip()
+            if Marca.query.filter(Marca.nombre.ilike(nombre), Marca.id != id).first():
+                return jsonify({"error": "Ya existe otra marca con este nombre"}), 400
+            marca.nombre = nombre
+            
         if 'estado' in data:
-            marca.estado = data['estado']
+            nuevo_estado = bool(data['estado'])
+            # REGLA: Si desactivas la marca, podrías querer advertir, 
+            # pero aquí permitimos desactivar (los productos heredarán el estado visualmente)
+            marca.estado = nuevo_estado
+            
         db.session.commit()
-        return jsonify({"message": "Marca actualizada", "marca": marca.to_dict()})
+        return jsonify(marca.to_dict()), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al actualizar marca"}), 500
+        return jsonify({"error": str(e)}), 500
 
 @marca_bp.route('/<int:id>', methods=['DELETE'])
 def delete_marca(id):
     try:
-        marca = Marca.query.get(id)
-        if not marca:
-            return jsonify({"error": "Marca no encontrada"}), 404
+        marca = db.session.get(Marca, id)
+        if not marca: return jsonify({"error": "Marca no encontrada"}), 404
+
+        # REGLA DE ORO: No se borra si se usó alguna vez
+        if len(marca.productos) > 0:
+            return jsonify({
+                "error": f"No se puede eliminar '{marca.nombre}' porque está vinculada a {len(marca.productos)} productos. Desactívela para que no aparezca en ventas."
+            }), 400
+
         db.session.delete(marca)
         db.session.commit()
-        return jsonify({"message": "Marca eliminada correctamente"})
-    except Exception as e:
+        return jsonify({"message": "Marca eliminada físicamente"}), 200
+    except Exception:
         db.session.rollback()
-        return jsonify({"error": "Error al eliminar marca"}), 500
+        return jsonify({"error": "Error de integridad"}), 500
