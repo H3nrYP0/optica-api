@@ -106,3 +106,4 @@ def delete_proveedor(id):
     except Exception:
         db.session.rollback()
         return jsonify({"error": "Error de integridad al intentar eliminar"}), 500
+    
