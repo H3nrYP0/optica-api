@@ -3,11 +3,9 @@ from flask_cors import CORS
 from flask_mail import Mail
 from config import Config
 
-# Instancia global de Mail
 mail = Mail()
 
 def create_app():
-    # Creamos la instancia de Flask dentro de la función (Application Factory)
     app = Flask(__name__)
     app.config.from_object(Config)
 
@@ -22,22 +20,19 @@ def create_app():
     )
     mail.init_app(app)
 
-    # ── Configuración de CORS ──
+    # ── Configuración de CORS (Abierto para desarrollo) ──
     CORS(app,
-         origins=[
-             "http://localhost:5173",
-             "http://localhost:3000",
-             # aqui se agrega cuando lo despleguemos en produccion
-         ],
+         origins=["http://localhost:5173", "http://localhost:3000"],
          methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
          allow_headers=["Content-Type", "Authorization", "Cache-Control"],
          supports_credentials=True)
 
     # ── Inicializar Base de Datos ──
-    from optica_app.database import init_db
+    from optica_app.database import init_db # Asegúrate de que la ruta coincida (app o optica_app)
     init_db(app)
 
-    # ── Importación de Blueprints (Rutas) ──
+    # ── Importación y Registro de Blueprints (Rutas) ──
+    # Registro individual para mantener el control total
     from optica_app.routes.marca_routes      import marca_bp
     from optica_app.routes.categoria_routes  import categoria_bp
     from optica_app.routes.producto_routes   import producto_bp
@@ -76,29 +71,23 @@ def create_app():
     app.register_blueprint(campana_bp,    url_prefix='/campanas-salud')
     app.register_blueprint(historial_bp,  url_prefix='/historial-formula')
     app.register_blueprint(sistema_bp)    # El sistema no suele llevar prefijo
-
-    # Ruta de bienvenida/test
+    # Ruta de bienvenida
     @app.route('/')
     def index():
-        return jsonify({
-            "message": "API Óptica Online",
-            "status": "Ready",
-            "version": "3.1",
-            "database": "Verified"
-        }), 200
+        return jsonify({"message": "API Óptica - Modo Libre de Token", "status": "Ready"}), 200
 
-    # Inicializar Autenticación (JWT, etc)
-    from optica_app.auth import init_auth
-    init_auth(app)
+    # ❌ COMENTADO: Bloqueo de seguridad para volver a la versión anterior
+    # from optica_app.auth import init_auth
+    # init_auth(app)
 
-    # ── Verificación y Creación de Tablas ──
+    # ── Creación de Tablas ──
     with app.app_context():
         from optica_app.database import db
-        import optica_app.models # Carga los modelos para que SQLAlchemy los vea
+        import optica_app.models 
         try:
             db.create_all()
-            print("✅ Estructura de base de datos verificada y actualizada")
+            print("✅ Estructura verificada")
         except Exception as e:
-            print(f"❌ Error en base de datos: {e}")
+            print(f"❌ Error: {e}")
 
     return app

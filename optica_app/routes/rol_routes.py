@@ -1,13 +1,13 @@
 from flask import Blueprint, jsonify, request
 from optica_app.database import db
 from optica_app.models import Rol, Permiso, Usuario
-from optica_app.auth.decorators import jwt_requerido, rol_requerido
+#from optica_app.auth.decorators import jwt_requerido, rol_requerido # Descomentar cuando se active la seguridad
 
 rol_bp = Blueprint('roles', __name__)
 ROLES_CRITICOS = ['admin', 'superadmin']
 
 @rol_bp.route('', methods=['GET'])
-@jwt_requerido
+#@jwt_requerido
 def get_roles():
     try:
         return jsonify([r.to_dict() for r in Rol.query.all()])
@@ -15,7 +15,7 @@ def get_roles():
         return jsonify({"error": "Error al obtener roles"}), 500
 
 @rol_bp.route('', methods=['POST'])
-@rol_requerido('admin', 'superadmin')
+#@rol_requerido('admin', 'superadmin')
 def create_rol():
     try:
         data = request.get_json()
@@ -48,7 +48,7 @@ def create_rol():
         return jsonify({"error": "Error al crear rol"}), 500
 
 @rol_bp.route('/<int:id>', methods=['PUT'])
-@rol_requerido('admin', 'superadmin')
+#@rol_requerido('admin', 'superadmin')
 def update_rol(id):
     try:
         rol = Rol.query.get(id)
@@ -92,7 +92,7 @@ def update_rol(id):
         return jsonify({"error": "Error al actualizar rol"}), 500
 
 @rol_bp.route('/<int:id>', methods=['DELETE'])
-@rol_requerido('admin', 'superadmin')
+#@rol_requerido('admin', 'superadmin')
 def delete_rol(id):
     try:
         rol = Rol.query.get(id)
