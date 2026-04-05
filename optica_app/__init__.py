@@ -3,30 +3,41 @@ from flask_cors import CORS
 from flask_mail import Mail
 from config import Config
 
+# Instancia global de Mail
 mail = Mail()
 
 def create_app():
-    optica_app = Flask(__name__)
-    optica_app.config.from_object(Config)
+    # Creamos la instancia de Flask dentro de la función (Application Factory)
+    app = Flask(__name__)
+    app.config.from_object(Config)
 
-    # Mail (usa Config)
-    mail.init_app(optica_app)
+    # ── Configuración de Mail ──
+    app.config.update(
+        MAIL_SERVER='smtp.gmail.com',
+        MAIL_PORT=587,
+        MAIL_USE_TLS=True,
+        MAIL_USERNAME='eyessetting@gmail.com',
+        MAIL_PASSWORD='anjw fbsu lsgp zrgp',
+        MAIL_DEFAULT_SENDER='eyessetting@gmail.com'
+    )
+    mail.init_app(app)
 
-    # CORS
-    CORS(optica_app,
+    # ── Configuración de CORS ──
+    CORS(app,
          origins=[
              "http://localhost:5173",
              "http://localhost:3000",
-            #"" agrega dominio real aquí
+             # aqui se agrega cuando lo despleguemos en produccion
          ],
          methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
          allow_headers=["Content-Type", "Authorization", "Cache-Control"],
          supports_credentials=True)
 
+    # ── Inicializar Base de Datos ──
     from optica_app.database import init_db
-    init_db(optica_app)
+    init_db(app)
 
-    # Blueprints
+    # ── Importación de Blueprints (Rutas) ──
     from optica_app.routes.marca_routes      import marca_bp
     from optica_app.routes.categoria_routes  import categoria_bp
     from optica_app.routes.producto_routes   import producto_bp
@@ -46,43 +57,48 @@ def create_app():
     from optica_app.routes.historial_routes  import historial_bp
     from optica_app.routes.sistema_routes    import sistema_bp
 
-    optica_app.register_blueprint(marca_bp,      url_prefix='/marcas')
-    optica_app.register_blueprint(categoria_bp,  url_prefix='/categorias')
-    optica_app.register_blueprint(producto_bp,   url_prefix='/productos')
-    optica_app.register_blueprint(cliente_bp,    url_prefix='/clientes')
-    optica_app.register_blueprint(empleado_bp,   url_prefix='/empleados')
-    optica_app.register_blueprint(proveedor_bp,  url_prefix='/proveedores')
-    optica_app.register_blueprint(compra_bp,     url_prefix='/compras')
-    optica_app.register_blueprint(cita_bp,       url_prefix='/citas')
-    optica_app.register_blueprint(servicio_bp,   url_prefix='/servicios')
-    optica_app.register_blueprint(pedido_bp,     url_prefix='/pedidos')
-    optica_app.register_blueprint(venta_bp,      url_prefix='/ventas')
-    optica_app.register_blueprint(usuario_bp,    url_prefix='/usuarios')
-    optica_app.register_blueprint(rol_bp,        url_prefix='/roles')
-    optica_app.register_blueprint(multimedia_bp, url_prefix='/multimedia')
-    optica_app.register_blueprint(horario_bp,    url_prefix='/horario')
-    optica_app.register_blueprint(campana_bp,    url_prefix='/campanas-salud')
-    optica_app.register_blueprint(historial_bp,  url_prefix='/historial-formula')
-    optica_app.register_blueprint(sistema_bp)
+    # ── Registro de Blueprints con sus prefijos ──
+    app.register_blueprint(marca_bp,      url_prefix='/marcas')
+    app.register_blueprint(categoria_bp,  url_prefix='/categorias')
+    app.register_blueprint(producto_bp,   url_prefix='/productos')
+    app.register_blueprint(cliente_bp,    url_prefix='/clientes')
+    app.register_blueprint(empleado_bp,   url_prefix='/empleados')
+    app.register_blueprint(proveedor_bp,  url_prefix='/proveedores')
+    app.register_blueprint(compra_bp,     url_prefix='/compras')
+    app.register_blueprint(cita_bp,       url_prefix='/citas')
+    app.register_blueprint(servicio_bp,   url_prefix='/servicios')
+    app.register_blueprint(pedido_bp,     url_prefix='/pedidos')
+    app.register_blueprint(venta_bp,      url_prefix='/ventas')
+    app.register_blueprint(usuario_bp,    url_prefix='/usuarios')
+    app.register_blueprint(rol_bp,        url_prefix='/roles')
+    app.register_blueprint(multimedia_bp, url_prefix='/multimedia')
+    app.register_blueprint(horario_bp,    url_prefix='/horario')
+    app.register_blueprint(campana_bp,    url_prefix='/campanas-salud')
+    app.register_blueprint(historial_bp,  url_prefix='/historial-formula')
+    app.register_blueprint(sistema_bp)    # El sistema no suele llevar prefijo
 
-    @optica_app.route('/')
+    # Ruta de bienvenida/test
+    @app.route('/')
     def index():
         return jsonify({
             "message": "API Óptica Online",
             "status": "Ready",
-            "version": "3.1"
+            "version": "3.1",
+            "database": "Verified"
         }), 200
 
+    # Inicializar Autenticación (JWT, etc)
     from optica_app.auth import init_auth
-    init_auth(optica_app)
+    init_auth(app)
 
-    with optica_app.app_context():
+    # ── Verificación y Creación de Tablas ──
+    with app.app_context():
         from optica_app.database import db
-        import optica_app.models
+        import optica_app.models # Carga los modelos para que SQLAlchemy los vea
         try:
             db.create_all()
-            print("✅ Estructura de base de datos verificada")
+            print("✅ Estructura de base de datos verificada y actualizada")
         except Exception as e:
             print(f"❌ Error en base de datos: {e}")
 
-    return optica_app
+    return app
