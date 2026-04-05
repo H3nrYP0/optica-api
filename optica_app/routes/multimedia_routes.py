@@ -1,48 +1,57 @@
 from flask import Blueprint, jsonify, request
 from optica_app.database import db
-from optica_app.models import Multimedia
+from optica_app.models import Multimedia, Pedido # Importamos Pedido para validar
 
 multimedia_bp = Blueprint('multimedia', __name__)
-
-@multimedia_bp.route('', methods=['GET'])
-def get_multimedia():
-    try:
-        return jsonify([m.to_dict() for m in Multimedia.query.all()])
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 @multimedia_bp.route('', methods=['POST'])
 def crear_multimedia():
     try:
         data = request.get_json()
-        if not data.get('url'):
-            return jsonify({"error": "URL requerida"}), 400
+        url = data.get('url')
         tipo = data.get('tipo')
+
+        if not url or not tipo:
+            return jsonify({"error": "URL y Tipo son requeridos"}), 400
+        
         if tipo not in ['categoria', 'comprobante', 'otro']:
-            return jsonify({"error": "Tipo debe ser: 'categoria', 'comprobante' u 'otro'"}), 400
-        if tipo == 'categoria' and not data.get('categoria_id'):
-            return jsonify({"error": "Para tipo 'categoria' se requiere categoria_id"}), 400
-        if tipo == 'comprobante' and not data.get('pedido_id'):
-            return jsonify({"error": "Para tipo 'comprobante' se requiere pedido_id"}), 400
+            return jsonify({"error": "Tipo inválido"}), 400
 
-        if tipo == 'categoria':
-            existente = Multimedia.query.filter_by(tipo='categoria', categoria_id=data['categoria_id']).first()
-            if existente:
-                existente.url = data['url']
-                db.session.commit()
-                return jsonify({"success": True, "message": "Imagen actualizada", "multimedia": existente.to_dict()})
-
+        # BLINDAJE: Validar existencia del Pedido si es comprobante
         if tipo == 'comprobante':
-            if Multimedia.query.filter_by(tipo='comprobante', pedido_id=data['pedido_id']).first():
-                return jsonify({"error": "Este pedido ya tiene un comprobante"}), 400
+            pedido_id = data.get('pedido_id')
+            if not pedido_id or not Pedido.query.get(pedido_id):
+                return jsonify({"error": "Pedido ID inválido o no existe"}), 404
+            
+            # Evitar duplicados de comprobante por pedido
+            if Multimedia.query.filter_by(tipo='comprobante', pedido_id=pedido_id).first():
+                return jsonify({"error": "Este pedido ya tiene un comprobante registrado"}), 400
 
-        multimedia = Multimedia(url=data['url'], tipo=tipo, categoria_id=data.get('categoria_id'), pedido_id=data.get('pedido_id'))
-        db.session.add(multimedia)
+        # BLINDAJE: Lógica de actualización para categorías (1 imagen por categoría)
+        if tipo == 'categoria':
+            cat_id = data.get('categoria_id')
+            if not cat_id:
+                return jsonify({"error": "categoria_id es requerido para este tipo"}), 400
+            
+            existente = Multimedia.query.filter_by(tipo='categoria', categoria_id=cat_id).first()
+            if existente:
+                existente.url = url
+                db.session.commit()
+                return jsonify({"message": "Imagen de categoría actualizada", "multimedia": existente.to_dict()})
+
+        nueva_multimedia = Multimedia(
+            url=url, 
+            tipo=tipo, 
+            categoria_id=data.get('categoria_id'), 
+            pedido_id=data.get('pedido_id')
+        )
+        db.session.add(nueva_multimedia)
         db.session.commit()
-        return jsonify({"success": True, "multimedia": multimedia.to_dict()}), 201
+        return jsonify(nueva_multimedia.to_dict()), 201
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Error de servidor: {str(e)}"}), 500
 
 @multimedia_bp.route('/<int:id>', methods=['PUT'])
 def actualizar_multimedia(id):
