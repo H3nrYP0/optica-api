@@ -4,7 +4,7 @@ class Rol(db.Model):
     __tablename__ = 'rol'
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(50), nullable=False)
-    descripcion = db.Column(db.String(60))
+    descripcion = db.Column(db.String(100))
     estado = db.Column(db.Boolean, default=True)
     usuarios = db.relationship('Usuario', backref='rol', lazy=True)
     permisos = db.relationship(
@@ -27,7 +27,7 @@ class Usuario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
     nombre = db.Column(db.String(50), nullable=False)
-    correo = db.Column(db.String(27), nullable=False)
+    correo = db.Column(db.String(100), nullable=False)
     contrasenia = db.Column(db.String(255), nullable=False)
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=True)
     cliente = db.relationship('Cliente', backref='usuario', lazy=True)
@@ -47,7 +47,7 @@ class Usuario(db.Model):
 class Permiso(db.Model):
     __tablename__ = 'permiso'
     id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(23), nullable=False)
+    nombre = db.Column(db.String(50), nullable=False)
 
     def to_dict(self):
         return {
