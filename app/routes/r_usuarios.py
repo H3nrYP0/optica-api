@@ -5,7 +5,7 @@ from app.auth.decorators import jwt_requerido, rol_requerido
 import re
 
 # Definición del Blueprint
-usuario_bp = Blueprint('acceso', __name__)
+main_bp = Blueprint('acceso', __name__)
 
 # Configuración de seguridad
 ROLES_CRITICOS = ['admin', 'superadmin']
@@ -13,7 +13,7 @@ EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 
 # GESTIÓN DE ROLES 
 
-@usuario_bp.route('/roles', methods=['GET'])
+@main_bp.route('/roles', methods=['GET'])
 @jwt_requerido
 def get_roles():
     try: 
@@ -22,7 +22,7 @@ def get_roles():
     except Exception as e:
         return jsonify({"error": "Error al obtener roles"}), 500
 
-@usuario_bp.route('/roles', methods=['POST'])
+@main_bp.route('/roles', methods=['POST'])
 @rol_requerido('admin', 'superadmin')
 def create_rol():
     try:
@@ -62,7 +62,7 @@ def create_rol():
 # SECCIÓN 2: GESTIÓN DE USUARIOS
 # ==============================================================================
 
-@usuario_bp.route('/usuarios', methods=['GET'])
+@main_bp.route('/usuarios', methods=['GET'])
 @jwt_requerido
 def get_usuarios():
     """Lista todos los usuarios con su información de rol."""
@@ -72,7 +72,7 @@ def get_usuarios():
     except Exception as e:
         return jsonify({"error": "Error al obtener usuarios"}), 500
 
-@usuario_bp.route('/usuarios', methods=['POST'])
+@main_bp.route('/usuarios', methods=['POST'])
 @rol_requerido('admin', 'superadmin')
 def create_usuario():
     """Crea un nuevo usuario con validaciones de correo y duplicados."""
@@ -113,7 +113,7 @@ def create_usuario():
         db.session.rollback()
         return jsonify({"error": "Error al crear usuario"}), 500
 
-@usuario_bp.route('/usuarios/<int:id>', methods=['PUT'])
+@main_bp.route('/usuarios/<int:id>', methods=['PUT'])
 @rol_requerido('admin', 'superadmin')
 def update_usuario(id):
     """Actualiza datos de usuario, permitiendo cambiar rol o estado."""
@@ -153,7 +153,7 @@ def update_usuario(id):
 
 # GESTIÓN DE PERMISOS 
 
-@usuario_bp.route('/permisos', methods=['GET'])
+@main_bp.route('/permisos', methods=['GET'])
 @jwt_requerido
 def get_permisos():
     """Obtiene el catálogo de todos los permisos definidos en el sistema."""
