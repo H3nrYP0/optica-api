@@ -24,14 +24,11 @@ def create_marca():
         if not data.get('nombre'):
             return jsonify({"error": "El nombre es requerido"}), 400
         
-        # Limpiar nombre
         nombre = " ".join(data['nombre'].split()).strip()
         
-        # Validación: nombre demasiado corto
         if len(nombre) < 2:
             return jsonify({"error": "El nombre de la marca es demasiado corto"}), 400
         
-        # Validación: unicidad
         if Marca.query.filter(Marca.nombre.ilike(nombre)).first():
             return jsonify({"error": f"La marca '{nombre}' ya existe en el sistema"}), 400
         
@@ -60,19 +57,12 @@ def update_marca(id):
         if 'nombre' in data:
             nombre = " ".join(data['nombre'].split()).strip()
             
-            # Validación: unicidad excluyendo la misma marca
             if Marca.query.filter(Marca.nombre.ilike(nombre), Marca.id != id).first():
                 return jsonify({"error": "Ya existe otra marca con este nombre"}), 400
             marca.nombre = nombre
             
         if 'estado' in data:
-            # Validación: No desactivar si tiene productos activos
-            if not data['estado'] and marca.productos:
-                productos_activos = [p for p in marca.productos if p.estado]
-                if productos_activos:
-                    return jsonify({
-                        "error": f"No puedes desactivar esta marca porque tiene {len(productos_activos)} producto(s) activo(s)"
-                    }), 400
+            # ✅ Cambio: Permitir cambiar estado siempre, sin importar productos
             marca.estado = data['estado']
             
         db.session.commit()
@@ -90,7 +80,6 @@ def delete_marca(id):
         if not marca:
             return jsonify({"error": "Marca no encontrada"}), 404
         
-        # Validación: No eliminar si tiene productos
         if marca.productos and len(marca.productos) > 0:
             return jsonify({
                 "error": f"No se puede eliminar '{marca.nombre}' porque está vinculada a {len(marca.productos)} productos. Desactívela en su lugar."
@@ -127,11 +116,9 @@ def create_categoria():
         
         nombre = " ".join(data['nombre'].split()).strip()
         
-        # Validación: nombre vacío
         if not nombre:
             return jsonify({"error": "El nombre de categoría es obligatorio"}), 400
         
-        # Validación: unicidad
         if CategoriaProducto.query.filter(CategoriaProducto.nombre.ilike(nombre)).first():
             return jsonify({"error": "Esta categoría ya existe"}), 400
         
@@ -161,7 +148,6 @@ def update_categoria(id):
         if 'nombre' in data:
             nombre = " ".join(data['nombre'].split()).strip()
             
-            # Validación: unicidad excluyendo la misma categoría
             existente = CategoriaProducto.query.filter(
                 CategoriaProducto.nombre.ilike(nombre), 
                 CategoriaProducto.id != id
@@ -174,13 +160,7 @@ def update_categoria(id):
             categoria.descripcion = data['descripcion']
             
         if 'estado' in data:
-            # Validación: No desactivar si tiene productos activos
-            if not data['estado'] and categoria.productos:
-                productos_activos = [p for p in categoria.productos if p.estado]
-                if productos_activos:
-                    return jsonify({
-                        "error": f"No puedes desactivar esta categoría porque tiene {len(productos_activos)} producto(s) activo(s)"
-                    }), 400
+            # ✅ Cambio: Permitir cambiar estado siempre, sin importar productos
             categoria.estado = data['estado']
             
         db.session.commit()
@@ -198,7 +178,6 @@ def delete_categoria(id):
         if not categoria:
             return jsonify({"error": "Categoría no encontrada"}), 404
         
-        # Validación: No eliminar si tiene productos
         if categoria.productos and len(categoria.productos) > 0:
             return jsonify({
                 "error": f"No se puede eliminar. La categoría tiene {len(categoria.productos)} productos asignados. Desactívela en su lugar."
@@ -236,7 +215,6 @@ def create_producto():
             if field not in data:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
         
-        # Validación de Precios
         p_venta = float(data['precio_venta'])
         p_compra = float(data['precio_compra'])
         
@@ -247,7 +225,6 @@ def create_producto():
         if p_venta < p_compra:
             return jsonify({"error": "El precio de venta no puede ser menor al precio de compra"}), 400
         
-        # Validación: ¿Existen y están activos los padres?
         marca = Marca.query.get(data['marca_id'])
         categoria = CategoriaProducto.query.get(data['categoria_id'])
         
@@ -260,12 +237,10 @@ def create_producto():
         if not categoria.estado:
             return jsonify({"error": "No puedes crear productos con una categoría inactiva"}), 400
         
-        # Validación de Stock
         stock = int(data.get('stock', 0))
         if stock < 0:
             return jsonify({"error": "El stock inicial no puede ser negativo"}), 400
         
-        # Validación de unicidad de nombre
         if Producto.query.filter(Producto.nombre.ilike(data['nombre'].strip())).first():
             return jsonify({"error": "Ya existe un producto con este nombre"}), 400
         
@@ -301,7 +276,6 @@ def update_producto(id):
             
         data = request.get_json()
         
-        # Validación de precios
         if 'precio_venta' in data or 'precio_compra' in data:
             nuevo_pv = float(data.get('precio_venta', producto.precio_venta))
             nuevo_pc = float(data.get('precio_compra', producto.precio_compra))
@@ -316,7 +290,6 @@ def update_producto(id):
             producto.precio_venta = nuevo_pv
             producto.precio_compra = nuevo_pc
         
-        # Validación de stock
         if 'stock' in data:
             nuevo_stock = int(data['stock'])
             if nuevo_stock < 0:
@@ -329,7 +302,6 @@ def update_producto(id):
                 return jsonify({"error": "El stock mínimo no puede ser negativo"}), 400
             producto.stock_minimo = nuevo_minimo
         
-        # Validación de categoría
         if 'categoria_id' in data:
             categoria = CategoriaProducto.query.get(data['categoria_id'])
             if not categoria:
@@ -338,7 +310,6 @@ def update_producto(id):
                 return jsonify({"error": "No puedes asignar una categoría inactiva"}), 400
             producto.categoria_producto_id = data['categoria_id']
         
-        # Validación de marca    
         if 'marca_id' in data:
             marca = Marca.query.get(data['marca_id'])
             if not marca:
@@ -347,19 +318,10 @@ def update_producto(id):
                 return jsonify({"error": "No puedes asignar una marca inactiva"}), 400
             producto.marca_id = data['marca_id']
         
-        # Validación de activación
-        if 'estado' in data and data['estado']:
-            marca_actual = Marca.query.get(producto.marca_id)
-            categoria_actual = CategoriaProducto.query.get(producto.categoria_producto_id)
-            if not marca_actual.estado:
-                return jsonify({"error": "No puedes activar un producto de una marca inactiva"}), 400
-            if not categoria_actual.estado:
-                return jsonify({"error": "No puedes activar un producto de una categoría inactiva"}), 400
-            producto.estado = data['estado']
-        elif 'estado' in data:
+        if 'estado' in data:
+            # ✅ Cambio: Permitir cambiar estado siempre
             producto.estado = data['estado']
         
-        # Actualizar campos simples
         if 'nombre' in data:
             nombre = data['nombre'].strip()
             if Producto.query.filter(Producto.nombre.ilike(nombre), Producto.id != id).first():
@@ -386,7 +348,6 @@ def delete_producto(id):
         if not producto:
             return jsonify({"error": "Producto no encontrado"}), 404
         
-        # Validación: No eliminar si tiene ventas asociadas
         if producto.detalle_ventas and len(producto.detalle_ventas) > 0:
             return jsonify({"error": "No se puede eliminar un producto que tiene ventas asociadas"}), 400
         
@@ -414,7 +375,6 @@ def crear_imagen():
         if not producto:
             return jsonify({"error": "Producto no encontrado"}), 404
             
-        # Validación: producto activo
         if not producto.estado:
             return jsonify({"error": "No puedes agregar imágenes a un producto inactivo"}), 400
             
@@ -504,6 +464,7 @@ def delete_imagen(id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+
 # ============================================================
 # MÓDULO: MULTIMEDIA
 # ============================================================
@@ -526,7 +487,6 @@ def crear_multimedia():
             if not data.get('categoria_id'):
                 return jsonify({"error": "Para tipo 'categoria' se requiere categoria_id"}), 400
                 
-            # Validación: categoría existe
             categoria = CategoriaProducto.query.get(data['categoria_id'])
             if not categoria:
                 return jsonify({"error": "La categoría especificada no existe"}), 404
@@ -541,7 +501,6 @@ def crear_multimedia():
             if not data.get('pedido_id'):
                 return jsonify({"error": "Para tipo 'comprobante' se requiere pedido_id"}), 400
             
-            # VALIDACIÓN: Importar Pedido solo aquí para evitar el error
             from app.Models.models import Pedido
             
             pedido = Pedido.query.get(data['pedido_id'])
@@ -570,7 +529,6 @@ def crear_multimedia():
 @main_bp.route('/multimedia/comprobante/pedido/<int:pedido_id>', methods=['GET'])
 def obtener_comprobante_pedido(pedido_id):
     try:
-        # VALIDACIÓN: Importar Pedido solo aquí
         from app.Models.models import Pedido
         
         pedido = Pedido.query.get(pedido_id)
