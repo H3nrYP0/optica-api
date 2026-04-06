@@ -1,7 +1,7 @@
 from flask import jsonify, request
 from app.database import db
 from app.Models.models import Usuario, Rol, Permiso, PermisoPorRol, Empleado, Proveedor
-from app.auth.decorators import jwt_requerido, rol_requerido
+from app.auth.decorators import jwt_requerido, permiso_requerido
 import re
 from datetime import datetime
 from werkzeug.security import generate_password_hash
@@ -34,7 +34,7 @@ def get_usuarios():
         return jsonify({"error": f"Error al obtener usuarios: {str(e)}"}), 500
 
 @main_bp.route('/usuarios', methods=['POST'])
-@rol_requerido('admin', 'superadmin')
+@permiso_requerido('usuarios')
 def create_usuario():
     try:
         data = request.get_json()
@@ -93,7 +93,7 @@ def create_usuario():
         return jsonify({"success": False, "error": f"Error al crear usuario: {str(e)}"}), 500
 
 @main_bp.route('/usuarios/<int:id>', methods=['PUT'])
-@rol_requerido('admin', 'superadmin')
+@permiso_requerido('usuarios')
 def update_usuario(id):
     try:
         usuario = Usuario.query.get(id)
@@ -130,7 +130,7 @@ def update_usuario(id):
         return jsonify({"error": "Error al actualizar usuario"}), 500
 
 @main_bp.route('/usuarios/<int:id>', methods=['DELETE'])
-@rol_requerido('admin', 'superadmin')
+@permiso_requerido('usuarios')
 def delete_usuario(id):
     try:
         usuario = Usuario.query.get(id)
@@ -156,7 +156,7 @@ def get_roles():
         return jsonify({"error": "Error al obtener roles"}), 500
 
 @main_bp.route('/roles', methods=['POST'])
-@rol_requerido('admin', 'superadmin')
+@permiso_requerido('usuarios')
 def create_rol():
     try:
         data = request.get_json()
@@ -190,7 +190,7 @@ def create_rol():
         return jsonify({"error": "Error al crear rol"}), 500
 
 @main_bp.route('/roles/<int:id>', methods=['PUT'])
-@rol_requerido('admin', 'superadmin')
+@permiso_requerido('usuarios')
 def update_rol(id):
     try:
         rol = Rol.query.get(id)
@@ -235,7 +235,7 @@ def update_rol(id):
         return jsonify({"error": "Error al actualizar rol"}), 500
 
 @main_bp.route('/roles/<int:id>', methods=['DELETE'])
-@rol_requerido('admin', 'superadmin')
+@permiso_requerido('usuarios')
 def delete_rol(id):
     try:
         rol = Rol.query.get(id)
