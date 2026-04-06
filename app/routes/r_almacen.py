@@ -218,9 +218,9 @@ def create_producto():
         p_venta = float(data['precio_venta'])
         p_compra = float(data['precio_compra'])
         
-        if p_venta <= 0:
+        if p_venta < 0:
             return jsonify({"error": "El precio de venta debe ser mayor a 0"}), 400
-        if p_compra <= 0:
+        if p_compra < 0:
             return jsonify({"error": "El precio de compra debe ser mayor a 0"}), 400
         if p_venta < p_compra:
             return jsonify({"error": "El precio de venta no puede ser menor al precio de compra"}), 400
