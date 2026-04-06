@@ -59,7 +59,7 @@ def create_usuario():
             nombre_parts = data['nombre'].split(' ')
             primer_nombre = nombre_parts[0]
             apellido = nombre_parts[1] if len(nombre_parts) > 1 else ''
-            from app.models import Cliente
+            from app.Models.models import Cliente
             cliente = Cliente(
                 nombre=primer_nombre,
                 apellido=apellido,
