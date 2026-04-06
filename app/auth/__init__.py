@@ -1,6 +1,6 @@
 from .routes import auth_bp
 from .callbacks import init_callbacks
-from .decorators import jwt_requerido, rol_requerido, permiso_requerido 
+from .decorators import jwt_requerido, permiso_requerido
 
 def init_auth(app):
     """Inicializa el módulo de autenticación"""
