@@ -12,7 +12,7 @@ ROLES_CRITICOS = ['admin', 'superadmin']
 
 # ===== USUARIOS =====
 @main_bp.route('/usuarios', methods=['GET'])
-@jwt_requerido
+# Comentado para probar @jwt_requerido
 def get_usuarios():
     try:
         print("🔍 Intentando obtener usuarios...")
@@ -34,7 +34,7 @@ def get_usuarios():
         return jsonify({"error": f"Error al obtener usuarios: {str(e)}"}), 500
 
 @main_bp.route('/usuarios', methods=['POST'])
-@permiso_requerido('usuarios')
+# @permiso_requerido('usuarios')
 def create_usuario():
     try:
         data = request.get_json()
@@ -93,7 +93,7 @@ def create_usuario():
         return jsonify({"success": False, "error": f"Error al crear usuario: {str(e)}"}), 500
 
 @main_bp.route('/usuarios/<int:id>', methods=['PUT'])
-@permiso_requerido('usuarios')
+# @permiso_requerido('usuarios')
 def update_usuario(id):
     try:
         usuario = Usuario.query.get(id)
@@ -130,7 +130,7 @@ def update_usuario(id):
         return jsonify({"error": "Error al actualizar usuario"}), 500
 
 @main_bp.route('/usuarios/<int:id>', methods=['DELETE'])
-@permiso_requerido('usuarios')
+# @permiso_requerido('usuarios')
 def delete_usuario(id):
     try:
         usuario = Usuario.query.get(id)
@@ -147,7 +147,7 @@ def delete_usuario(id):
 
 # ===== ROLES =====
 @main_bp.route('/roles', methods=['GET'])
-@jwt_requerido
+# Comentado para probar @jwt_requerido
 def get_roles():
     try:
         roles = Rol.query.all()
@@ -156,7 +156,7 @@ def get_roles():
         return jsonify({"error": "Error al obtener roles"}), 500
 
 @main_bp.route('/roles', methods=['POST'])
-@permiso_requerido('usuarios')
+# @permiso_requerido('usuarios')
 def create_rol():
     try:
         data = request.get_json()
@@ -190,7 +190,7 @@ def create_rol():
         return jsonify({"error": "Error al crear rol"}), 500
 
 @main_bp.route('/roles/<int:id>', methods=['PUT'])
-@permiso_requerido('usuarios')
+# @permiso_requerido('usuarios')
 def update_rol(id):
     try:
         rol = Rol.query.get(id)
@@ -235,7 +235,7 @@ def update_rol(id):
         return jsonify({"error": "Error al actualizar rol"}), 500
 
 @main_bp.route('/roles/<int:id>', methods=['DELETE'])
-@permiso_requerido('usuarios')
+# @permiso_requerido('usuarios')
 def delete_rol(id):
     try:
         rol = Rol.query.get(id)
