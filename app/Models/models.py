@@ -33,6 +33,10 @@ class Usuario(db.Model):
     contrasenia = db.Column(db.String(255), nullable=False)
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=True)
     cliente = db.relationship('Cliente', backref='usuario', lazy=True)
+    telefono = db.Column(db.String(20))
+    fecha_nacimiento = db.Column(db.Date)
+    tipo_documento = db.Column(db.String(20))
+    numero_documento = db.Column(db.String(20))
     estado = db.Column(db.Boolean, default=True)
 
     def to_dict(self):
@@ -43,7 +47,11 @@ class Usuario(db.Model):
             'correo': self.correo,
             'contrasenia': self.contrasenia,
             'cliente_id': self.cliente_id,
-            'estado': self.estado
+            'estado': self.estado,
+            'telefono': self.telefono,
+            'fecha_nacimiento': self.fecha_nacimiento.isoformat() if self.fecha_nacimiento else None,
+            'tipo_documento': self.tipo_documento,     
+            'numero_documento': self.numero_documento
         }
 
 class Permiso(db.Model):
