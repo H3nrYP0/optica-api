@@ -280,9 +280,9 @@ def update_producto(id):
             nuevo_pv = float(data.get('precio_venta', producto.precio_venta))
             nuevo_pc = float(data.get('precio_compra', producto.precio_compra))
             
-            if nuevo_pv <= 0:
+            if nuevo_pv < 0:
                 return jsonify({"error": "El precio de venta debe ser mayor a 0"}), 400
-            if nuevo_pc <= 0:
+            if nuevo_pc < 0:
                 return jsonify({"error": "El precio de compra debe ser mayor a 0"}), 400
             if nuevo_pv < nuevo_pc:
                 return jsonify({"error": "El precio de venta no puede ser menor al precio de compra"}), 400
