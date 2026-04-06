@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from app.database import db
-from app.models import (
+from app.Models.models import (
     # Tablas existentes
     Marca, CategoriaProducto, Producto, Imagen,
     Multimedia,

@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.models import Cliente, HistorialFormula
+from app.Models.models import Cliente, HistorialFormula
 from datetime import datetime
 from app.routes import main_bp
 

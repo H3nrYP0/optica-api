@@ -1,6 +1,6 @@
 from flask import jsonify
 from app.routes import main_bp
-from app.models import (
+from app.Models.models import (
     Producto, Cliente, Empleado, Proveedor, Venta, Cita, Servicio, Usuario,
     Marca, CategoriaProducto, Compra, EstadoCita, EstadoVenta, Rol,
     DetalleVenta, DetalleCompra, Horario, HistorialFormula, Abono,

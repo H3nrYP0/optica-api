@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.models import Compra, DetalleCompra
+from app.Models.models import Compra, DetalleCompra
 from app.routes import main_bp
 
 @main_bp.route('/compras', methods=['GET'])

@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.models import Marca, CategoriaProducto, Producto, Imagen, Multimedia
+from app.Models.models import Marca, CategoriaProducto, Producto, Imagen, Multimedia
 from app.routes import main_bp
 
 # ===== MARCAS =====

@@ -49,7 +49,7 @@ def create_app():
         try:
             db.create_all()
             print("✅ Tablas creadas/verificadas en PostgreSQL")
-            from app.models import Empleado
+            from app.Models.models import Empleado
             count = Empleado.query.count()
             print(f"✅ Conexión exitosa. Empleados en BD: {count}")
         except Exception as e:

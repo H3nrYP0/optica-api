@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.models import Venta, DetalleVenta, Abono
+from app.Models.models import Venta, DetalleVenta, Abono
 from datetime import datetime
 from app.routes import main_bp
 

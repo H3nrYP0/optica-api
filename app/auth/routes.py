@@ -5,7 +5,7 @@ import secrets
 import threading
 
 from app.database import db
-from app.models import Usuario, Cliente
+from app.Models.models import Usuario, Cliente
 from app import mail
 from .helpers import (
     verificar_contrasenia,
