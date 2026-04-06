@@ -71,7 +71,7 @@ def login():
             log_login_fallido("contraseña incorrecta", correo, ip_cliente)
             return jsonify({"success": False, "error": "Correo o contraseña incorrectos"}), 401
 
-        permisos = []
+        permisos = [p.nombre for p in usuario.rol.permisos]
         nombre_rol = "usuario"
 
         if usuario.rol:

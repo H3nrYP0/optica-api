@@ -38,7 +38,7 @@ class Usuario(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
-            'rol_id': self.rol_id,
+            'rol_id': self.rol.nombre.lower() if self.rol else"",
             'nombre': self.nombre,
             'correo': self.correo,
             'contrasenia': self.contrasenia,

@@ -9,48 +9,38 @@ logging.basicConfig(level=logging.INFO)
 
 def verificar_contrasenia(contrasenia_plana, contrasenia_guardada, usuario_id, db):
     """
-    Verifica la contraseña del usuario.
-    Si está en texto plano la encripta automáticamente.
-    Retorna True si es válida, False si no.
+    Verifica la contraseña. Si está en texto plano, la encripta.
     """
-    # Ya está encriptada con bcrypt
-    if contrasenia_guardada.startswith("$2b$") or contrasenia_guardada.startswith("$2a$"):
+    # Verificación de hash bcrypt
+    if contrasenia_guardada.startswith(("$2b$", "$2a$")):
         return bcrypt.checkpw(
             contrasenia_plana.encode('utf-8'),
             contrasenia_guardada.encode('utf-8')
         )
 
-    # Aún en texto plano — comparar y encriptar para el futuro
+    # Autocorrección de texto plano a Hash
     if contrasenia_guardada == contrasenia_plana:
-        hash_nuevo = bcrypt.hashpw(
-            contrasenia_plana.encode('utf-8'),
-            bcrypt.gensalt()
-        )
-        # Importar aquí para evitar imports circulares
+        hash_nuevo = bcrypt.hashpw(contrasenia_plana.encode('utf-8'), bcrypt.gensalt())
         from app.Models.models import Usuario
         usuario = Usuario.query.get(usuario_id)
         usuario.contrasenia = hash_nuevo.decode('utf-8')
         db.session.commit()
-        security_logger.info(
-            f"🔐 Contraseña encriptada automáticamente: usuario_id={usuario_id}"
-        )
+        security_logger.info(f"🔐 Password auto-hash: usuario_id={usuario_id}")
         return True
-
     return False
-
 
 def generar_token(usuario, permisos, nombre_rol):
     """
-    Genera un JWT con los datos del usuario.
-    El token contiene todo lo necesario para no consultar la BD en cada petición.
+    Genera el JWT. 
+    IMPORTANTE: nombre_rol.lower() asegura que el decorador reconozca al 'dev'.
     """
     token_data = {
         "id": usuario.id,
         "nombre": usuario.nombre,
         "correo": usuario.correo,
-        "rol": nombre_rol,
+        "rol": nombre_rol.lower() if nombre_rol else "", # Normalizado
         "rol_id": usuario.rol_id,
-        "permisos": permisos,
+        "permisos": permisos, 
     }
 
     return create_access_token(
@@ -58,23 +48,11 @@ def generar_token(usuario, permisos, nombre_rol):
         additional_claims=token_data
     )
 
-
 def log_login_exitoso(usuario_id, nombre_rol, ip):
-    """Registra un login exitoso en los logs"""
-    security_logger.info(
-        f"✅ Login exitoso: usuario_id={usuario_id} | rol={nombre_rol} | IP={ip} | {datetime.now()}"
-    )
-
+    security_logger.info(f"✅ Login OK: id={usuario_id} | rol={nombre_rol} | IP={ip} | {datetime.now()}")
 
 def log_login_fallido(motivo, correo, ip):
-    """Registra un intento de login fallido en los logs"""
-    security_logger.warning(
-        f"⚠️  Login fallido - {motivo}: {correo} | IP={ip} | {datetime.now()}"
-    )
-
+    security_logger.warning(f"⚠️ Login FAIL - {motivo}: {correo} | IP={ip} | {datetime.now()}")
 
 def log_cuenta_inactiva(correo, ip):
-    """Registra intento de login con cuenta inactiva"""
-    security_logger.warning(
-        f"⚠️  Login bloqueado - cuenta inactiva: {correo} | IP={ip} | {datetime.now()}"
-    )
+    security_logger.warning(f"⚠️ Login BLOCK - Inactiva: {correo} | IP={ip} | {datetime.now()}")

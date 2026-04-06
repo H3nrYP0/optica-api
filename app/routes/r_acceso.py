@@ -38,6 +38,7 @@ def get_usuarios():
 def create_usuario():
     try:
         data = request.get_json()
+        print(f"DEBUG DATA RECEIVIED: {data}")
         required_fields = ['nombre', 'correo', 'contrasenia', 'rol_id']
         for field in required_fields:
             if field not in data:

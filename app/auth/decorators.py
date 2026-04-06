@@ -3,63 +3,41 @@ from flask import jsonify
 from flask_jwt_extended import verify_jwt_in_request, get_jwt
 
 def jwt_requerido(f):
-    """Verifica que el token JWT sea válido"""
     @wraps(f)
     def decorated(*args, **kwargs):
         try:
             verify_jwt_in_request()
+            return f(*args, **kwargs)
         except Exception:
-            return jsonify({
-                "success": False,
-                "error": "Token requerido o inválido"
-            }), 401
-        return f(*args, **kwargs)
+            return jsonify({"success": False, "error": "Sesión inválida"}), 401
     return decorated
 
-def rol_requerido(*roles_permitidos):
-    """Verifica que el usuario tenga uno de los roles permitidos"""
+def permiso_requerido(modulo):
+    """
+    Verifica acceso al módulo completo.
+    Si el rol es 'dev', ignora la verificación y permite pasar.
+    """
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
             try:
                 verify_jwt_in_request()
                 claims = get_jwt()
-                rol_usuario = claims.get('rol', '')
+                
+                # 1. Superusuario Bypass
+                if claims.get('rol') == 'dev':
+                    return f(*args, **kwargs)
 
-                if rol_usuario not in roles_permitidos:
-                    return jsonify({
-                        "success": False,
-                        "error": "No tienes permisos para realizar esta acción"
-                    }), 403
-            except Exception:
-                return jsonify({
-                    "success": False,
-                    "error": "Token requerido o inválido"
-                }), 401
-            return f(*args, **kwargs)
-        return decorated
-    return decorator
-
-def permiso_requerido(permiso):
-    """Verifica que el usuario tenga un permiso específico"""
-    def decorator(f):
-        @wraps(f)
-        def decorated(*args, **kwargs):
-            try:
-                verify_jwt_in_request()
-                claims = get_jwt()
+                # 2. Verificación de Módulo
                 permisos_usuario = claims.get('permisos', [])
-
-                if permiso not in permisos_usuario:
+                if modulo not in permisos_usuario:
                     return jsonify({
                         "success": False,
-                        "error": f"Permiso requerido: {permiso}"
+                        "error": f"No tienes acceso al módulo de {modulo}"
                     }), 403
-            except Exception:
-                return jsonify({
-                    "success": False,
-                    "error": "Token requerido o inválido"
-                }), 401
-            return f(*args, **kwargs)
+                    
+                return f(*args, **kwargs)
+            except Exception as e:
+                return jsonify({"success": False, "error": "Error de permisos", "details": str(e)}), 401
         return decorated
     return decorator
