@@ -9,25 +9,36 @@ logging.basicConfig(level=logging.INFO)
 
 def verificar_contrasenia(contrasenia_plana, contrasenia_guardada, usuario_id, db):
     """
-    Verifica la contraseña. Si está en texto plano, la encripta.
+    🔓 TEMPORALMENTE DESACTIVADA - Siempre retorna True
+    En producción, restaurar la verificación real
     """
-    # Verificación de hash bcrypt
-    if contrasenia_guardada.startswith(("$2b$", "$2a$")):
-        return bcrypt.checkpw(
-            contrasenia_plana.encode('utf-8'),
-            contrasenia_guardada.encode('utf-8')
-        )
-
-    # Autocorrección de texto plano a Hash
-    if contrasenia_guardada == contrasenia_plana:
-        hash_nuevo = bcrypt.hashpw(contrasenia_plana.encode('utf-8'), bcrypt.gensalt())
-        from app.Models.models import Usuario
-        usuario = Usuario.query.get(usuario_id)
-        usuario.contrasenia = hash_nuevo.decode('utf-8')
-        db.session.commit()
-        security_logger.info(f"🔐 Password auto-hash: usuario_id={usuario_id}")
-        return True
-    return False
+    # ⚠️ DESACTIVADO PARA DESARROLLO - Cualquier contraseña funciona
+    security_logger.warning(f"⚠️ VERIFICACIÓN DE CONTRASEÑA DESACTIVADA - usuario_id={usuario_id}")
+    return True
+    
+    # ==============================================
+    # CÓDIGO ORIGINAL COMENTADO - REACTIVAR EN PRODUCCIÓN
+    # ==============================================
+    # """
+    # Verifica la contraseña. Si está en texto plano, la encripta.
+    # """
+    # # Verificación de hash bcrypt
+    # if contrasenia_guardada.startswith(("$2b$", "$2a$")):
+    #     return bcrypt.checkpw(
+    #         contrasenia_plana.encode('utf-8'),
+    #         contrasenia_guardada.encode('utf-8')
+    #     )
+    #
+    # # Autocorrección de texto plano a Hash
+    # if contrasenia_guardada == contrasenia_plana:
+    #     hash_nuevo = bcrypt.hashpw(contrasenia_plana.encode('utf-8'), bcrypt.gensalt())
+    #     from app.Models.models import Usuario
+    #     usuario = Usuario.query.get(usuario_id)
+    #     usuario.contrasenia = hash_nuevo.decode('utf-8')
+    #     db.session.commit()
+    #     security_logger.info(f"🔐 Password auto-hash: usuario_id={usuario_id}")
+    #     return True
+    # return False
 
 def generar_token(usuario, permisos, nombre_rol):
     """
