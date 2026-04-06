@@ -29,7 +29,7 @@ class Usuario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
     nombre = db.Column(db.String(50), nullable=False)
-    correo = db.Column(db.String(27), nullable=False)
+    correo = db.Column(db.String(100), nullable=False)
     contrasenia = db.Column(db.String(255), nullable=False)
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=True)
     cliente = db.relationship('Cliente', backref='usuario', lazy=True)
