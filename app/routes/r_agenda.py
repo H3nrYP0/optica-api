@@ -142,7 +142,6 @@ def validar_disponibilidad_cita(empleado_id, fecha, hora, duracion, exclude_cita
                 "mensaje": f"El empleado ya tiene una cita programada desde las {cita.hora.strftime('%H:%M')}"
             }
     return {"disponible": True, "mensaje": "Horario disponible"}
-
 @main_bp.route('/citas/<int:id>', methods=['PUT'])
 def update_cita(id):
     try:
@@ -150,13 +149,18 @@ def update_cita(id):
         if not cita:
             return jsonify({"error": "Cita no encontrada"}), 404
 
-        data = request.get_json()
+        # 🔒 No permitir modificar una cita cancelada
+        estado_actual = EstadoCita.query.get(cita.estado_cita_id)
+        if estado_actual and estado_actual.nombre.lower() == "cancelado":
+            return jsonify({"error": "No se puede modificar una cita que ya está cancelada"}), 400
 
-        # No permitir modificar cita pasada
+        # ⏰ No permitir modificar cita pasada
         ahora = datetime.utcnow()
         fecha_cita_actual = datetime.combine(cita.fecha, cita.hora)
         if fecha_cita_actual < ahora:
             return jsonify({"error": "No se puede modificar una cita que ya pasó"}), 400
+
+        data = request.get_json()
 
         # Guardar valores originales para validar solo si cambian
         nuevo_empleado_id = data.get('empleado_id', cita.empleado_id)
