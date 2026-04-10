@@ -23,6 +23,16 @@ def get_empleados():
     except Exception as e:
         return jsonify({"error": f"Error al obtener empleados: {str(e)}"}), 500
 
+@main_bp.route('/empleados/<int:id>', methods=['GET'])
+def get_empleado(id):
+    try:
+        empleado = Empleado.query.get(id)
+        if not empleado:
+            return jsonify({"error": "Empleado no encontrado"}), 404
+        return jsonify(empleado.to_dict())
+    except Exception as e:
+        return jsonify({"error": f"Error al obtener empleado: {str(e)}"}), 500
+
 
 @main_bp.route('/empleados', methods=['POST'])
 def create_empleado():
