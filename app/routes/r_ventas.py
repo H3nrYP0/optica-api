@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Venta, DetalleVenta, Abono, Producto, Cliente
+from app.Models.models import Venta, DetalleVenta, Abono, Producto, Cliente, EstadoVenta
 from datetime import datetime
 from app.routes import main_bp
 
@@ -16,7 +16,6 @@ def get_ventas():
         return jsonify([venta.to_dict() for venta in ventas])
     except Exception as e:
         return jsonify({"error": f"Error al obtener ventas: {str(e)}"}), 500
-
 
 @main_bp.route('/ventas', methods=['POST'])
 def create_venta():
@@ -267,6 +266,65 @@ def get_detalles_venta_especifica(venta_id):
         
     except Exception as e:
         return jsonify({"error": f"Error al obtener detalles de la venta: {str(e)}"}), 500
+
+
+# ============================================================
+# MÓDULO: TABLAS MAESTRAS - ESTADO VENTA
+# ============================================================
+
+@main_bp.route('/estado-venta', methods=['GET'])
+def get_estados_venta():
+    try:
+        estados = EstadoVenta.query.all()
+        return jsonify([estado.to_dict() for estado in estados])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener estados de venta"}), 500
+
+@main_bp.route('/estado-venta', methods=['POST'])
+def create_estado_venta():
+    try:
+        data = request.get_json()
+        if not data.get('nombre'):
+            return jsonify({"error": "El nombre es requerido"}), 400
+
+        estado = EstadoVenta(nombre=data['nombre'])
+        db.session.add(estado)
+        db.session.commit()
+        return jsonify({"message": "Estado de venta creado", "estado": estado.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear estado de venta"}), 500
+
+@main_bp.route('/estado-venta/<int:id>', methods=['PUT'])
+def update_estado_venta(id):
+    try:
+        estado = EstadoVenta.query.get(id)
+        if not estado:
+            return jsonify({"error": "Estado de venta no encontrado"}), 404
+
+        data = request.get_json()
+        if 'nombre' in data:
+            estado.nombre = data['nombre']
+
+        db.session.commit()
+        return jsonify({"message": "Estado de venta actualizado", "estado": estado.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar estado de venta"}), 500
+
+@main_bp.route('/estado-venta/<int:id>', methods=['DELETE'])
+def delete_estado_venta(id):
+    try:
+        estado = EstadoVenta.query.get(id)
+        if not estado:
+            return jsonify({"error": "Estado de venta no encontrado"}), 404
+
+        db.session.delete(estado)
+        db.session.commit()
+        return jsonify({"message": "Estado de venta eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar estado de venta"}), 500
 
 
 # ============================================================
