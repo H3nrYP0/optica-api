@@ -23,12 +23,11 @@ def create_cita():
     try:
         data = request.get_json()
         required_fields = ['cliente_id', 'servicio_id', 'empleado_id', 'estado_cita_id', 'fecha', 'hora']
-        
         for field in required_fields:
             if field not in data or data[field] is None:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
 
-        # 1. Procesar Fecha y Hora
+        # 1. Procesar fecha y hora
         fecha_date = datetime.strptime(data['fecha'], '%Y-%m-%d').date()
         hora_str = data['hora']
         if hora_str.count(':') == 1:
@@ -36,63 +35,38 @@ def create_cita():
         else:
             hora_time = datetime.strptime(hora_str, '%H:%M:%S').time()
 
-        # 2. VALIDACIÓN: No permitir citas en el pasado
-        fecha_completa = datetime.combine(fecha_date, hora_time)
-        if fecha_completa < datetime.now():
+        # 2. Validar no pasado (usar UTC o zona horaria configurada)
+        ahora = datetime.utcnow()
+        fecha_hora_cita = datetime.combine(fecha_date, hora_time)
+        if fecha_hora_cita < ahora:
             return jsonify({"error": "No se pueden programar citas en el pasado"}), 400
 
-        # 3. Obtener duración del servicio (o usar la enviada)
+        # 3. Obtener servicio y su duración (obligatorio, no permitir duración externa)
         servicio = Servicio.query.get(data['servicio_id'])
         if not servicio:
             return jsonify({"error": "El servicio especificado no existe"}), 400
-        
-        duracion = data.get('duracion', servicio.duracion_min)
+        duracion = servicio.duracion_min  # forzado
 
-        # 4. VALIDACIÓN: Disponibilidad del Empleado (Cruce de horarios)
-        hora_inicio_cita = datetime.combine(fecha_date, hora_time)
-        hora_fin_cita = hora_inicio_cita + timedelta(minutes=duracion)
+        # 4. Validar disponibilidad (horario laboral y solapamiento)
+        validacion = validar_disponibilidad_cita(
+            empleado_id=data['empleado_id'],
+            fecha=fecha_date,
+            hora=hora_time,
+            duracion=duracion,
+            exclude_cita_id=None
+        )
+        if not validacion["disponible"]:
+            return jsonify({"error": validacion["mensaje"]}), 400
 
-        # Buscar citas que se solapen en el mismo día y empleado
-        citas_existentes = Cita.query.filter(
-            Cita.empleado_id == data['empleado_id'],
-            Cita.fecha == fecha_date
-        ).all()
-
-        for cita_existente in citas_existentes:
-            inicio_existente = datetime.combine(cita_existente.fecha, cita_existente.hora)
-            fin_existente = inicio_existente + timedelta(minutes=cita_existente.duracion or 30)
-            
-            if hora_inicio_cita < fin_existente and hora_fin_cita > inicio_existente:
-                return jsonify({
-                    "error": f"El optómetra ya tiene una cita programada desde las {cita_existente.hora.strftime('%H:%M')}"
-                }), 400
-
-        # 5. VALIDACIÓN: ¿Están activos los involucrados?
+        # 5. Validar que cliente y empleado estén activos
         empleado = Empleado.query.get(data['empleado_id'])
         cliente = Cliente.query.get(data['cliente_id'])
-        
         if not empleado or not empleado.estado:
             return jsonify({"error": "El optómetra seleccionado no está activo"}), 400
         if not cliente or not cliente.estado:
             return jsonify({"error": "El cliente seleccionado está inactivo"}), 400
 
-        # 6. VALIDACIÓN: Horario laboral del empleado
-        dia_semana = fecha_date.weekday()
-        horario_laboral = Horario.query.filter_by(
-            empleado_id=data['empleado_id'], 
-            dia=dia_semana, 
-            activo=True
-        ).first()
-        
-        if not horario_laboral:
-            return jsonify({"error": "El empleado no tiene horario asignado para este día"}), 400
-        
-        if hora_time < horario_laboral.hora_inicio or hora_time > horario_laboral.hora_final:
-            return jsonify({
-                "error": f"El empleado solo trabaja de {horario_laboral.hora_inicio.strftime('%H:%M')} a {horario_laboral.hora_final.strftime('%H:%M')}"
-            }), 400
-
-        # Crear la cita
+        # Crear la cita (sin campo duración del request)
         cita = Cita(
             cliente_id=data['cliente_id'],
             servicio_id=data['servicio_id'],
@@ -103,16 +77,48 @@ def create_cita():
             duracion=duracion,
             fecha=fecha_date
         )
-        
         db.session.add(cita)
         db.session.commit()
-        
         return jsonify({"message": "Cita creada", "cita": cita.to_dict()}), 201
-        
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear cita: {str(e)}"}), 500
 
+def validar_disponibilidad_cita(empleado_id, fecha, hora, duracion, exclude_cita_id=None):
+    """
+    Retorna dict con 'disponible' (bool) y 'mensaje' (str).
+    """
+    # Horario laboral
+    dia_semana = fecha.weekday()
+    horario = Horario.query.filter_by(empleado_id=empleado_id, dia=dia_semana, activo=True).first()
+    if not horario:
+        return {"disponible": False, "mensaje": "El empleado no tiene horario asignado para este día"}
+    if not (horario.hora_inicio <= hora <= horario.hora_final):
+        return {
+            "disponible": False,
+            "mensaje": f"El empleado solo trabaja de {horario.hora_inicio.strftime('%H:%M')} a {horario.hora_final.strftime('%H:%M')}"
+        }
+
+    # Solapamiento con otras citas
+    inicio_solicitado = datetime.combine(fecha, hora)
+    fin_solicitado = inicio_solicitado + timedelta(minutes=duracion)
+    citas = Cita.query.filter(
+        Cita.empleado_id == empleado_id,
+        Cita.fecha == fecha
+    )
+    if exclude_cita_id:
+        citas = citas.filter(Cita.id != exclude_cita_id)
+
+    for cita in citas:
+        inicio_cita = datetime.combine(cita.fecha, cita.hora)
+        fin_cita = inicio_cita + timedelta(minutes=cita.duracion or 30)
+        if inicio_solicitado < fin_cita and fin_solicitado > inicio_cita:
+            return {
+                "disponible": False,
+                "mensaje": f"El empleado ya tiene una cita programada desde las {cita.hora.strftime('%H:%M')}"
+            }
+    return {"disponible": True, "mensaje": "Horario disponible"}
 
 @main_bp.route('/citas/<int:id>', methods=['PUT'])
 def update_cita(id):
@@ -120,56 +126,84 @@ def update_cita(id):
         cita = Cita.query.get(id)
         if not cita:
             return jsonify({"error": "Cita no encontrada"}), 404
-            
+
         data = request.get_json()
-        
-        # Validar que no se modifique una cita ya pasada
-        fecha_cita = datetime.combine(cita.fecha, cita.hora)
-        if fecha_cita < datetime.now():
+
+        # No permitir modificar cita pasada
+        ahora = datetime.utcnow()
+        fecha_cita_actual = datetime.combine(cita.fecha, cita.hora)
+        if fecha_cita_actual < ahora:
             return jsonify({"error": "No se puede modificar una cita que ya pasó"}), 400
-        
-        # Actualizar campos
+
+        # Guardar valores originales para validar solo si cambian
+        nuevo_empleado_id = data.get('empleado_id', cita.empleado_id)
+        nueva_fecha = data.get('fecha')
+        nueva_hora = data.get('hora')
+        nuevo_servicio_id = data.get('servicio_id', cita.servicio_id)
+
+        # Si se cambia servicio, forzar nueva duración
+        duracion = cita.duracion
+        if nuevo_servicio_id != cita.servicio_id:
+            servicio = Servicio.query.get(nuevo_servicio_id)
+            if not servicio:
+                return jsonify({"error": "Servicio no existe"}), 400
+            duracion = servicio.duracion_min
+            cita.servicio_id = nuevo_servicio_id
+            cita.duracion = duracion  # actualizar duración automáticamente
+
+        # Procesar nueva fecha/hora si vienen
+        fecha_final = cita.fecha
+        hora_final = cita.hora
+        if nueva_fecha:
+            fecha_final = datetime.strptime(nueva_fecha, '%Y-%m-%d').date()
+        if nueva_hora:
+            hora_str = nueva_hora
+            if hora_str.count(':') == 1:
+                hora_final = datetime.strptime(hora_str, '%H:%M').time()
+            else:
+                hora_final = datetime.strptime(hora_str, '%H:%M:%S').time()
+
+        # Validar que la nueva fecha/hora no sea pasada
+        nueva_fecha_hora = datetime.combine(fecha_final, hora_final)
+        if nueva_fecha_hora < ahora:
+            return jsonify({"error": "No se puede reprogramar la cita a una fecha/hora pasada"}), 400
+
+        # Validar disponibilidad si cambió empleado, fecha, hora o duración
+        if (nuevo_empleado_id != cita.empleado_id or
+            nueva_fecha is not None or
+            nueva_hora is not None or
+            nuevo_servicio_id != cita.servicio_id):
+
+            validacion = validar_disponibilidad_cita(
+                empleado_id=nuevo_empleado_id,
+                fecha=fecha_final,
+                hora=hora_final,
+                duracion=duracion,
+                exclude_cita_id=cita.id
+            )
+            if not validacion["disponible"]:
+                return jsonify({"error": validacion["mensaje"]}), 400
+
+        # Actualizar campos restantes
         if 'cliente_id' in data:
             cliente = Cliente.query.get(data['cliente_id'])
             if not cliente or not cliente.estado:
                 return jsonify({"error": "Cliente no válido o inactivo"}), 400
             cita.cliente_id = data['cliente_id']
-            
-        if 'servicio_id' in data:
-            servicio = Servicio.query.get(data['servicio_id'])
-            if not servicio:
-                return jsonify({"error": "Servicio no existe"}), 400
-            cita.servicio_id = data['servicio_id']
-            cita.duracion = servicio.duracion_min
-            
-        if 'empleado_id' in data:
-            empleado = Empleado.query.get(data['empleado_id'])
-            if not empleado or not empleado.estado:
-                return jsonify({"error": "Empleado no válido o inactivo"}), 400
-            cita.empleado_id = data['empleado_id']
-            
         if 'estado_cita_id' in data:
             cita.estado_cita_id = data['estado_cita_id']
-            
         if 'metodo_pago' in data:
             cita.metodo_pago = data['metodo_pago']
-            
-        if 'hora' in data:
-            hora_str = data['hora']
-            if hora_str.count(':') == 1:
-                cita.hora = datetime.strptime(hora_str, '%H:%M').time()
-            else:
-                cita.hora = datetime.strptime(hora_str, '%H:%M:%S').time()
-                
-        if 'duracion' in data:
-            cita.duracion = data['duracion']
-            
+        if 'empleado_id' in data:
+            cita.empleado_id = data['empleado_id']
         if 'fecha' in data:
-            cita.fecha = datetime.strptime(data['fecha'], '%Y-%m-%d').date()
-            
+            cita.fecha = fecha_final
+        if 'hora' in data:
+            cita.hora = hora_final
+
         db.session.commit()
         return jsonify({"message": "Cita actualizada", "cita": cita.to_dict()})
-        
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar cita: {str(e)}"}), 500
@@ -473,7 +507,6 @@ def get_horarios_empleado(empleado_id):
     except Exception as e:
         return jsonify({"error": "Error al obtener horarios del empleado"}), 500
 
-
 # ============================================================
 # MÓDULO: VERIFICAR DISPONIBILIDAD
 # ============================================================
@@ -486,73 +519,123 @@ def verificar_disponibilidad():
         empleado_id (int): ID del empleado
         fecha (str): YYYY-MM-DD
         hora (str): HH:MM
-        duracion (int): duración en minutos (opcional, default=30)
+        servicio_id (int): ID del servicio (para obtener duración automática)
+        duracion (int): duración en minutos (opcional, se usa si no hay servicio_id)
         exclude_cita_id (int): ID de una cita a excluir (para edición)
     """
     try:
         empleado_id = request.args.get('empleado_id', type=int)
         fecha_str = request.args.get('fecha')
         hora_str = request.args.get('hora')
-        duracion = request.args.get('duracion', default=30, type=int)
+        servicio_id = request.args.get('servicio_id', type=int)
+        duracion = request.args.get('duracion', type=int)
         exclude_cita_id = request.args.get('exclude_cita_id', type=int)
-        
+
+        # Validar parámetros obligatorios
         if not empleado_id or not fecha_str or not hora_str:
-            return jsonify({"disponible": False, "mensaje": "Faltan parámetros: empleado_id, fecha, hora"}), 400
-            
+            return jsonify({
+                "disponible": False,
+                "mensaje": "Faltan parámetros: empleado_id, fecha, hora"
+            }), 400
+
+        # Validar que el empleado exista y esté activo
+        empleado = Empleado.query.get(empleado_id)
+        if not empleado or not empleado.estado:
+            return jsonify({
+                "disponible": False,
+                "mensaje": "El empleado no está activo o no existe"
+            }), 400
+
+        # Obtener duración desde servicio si se proporciona
+        if servicio_id:
+            servicio = Servicio.query.get(servicio_id)
+            if servicio:
+                duracion = servicio.duracion_min
+        # Si no hay servicio ni duración, usar valor por defecto seguro
+        if not duracion:
+            duracion = 30
+
+        # Procesar fecha y hora
         try:
             fecha_date = datetime.strptime(fecha_str, '%Y-%m-%d').date()
             hora_time = datetime.strptime(hora_str, '%H:%M').time()
         except ValueError:
-            return jsonify({"disponible": False, "mensaje": "Formato de fecha u hora inválido"}), 400
-            
-        # Validar que no sea en el pasado
-        fecha_completa = datetime.combine(fecha_date, hora_time)
-        if fecha_completa < datetime.now():
-            return jsonify({"disponible": False, "mensaje": "No se pueden verificar disponibilidad en el pasado"}), 400
-            
+            return jsonify({
+                "disponible": False,
+                "mensaje": "Formato de fecha u hora inválido (use YYYY-MM-DD y HH:MM)"
+            }), 400
+
+        # Validar que no sea en el pasado (usando UTC)
+        ahora = datetime.utcnow()
+        fecha_hora_solicitada = datetime.combine(fecha_date, hora_time)
+        if fecha_hora_solicitada < ahora:
+            return jsonify({
+                "disponible": False,
+                "mensaje": "No se pueden verificar disponibilidad en el pasado"
+            }), 400
+
         # Verificar horario laboral
         dia_semana = fecha_date.weekday()
-        horario = Horario.query.filter_by(empleado_id=empleado_id, dia=dia_semana, activo=True).first()
-        
+        horario = Horario.query.filter_by(
+            empleado_id=empleado_id, dia=dia_semana, activo=True
+        ).first()
+
         if not horario:
-            return jsonify({"disponible": False, "mensaje": "El empleado no tiene horario asignado para este día"})
-            
+            return jsonify({
+                "disponible": False,
+                "mensaje": "El empleado no tiene horario asignado para este día"
+            })
+
+        # Validar que la hora esté dentro del rango laboral
         if hora_time < horario.hora_inicio or hora_time > horario.hora_final:
             return jsonify({
-                "disponible": False, 
-                "mensaje": f"El empleado solo trabaja de {horario.hora_inicio.strftime('%H:%M')} a {horario.hora_final.strftime('%H:%M')}"
+                "disponible": False,
+                "mensaje": f"El empleado solo trabaja de {horario.hora_inicio.strftime('%H:%M')} a {horario.hora_final.strftime('%H:%M')}",
+                "horario": {
+                    "inicio": horario.hora_inicio.strftime('%H:%M'),
+                    "fin": horario.hora_final.strftime('%H:%M')
+                }
             })
-            
-        # Verificar citas existentes
+
+        # Verificar solapamiento con citas existentes
         inicio_solicitado = datetime.combine(fecha_date, hora_time)
         fin_solicitado = inicio_solicitado + timedelta(minutes=duracion)
-        
-        citas = Cita.query.filter(Cita.empleado_id == empleado_id, Cita.fecha == fecha_date).all()
-        
-        for cita in citas:
-            if exclude_cita_id and cita.id == exclude_cita_id:
-                continue
+
+        query = Cita.query.filter(
+            Cita.empleado_id == empleado_id,
+            Cita.fecha == fecha_date
+        )
+        if exclude_cita_id:
+            query = query.filter(Cita.id != exclude_cita_id)
+
+        for cita in query.all():
             inicio_cita = datetime.combine(cita.fecha, cita.hora)
             fin_cita = inicio_cita + timedelta(minutes=cita.duracion or 30)
-            
             if inicio_solicitado < fin_cita and fin_solicitado > inicio_cita:
                 return jsonify({
-                    "disponible": False, 
-                    "mensaje": f"El empleado ya tiene una cita programada desde las {cita.hora.strftime('%H:%M')}"
+                    "disponible": False,
+                    "mensaje": f"El empleado ya tiene una cita programada desde las {cita.hora.strftime('%H:%M')}",
+                    "horario": {
+                        "inicio": horario.hora_inicio.strftime('%H:%M'),
+                        "fin": horario.hora_final.strftime('%H:%M')
+                    }
                 })
-                
+
+        # Si todo está bien, retornar disponible
         return jsonify({
-            "disponible": True, 
-            "mensaje": "Horario disponible", 
+            "disponible": True,
+            "mensaje": "Horario disponible",
             "horario": {
-                "inicio": horario.hora_inicio.strftime('%H:%M'), 
+                "inicio": horario.hora_inicio.strftime('%H:%M'),
                 "fin": horario.hora_final.strftime('%H:%M')
             }
         })
-        
-    except Exception as e:
-        return jsonify({"disponible": False, "mensaje": f"Error al verificar disponibilidad: {str(e)}"}), 500
 
+    except Exception as e:
+        return jsonify({
+            "disponible": False,
+            "mensaje": f"Error interno al verificar disponibilidad: {str(e)}"
+        }), 500
 
 # ============================================================
 # MÓDULO: ESTADOS DE CITA
