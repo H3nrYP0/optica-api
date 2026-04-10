@@ -9,26 +9,15 @@ from app.routes import main_bp
 # MÓDULO: CITAS
 # ============================================================
 
-@main_bp.route('/citas', methods=['GET'])
-def get_citas():
+@main_bp.route('/citas/<int:id>', methods=['GET'])
+def get_cita(id):
     try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 10, type=int)
-
-        # Ordenar por id descendente (más recientes primero)
-        pagination = Cita.query.order_by(Cita.id.desc()).paginate(
-            page=page, per_page=per_page, error_out=False
-        )
-
-        return jsonify({
-            'data': [cita.to_dict() for cita in pagination.items],
-            'total': pagination.total,
-            'page': pagination.page,
-            'per_page': pagination.per_page,
-            'total_pages': pagination.pages
-        })
+        cita = Cita.query.get(id)
+        if not cita:
+            return jsonify({"error": "Cita no encontrada"}), 404
+        return jsonify(cita.to_dict())
     except Exception as e:
-        return jsonify({"error": "Error al obtener citas"}), 500
+        return jsonify({"error": "Error al obtener la cita"}), 500
 
 
 @main_bp.route('/citas', methods=['POST'])
