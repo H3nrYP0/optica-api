@@ -12,7 +12,7 @@ from app.routes import main_bp
 @main_bp.route('/citas', methods=['GET'])
 def get_citas():
     try:
-        citas = Cita.query.all()
+        citas = Cita.query.order_by(Cita.id.desc()).all()
         return jsonify([cita.to_dict() for cita in citas])
     except Exception as e:
         return jsonify({"error": "Error al obtener citas"}), 500
