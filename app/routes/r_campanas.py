@@ -89,7 +89,6 @@ def create_campana_salud():
         db.session.rollback()
         return jsonify({"error": f"Error al crear campaña: {str(e)}"}), 500
 
-
 @main_bp.route('/campanas-salud/<int:id>', methods=['PUT'])
 def update_campana_salud(id):
     try:

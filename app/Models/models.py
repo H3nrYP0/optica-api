@@ -180,6 +180,7 @@ class Pedido(db.Model):
     direccion_entrega = db.Column(db.String(255))
     estado = db.Column(db.String(20), default='pendiente')  # pendiente, confirmado, en_preparacion, enviado, entregado, cancelado
     transferencia_comprobante = db.Column(db.String(255))    # URL del comprobante
+    abono_acumulado = db.Column(db.Float, default=0.0)
     # Relaciones
     cliente = db.relationship('Cliente', backref='pedidos')
     items = db.relationship('DetallePedido', backref='pedido', lazy=True, cascade='all, delete-orphan')
@@ -564,6 +565,16 @@ class Abono(db.Model):
             'monto_abonado': self.monto_abonado,
             'fecha': self.fecha.isoformat() if self.fecha else None
         }
+    
+class AbonoPedido(db.Model):
+    __tablename__ = 'abono_pedido'
+    id = db.Column(db.Integer, primary_key=True)
+    pedido_id = db.Column(db.Integer, db.ForeignKey('pedido.id'), nullable=False)
+    monto = db.Column(db.Float, nullable=False)
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+    observacion = db.Column(db.String(255), nullable=True)
+
+    pedido = db.relationship('Pedido', backref='abonos_pedido')
     
 class CampanaSalud(db.Model):
     __tablename__ = 'campana_salud'
