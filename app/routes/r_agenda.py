@@ -182,10 +182,10 @@ def delete_cita(id):
         if not cita:
             return jsonify({"error": "Cita no encontrada"}), 404
         
-        # No permitir eliminar citas completadas o en progreso
+        # No permitir eliminar citas completadas
         estado_actual = EstadoCita.query.get(cita.estado_cita_id)
-        if estado_actual and estado_actual.nombre.lower() in ['completada', 'en progreso']:
-            return jsonify({"error": "No se puede eliminar una cita que ya está completada o en progreso"}), 400
+        if estado_actual and estado_actual.nombre.lower() in ['completada']:
+            return jsonify({"error": "No se puede eliminar una cita que ya está completada"}), 400
             
         db.session.delete(cita)
         db.session.commit()
