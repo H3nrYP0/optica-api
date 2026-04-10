@@ -151,7 +151,7 @@ def update_cita(id):
 
         # 🔒 No permitir modificar una cita cancelada
         estado_actual = EstadoCita.query.get(cita.estado_cita_id)
-        if estado_actual and estado_actual.nombre.lower() == "cancelado":
+        if estado_actual and estado_actual.nombre.lower() == "cancelada":
             return jsonify({"error": "No se puede modificar una cita que ya está cancelada"}), 400
 
         # ⏰ No permitir modificar cita pasada
