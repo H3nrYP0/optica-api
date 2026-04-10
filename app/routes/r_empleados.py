@@ -18,7 +18,7 @@ PHONE_REGEX = re.compile(r'^\d{7,15}$')
 @main_bp.route('/empleados', methods=['GET'])
 def get_empleados():
     try:
-        empleados = Empleado.query.all()
+        empleados = Empleado.query.order_by(Empleado.id.desc()).all()
         return jsonify([empleado.to_dict() for empleado in empleados])
     except Exception as e:
         return jsonify({"error": f"Error al obtener empleados: {str(e)}"}), 500
