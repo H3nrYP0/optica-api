@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Pedido, DetallePedido, Venta, DetalleVenta, Producto, Cliente
+from app.Models.models import Pedido, DetallePedido, Venta, DetalleVenta, Producto, Cliente, AbonoPedido, Abono
 from datetime import datetime
 from app.routes import main_bp
 
@@ -63,7 +63,8 @@ def create_pedido():
             direccion_entrega=data.get('direccion_entrega', '').strip(),
             estado=data.get('estado', 'pendiente'),
             transferencia_comprobante=data.get('transferencia_comprobante'),
-            total=0
+            total=0,
+            abono_acumulado=0
         )
         
         db.session.add(pedido)
@@ -211,6 +212,15 @@ def update_pedido(id):
                 )
                 db.session.add(detalle_venta)
             
+            # Si el pedido tiene abonos acumulados, registrar el abono total en la tabla Abono
+            if pedido.abono_acumulado > 0:
+                abono_total = Abono(
+                    venta_id=venta.id,
+                    monto_abonado=pedido.abono_acumulado,
+                    fecha=datetime.utcnow()
+                )
+                db.session.add(abono_total)
+            
             # Nota: El stock ya se descontó al crear el pedido, no se descuenta nuevamente
         
         # TRANSICIÓN A CANCELADO (revertir stock)
@@ -275,6 +285,9 @@ def delete_pedido(id):
             if producto:
                 producto.stock += detalle.cantidad
         
+        # Eliminar abonos del pedido primero
+        AbonoPedido.query.filter_by(pedido_id=id).delete()
+        
         # Eliminar detalles y pedido
         DetallePedido.query.filter_by(pedido_id=id).delete()
         db.session.delete(pedido)
@@ -314,6 +327,119 @@ def get_detalles_de_pedido(pedido_id):
         
     except Exception as e:
         return jsonify({"error": f"Error al obtener detalles del pedido: {str(e)}"}), 500
+
+
+# ============================================================
+# MÓDULO: ABONOS DE PEDIDOS
+# ============================================================
+
+@main_bp.route('/pedidos/<int:id>/abonos', methods=['GET'])
+def get_abonos_pedido(id):
+    try:
+        pedido = Pedido.query.get(id)
+        if not pedido:
+            return jsonify({"error": "Pedido no encontrado"}), 404
+        abonos = [a.to_dict() for a in pedido.abonos_pedido]
+        return jsonify(abonos)
+    except Exception as e:
+        return jsonify({"error": f"Error al obtener abonos: {str(e)}"}), 500
+
+
+@main_bp.route('/pedidos/<int:id>/abonos', methods=['POST'])
+def add_abono_pedido(id):
+    try:
+        pedido = Pedido.query.get(id)
+        if not pedido:
+            return jsonify({"error": "Pedido no encontrado"}), 404
+
+        # No permitir abonos si ya está entregado o cancelado
+        if pedido.estado in ['entregado', 'cancelado']:
+            return jsonify({"error": f"No se pueden registrar abonos en un pedido {pedido.estado}"}), 400
+
+        data = request.get_json()
+        monto = data.get('monto_abonado')
+        if not monto or float(monto) <= 0:
+            return jsonify({"error": "El monto del abono debe ser mayor a 0"}), 400
+
+        monto = float(monto)
+        nuevo_acumulado = pedido.abono_acumulado + monto
+
+        if nuevo_acumulado > pedido.total:
+            return jsonify({"error": f"El abono excede el total del pedido. Máximo permitido: {pedido.total - pedido.abono_acumulado}"}), 400
+
+        # Registrar el abono en la nueva tabla
+        abono_pedido = AbonoPedido(
+            pedido_id=pedido.id,
+            monto=monto,
+            observacion=data.get('observacion', '')
+        )
+        db.session.add(abono_pedido)
+
+        # Actualizar acumulado
+        pedido.abono_acumulado = nuevo_acumulado
+
+        # Verificar si se completó el pago
+        pago_completo = nuevo_acumulado >= pedido.total
+        venta_id = None
+
+        if pago_completo:
+            # Crear venta si el pedido no está entregado
+            if pedido.estado != 'entregado':
+                # Verificar si ya existe venta
+                venta_existente = Venta.query.filter_by(pedido_id=pedido.id).first()
+                if not venta_existente:
+                    # Crear la venta
+                    venta = Venta(
+                        pedido_id=pedido.id,
+                        cliente_id=pedido.cliente_id,
+                        fecha_pedido=pedido.fecha,
+                        fecha_venta=datetime.utcnow(),
+                        total=pedido.total,
+                        metodo_pago=pedido.metodo_pago,
+                        metodo_entrega=pedido.metodo_entrega,
+                        direccion_entrega=pedido.direccion_entrega,
+                        transferencia_comprobante=pedido.transferencia_comprobante,
+                        estado='completada'
+                    )
+                    db.session.add(venta)
+                    db.session.flush()
+                    venta_id = venta.id
+                    
+                    # Migrar detalles (DetallePedido -> DetalleVenta)
+                    for detalle_pedido in pedido.items:
+                        detalle_venta = DetalleVenta(
+                            venta_id=venta.id,
+                            producto_id=detalle_pedido.producto_id,
+                            cantidad=detalle_pedido.cantidad,
+                            precio_unitario=detalle_pedido.precio_unitario,
+                            subtotal=detalle_pedido.subtotal
+                        )
+                        db.session.add(detalle_venta)
+                    
+                    # Registrar un Abono (tabla original) por el total pagado
+                    abono_total = Abono(
+                        venta_id=venta.id,
+                        monto_abonado=pedido.total,
+                        fecha=datetime.utcnow()
+                    )
+                    db.session.add(abono_total)
+
+                # Cambiar estado del pedido a 'entregado'
+                pedido.estado = 'entregado'
+
+        db.session.commit()
+
+        return jsonify({
+            "message": "Abono registrado",
+            "abono_acumulado": pedido.abono_acumulado,
+            "saldo_pendiente": pedido.total - pedido.abono_acumulado,
+            "pago_completo": pago_completo,
+            "venta_id": venta_id if pago_completo else None
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al registrar abono: {str(e)}"}), 500
 
 
 # ============================================================
