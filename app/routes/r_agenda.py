@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Cita, Servicio, Horario, EstadoCita, Empleado, Cliente, Venta, EstadoVenta, DetalleVenta
+from app.Models.models import Cita, Servicio, Horario, EstadoCita, Empleado, Cliente, Venta, EstadoVenta, DetalleVenta, Novedad
 from datetime import datetime, timedelta
 import pytz
 from app.routes import main_bp
@@ -129,7 +129,23 @@ def validar_disponibilidad_cita(empleado_id, fecha, hora, duracion, exclude_cita
     """
     Retorna dict con 'disponible' (bool) y 'mensaje' (str).
     """
-    # Horario laboral
+    # 1. Verificar novedades (vacaciones, incapacidades, permisos)
+    novedad = Novedad.query.filter(
+        Novedad.empleado_id == empleado_id,
+        Novedad.fecha_inicio <= fecha,
+        Novedad.fecha_fin >= fecha,
+        Novedad.activo == True
+    ).first()
+    if novedad:
+        # Si la novedad es por día completo (sin horas)
+        if novedad.hora_inicio is None and novedad.hora_fin is None:
+            return {"disponible": False, "mensaje": f"Empleado no disponible por {novedad.tipo}: {novedad.motivo or 'Sin motivo'}"}
+        # Si tiene horas específicas y la hora solicitada cae dentro
+        if novedad.hora_inicio and novedad.hora_fin:
+            if novedad.hora_inicio <= hora <= novedad.hora_fin:
+                return {"disponible": False, "mensaje": f"Empleado no disponible por {novedad.tipo} en este horario: {novedad.motivo or ''}"}
+
+    # 2. Verificar horario laboral
     dia_semana = fecha.weekday()
     horario = Horario.query.filter_by(empleado_id=empleado_id, dia=dia_semana, activo=True).first()
     if not horario:
@@ -140,7 +156,7 @@ def validar_disponibilidad_cita(empleado_id, fecha, hora, duracion, exclude_cita
             "mensaje": f"El empleado solo trabaja de {horario.hora_inicio.strftime('%H:%M')} a {horario.hora_final.strftime('%H:%M')}"
         }
 
-    # Solapamiento con otras citas
+    # 3. Verificar solapamiento con otras citas
     inicio_solicitado = datetime.combine(fecha, hora)
     fin_solicitado = inicio_solicitado + timedelta(minutes=duracion)
     citas = Cita.query.filter(
@@ -158,6 +174,7 @@ def validar_disponibilidad_cita(empleado_id, fecha, hora, duracion, exclude_cita
                 "disponible": False,
                 "mensaje": f"El empleado ya tiene una cita programada desde las {cita.hora.strftime('%H:%M')}"
             }
+
     return {"disponible": True, "mensaje": "Horario disponible"}
 
 @main_bp.route('/citas/<int:id>', methods=['PUT'])
@@ -828,3 +845,159 @@ def delete_estado_cita(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar estado de cita: {str(e)}"}), 500
+    
+# ============================================================
+# MÓDULO: NOVEDADES (vacaciones, incapacidades, permisos)
+# ============================================================
+
+@main_bp.route('/novedades', methods=['GET'])
+def get_novedades():
+    try:
+        novedades = Novedad.query.all()
+        return jsonify([n.to_dict() for n in novedades])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener novedades"}), 500
+
+@main_bp.route('/novedades/empleado/<int:empleado_id>', methods=['GET'])
+def get_novedades_por_empleado(empleado_id):
+    try:
+        novedades = Novedad.query.filter_by(empleado_id=empleado_id).all()
+        return jsonify([n.to_dict() for n in novedades])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener novedades"}), 500
+
+@main_bp.route('/novedades', methods=['POST'])
+def create_novedad():
+    try:
+        data = request.get_json()
+        required = ['empleado_id', 'fecha_inicio', 'fecha_fin', 'tipo']
+        for field in required:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        # Validar empleado
+        empleado = Empleado.query.get(data['empleado_id'])
+        if not empleado or not empleado.estado:
+            return jsonify({"error": "Empleado no existe o está inactivo"}), 400
+
+        # Validar fechas
+        try:
+            fecha_inicio = datetime.strptime(data['fecha_inicio'], '%Y-%m-%d').date()
+            fecha_fin = datetime.strptime(data['fecha_fin'], '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({"error": "Formato de fecha inválido. Use YYYY-MM-DD"}), 400
+
+        if fecha_inicio > fecha_fin:
+            return jsonify({"error": "La fecha inicio no puede ser mayor a fecha fin"}), 400
+
+        # Validar horas si se proporcionan
+        hora_inicio = None
+        hora_fin = None
+        if 'hora_inicio' in data and data['hora_inicio']:
+            try:
+                hora_inicio = datetime.strptime(data['hora_inicio'], '%H:%M').time()
+            except ValueError:
+                return jsonify({"error": "Formato de hora inválido. Use HH:MM"}), 400
+        if 'hora_fin' in data and data['hora_fin']:
+            try:
+                hora_fin = datetime.strptime(data['hora_fin'], '%H:%M').time()
+            except ValueError:
+                return jsonify({"error": "Formato de hora inválido. Use HH:MM"}), 400
+
+        if hora_inicio and hora_fin and hora_fin <= hora_inicio:
+            return jsonify({"error": "La hora final debe ser mayor que la hora inicio"}), 400
+
+        # Si se especifica hora pero no la otra, error
+        if (hora_inicio and not hora_fin) or (hora_fin and not hora_inicio):
+            return jsonify({"error": "Si especifica hora, debe proporcionar ambas (inicio y fin)"}), 400
+
+        novedad = Novedad(
+            empleado_id=data['empleado_id'],
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            hora_inicio=hora_inicio,
+            hora_fin=hora_fin,
+            tipo=data['tipo'],
+            motivo=data.get('motivo'),
+            activo=data.get('activo', True)
+        )
+        db.session.add(novedad)
+        db.session.commit()
+        return jsonify({"message": "Novedad creada", "novedad": novedad.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al crear novedad: {str(e)}"}), 500
+
+@main_bp.route('/novedades/<int:id>', methods=['PUT'])
+def update_novedad(id):
+    try:
+        novedad = Novedad.query.get(id)
+        if not novedad:
+            return jsonify({"error": "Novedad no encontrada"}), 404
+
+        data = request.get_json()
+        # Actualizar campos
+        if 'empleado_id' in data:
+            empleado = Empleado.query.get(data['empleado_id'])
+            if not empleado or not empleado.estado:
+                return jsonify({"error": "Empleado no válido o inactivo"}), 400
+            novedad.empleado_id = data['empleado_id']
+        if 'fecha_inicio' in data:
+            try:
+                novedad.fecha_inicio = datetime.strptime(data['fecha_inicio'], '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({"error": "Formato de fecha inválido"}), 400
+        if 'fecha_fin' in data:
+            try:
+                novedad.fecha_fin = datetime.strptime(data['fecha_fin'], '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({"error": "Formato de fecha inválido"}), 400
+        if 'hora_inicio' in data:
+            if data['hora_inicio']:
+                try:
+                    novedad.hora_inicio = datetime.strptime(data['hora_inicio'], '%H:%M').time()
+                except ValueError:
+                    return jsonify({"error": "Formato de hora inválido"}), 400
+            else:
+                novedad.hora_inicio = None
+        if 'hora_fin' in data:
+            if data['hora_fin']:
+                try:
+                    novedad.hora_fin = datetime.strptime(data['hora_fin'], '%H:%M').time()
+                except ValueError:
+                    return jsonify({"error": "Formato de hora inválido"}), 400
+            else:
+                novedad.hora_fin = None
+        if 'tipo' in data:
+            novedad.tipo = data['tipo']
+        if 'motivo' in data:
+            novedad.motivo = data['motivo']
+        if 'activo' in data:
+            novedad.activo = data['activo']
+
+        # Validar consistencia
+        if novedad.fecha_inicio > novedad.fecha_fin:
+            return jsonify({"error": "La fecha inicio no puede ser mayor a fecha fin"}), 400
+        if novedad.hora_inicio and novedad.hora_fin and novedad.hora_fin <= novedad.hora_inicio:
+            return jsonify({"error": "La hora final debe ser mayor que la hora inicio"}), 400
+        if (novedad.hora_inicio and not novedad.hora_fin) or (novedad.hora_fin and not novedad.hora_inicio):
+            return jsonify({"error": "Si especifica hora, debe proporcionar ambas"}), 400
+
+        db.session.commit()
+        return jsonify({"message": "Novedad actualizada", "novedad": novedad.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al actualizar novedad: {str(e)}"}), 500
+
+@main_bp.route('/novedades/<int:id>', methods=['DELETE'])
+def delete_novedad(id):
+    try:
+        novedad = Novedad.query.get(id)
+        if not novedad:
+            return jsonify({"error": "Novedad no encontrada"}), 404
+        db.session.delete(novedad)
+        db.session.commit()
+        return jsonify({"message": "Novedad eliminada correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al eliminar novedad: {str(e)}"}), 500
