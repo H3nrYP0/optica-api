@@ -692,7 +692,33 @@ def verificar_disponibilidad():
                 "mensaje": "No se pueden verificar disponibilidad en el pasado"
             }), 400
 
-        # Verificar horario laboral
+        # ============================================================
+        # VERIFICAR NOVEDADES (vacaciones, incapacidades, permisos)
+        # ============================================================
+        novedad = Novedad.query.filter(
+            Novedad.empleado_id == empleado_id,
+            Novedad.fecha_inicio <= fecha_date,
+            Novedad.fecha_fin >= fecha_date,
+            Novedad.activo == True
+        ).first()
+        if novedad:
+            # Si la novedad es por día completo (sin horas)
+            if novedad.hora_inicio is None and novedad.hora_fin is None:
+                return jsonify({
+                    "disponible": False,
+                    "mensaje": f"Empleado no disponible por {novedad.tipo}: {novedad.motivo or 'Sin motivo'}"
+                })
+            # Si tiene rango horario y la hora solicitada cae dentro
+            if novedad.hora_inicio and novedad.hora_fin:
+                if novedad.hora_inicio <= hora_time <= novedad.hora_fin:
+                    return jsonify({
+                        "disponible": False,
+                        "mensaje": f"Empleado no disponible por {novedad.tipo} en este horario: {novedad.motivo or ''}"
+                    })
+
+        # ============================================================
+        # VERIFICAR HORARIO LABORAL
+        # ============================================================
         dia_semana = fecha_date.weekday()
         horario = Horario.query.filter_by(
             empleado_id=empleado_id, dia=dia_semana, activo=True
@@ -715,7 +741,9 @@ def verificar_disponibilidad():
                 }
             })
 
-        # Verificar solapamiento con citas existentes
+        # ============================================================
+        # VERIFICAR SOLAPAMIENTO CON OTRAS CITAS
+        # ============================================================
         inicio_solicitado = datetime.combine(fecha_date, hora_time)
         fin_solicitado = inicio_solicitado + timedelta(minutes=duracion)
 
