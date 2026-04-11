@@ -1,9 +1,8 @@
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Pedido, DetallePedido, Venta, DetalleVenta, Producto, Cliente, AbonoPedido, Abono
+from app.Models.models import Pedido, DetallePedido, Venta, DetalleVenta, Producto, Cliente, Abono, EstadoPedido
 from datetime import datetime
 from app.routes import main_bp
-
 
 # ============================================================
 # MÓDULO: PEDIDOS
@@ -55,13 +54,18 @@ def create_pedido():
         if not isinstance(items, list) or len(items) == 0:
             return jsonify({"error": "El pedido debe tener al menos un item"}), 400
         
-        # Crear pedido
+        # Obtener ID del estado "pendiente" (asumiendo id=1, puedes buscarlo por nombre)
+        estado_pendiente = EstadoPedido.query.filter_by(nombre='pendiente').first()
+        if not estado_pendiente:
+            return jsonify({"error": "Estado 'pendiente' no encontrado en la base de datos"}), 500
+        
+        # Crear pedido usando estado_id en lugar de string
         pedido = Pedido(
             cliente_id=data['cliente_id'],
             metodo_pago=metodo_pago,
             metodo_entrega=metodo_entrega,
             direccion_entrega=data.get('direccion_entrega', '').strip(),
-            estado=data.get('estado', 'pendiente'),
+            estado_id=estado_pendiente.id,          # ← Cambio clave
             transferencia_comprobante=data.get('transferencia_comprobante'),
             total=0,
             abono_acumulado=0
@@ -75,7 +79,6 @@ def create_pedido():
         
         # 7. Procesar cada item
         for idx, item_data in enumerate(items):
-            # Validar campos del item
             if 'producto_id' not in item_data:
                 db.session.rollback()
                 return jsonify({"error": f"El item {idx+1} no tiene 'producto_id'"}), 400
@@ -83,7 +86,6 @@ def create_pedido():
                 db.session.rollback()
                 return jsonify({"error": f"El item {idx+1} no tiene 'cantidad'"}), 400
             
-            # Validar producto
             producto = Producto.query.get(item_data['producto_id'])
             if not producto:
                 db.session.rollback()
@@ -92,7 +94,6 @@ def create_pedido():
                 db.session.rollback()
                 return jsonify({"error": f"El producto '{producto.nombre}' está inactivo"}), 400
             
-            # Validar cantidad
             try:
                 cantidad = int(item_data['cantidad'])
             except (ValueError, TypeError):
@@ -103,14 +104,12 @@ def create_pedido():
                 db.session.rollback()
                 return jsonify({"error": f"La cantidad del item {idx+1} debe ser mayor a 0"}), 400
             
-            # Validar stock
             if producto.stock < cantidad:
                 db.session.rollback()
                 return jsonify({
                     "error": f"Stock insuficiente para '{producto.nombre}'. Disponible: {producto.stock}, solicitado: {cantidad}"
                 }), 400
             
-            # Usar precio del producto o el enviado (con validación)
             precio = float(item_data.get('precio_unitario', producto.precio_venta))
             if precio <= 0:
                 db.session.rollback()
@@ -119,11 +118,9 @@ def create_pedido():
             subtotal = cantidad * precio
             total_calculado += subtotal
             
-            # Descontar stock
             producto.stock -= cantidad
             productos_procesados.append(producto)
             
-            # Crear detalle
             detalle = DetallePedido(
                 pedido_id=pedido.id,
                 producto_id=producto.id,
@@ -162,30 +159,50 @@ def update_pedido(id):
             return jsonify({"error": "Pedido no encontrado"}), 404
         
         data = request.get_json()
-        estado_anterior = pedido.estado
-        nuevo_estado = data.get('estado', pedido.estado)
+        estado_anterior_id = pedido.estado_id
         
-        # Validar estados permitidos
-        estados_permitidos = ['pendiente', 'confirmado', 'en_preparacion', 'enviado', 'entregado', 'cancelado']
-        if nuevo_estado not in estados_permitidos:
-            return jsonify({"error": f"Estado inválido. Opciones: {', '.join(estados_permitidos)}"}), 400
+        # Obtener nuevo estado_id (puede venir como ID o como nombre)
+        nuevo_estado_id = data.get('estado_id')
+        if not nuevo_estado_id and 'estado' in data:
+            # Compatibilidad: si envían el nombre, buscar el ID
+            estado_nombre = data['estado']
+            estado_obj = EstadoPedido.query.filter_by(nombre=estado_nombre).first()
+            if not estado_obj:
+                return jsonify({"error": f"Estado '{estado_nombre}' no existe"}), 400
+            nuevo_estado_id = estado_obj.id
+        elif not nuevo_estado_id:
+            # No se envía cambio de estado
+            nuevo_estado_id = estado_anterior_id
+        
+        # Validar que el estado exista
+        nuevo_estado_obj = EstadoPedido.query.get(nuevo_estado_id)
+        if not nuevo_estado_obj:
+            return jsonify({"error": "Estado inválido"}), 400
+        
+        # Obtener nombres de estados para comparar
+        estado_anterior_nombre = pedido.estado.nombre if pedido.estado else None
+        nuevo_estado_nombre = nuevo_estado_obj.nombre
         
         # TRANSICIÓN A ENTREGADO (crear venta)
-        if nuevo_estado == 'entregado' and estado_anterior != 'entregado':
+        if nuevo_estado_nombre == 'entregado' and estado_anterior_nombre != 'entregado':
             # Validar que el pedido no esté cancelado
-            if pedido.estado == 'cancelado':
+            if estado_anterior_nombre == 'cancelado':
                 return jsonify({"error": "No se puede entregar un pedido cancelado"}), 400
             
-            # Validar estado previo permitido
-            estados_previos_permitidos = ['enviado', 'confirmado', 'en_preparacion']
-            if pedido.estado not in estados_previos_permitidos:
-                return jsonify({"error": f"No se puede entregar un pedido en estado '{pedido.estado}'. Debe estar en: {', '.join(estados_previos_permitidos)}"}), 400
+            # Validar que esté pagado al 100%
+            if pedido.abono_acumulado < pedido.total:
+                return jsonify({"error": f"No se puede entregar el pedido porque el saldo pendiente es {pedido.saldo_pendiente}. Debe estar pagado al 100%"}), 400
             
             # Validar que no tenga venta asociada
             if hasattr(pedido, 'venta') and pedido.venta:
                 return jsonify({"error": "Este pedido ya generó una venta anteriormente"}), 400
             
-            # Crear la venta
+            # Crear la venta (estado completada, asumiendo id=1 en EstadoVenta)
+            from app.Models.models import EstadoVenta
+            estado_completada = EstadoVenta.query.filter_by(nombre='completada').first()
+            if not estado_completada:
+                return jsonify({"error": "Estado 'completada' no encontrado en EstadoVenta"}), 500
+            
             venta = Venta(
                 pedido_id=pedido.id,
                 cliente_id=pedido.cliente_id,
@@ -196,7 +213,7 @@ def update_pedido(id):
                 metodo_entrega=pedido.metodo_entrega,
                 direccion_entrega=pedido.direccion_entrega,
                 transferencia_comprobante=pedido.transferencia_comprobante,
-                estado='completada'
+                estado_id=estado_completada.id
             )
             db.session.add(venta)
             db.session.flush()
@@ -208,24 +225,21 @@ def update_pedido(id):
                     producto_id=detalle_pedido.producto_id,
                     cantidad=detalle_pedido.cantidad,
                     precio_unitario=detalle_pedido.precio_unitario,
-                    subtotal=detalle_pedido.subtotal
+                    subtotal=detalle_pedido.subtotal,
+                    descuento=0  # si no hay descuento en pedido
                 )
                 db.session.add(detalle_venta)
             
-            # Si el pedido tiene abonos acumulados, registrar el abono total en la tabla Abono
-            if pedido.abono_acumulado > 0:
-                abono_total = Abono(
-                    venta_id=venta.id,
-                    monto_abonado=pedido.abono_acumulado,
-                    fecha=datetime.utcnow()
-                )
-                db.session.add(abono_total)
-            
-            # Nota: El stock ya se descontó al crear el pedido, no se descuenta nuevamente
+            # Migrar abonos individuales del pedido a la venta
+            for abono in pedido.abonos:
+                abono.pedido_id = None
+                abono.venta_id = venta.id
+                # No cambiamos monto ni fecha
+            # Nota: No se crea un abono global; se conserva el historial de pagos parciales
         
         # TRANSICIÓN A CANCELADO (revertir stock)
-        if nuevo_estado == 'cancelado' and estado_anterior != 'cancelado':
-            if pedido.estado == 'entregado':
+        if nuevo_estado_nombre == 'cancelado' and estado_anterior_nombre != 'cancelado':
+            if estado_anterior_nombre == 'entregado':
                 return jsonify({"error": "No se puede cancelar un pedido que ya fue entregado"}), 400
             
             # Revertir stock de cada producto
@@ -234,9 +248,10 @@ def update_pedido(id):
                 if producto:
                     producto.stock += detalle.cantidad
         
-        # Actualizar campos permitidos
-        if 'estado' in data:
-            pedido.estado = nuevo_estado
+        # Actualizar el estado del pedido
+        pedido.estado_id = nuevo_estado_id
+        
+        # Actualizar otros campos permitidos (sin modificar total)
         if 'transferencia_comprobante' in data:
             pedido.transferencia_comprobante = data['transferencia_comprobante']
         if 'direccion_entrega' in data:
@@ -249,11 +264,10 @@ def update_pedido(id):
             if data['metodo_entrega'] not in ['tienda', 'domicilio']:
                 return jsonify({"error": "Método de entrega inválido"}), 400
             pedido.metodo_entrega = data['metodo_entrega']
+        
+        # Eliminamos la posibilidad de modificar el total manualmente
         if 'total' in data:
-            nuevo_total = float(data['total'])
-            if nuevo_total < 0:
-                return jsonify({"error": "El total no puede ser negativo"}), 400
-            pedido.total = nuevo_total
+            return jsonify({"error": "No se puede modificar el total directamente. Se calcula automáticamente"}), 400
         
         db.session.commit()
         return jsonify({"message": "Pedido actualizado", "pedido": pedido.to_dict()})
@@ -276,7 +290,7 @@ def delete_pedido(id):
             return jsonify({"error": "No se puede eliminar un pedido que ya generó una venta"}), 400
         
         # Validar que no esté entregado
-        if pedido.estado == 'entregado':
+        if pedido.estado.nombre == 'entregado':
             return jsonify({"error": "No se puede eliminar un pedido entregado"}), 400
         
         # Revertir stock antes de eliminar
@@ -285,8 +299,8 @@ def delete_pedido(id):
             if producto:
                 producto.stock += detalle.cantidad
         
-        # Eliminar abonos del pedido primero
-        AbonoPedido.query.filter_by(pedido_id=id).delete()
+        # Eliminar abonos asociados al pedido (usando el modelo unificado Abono)
+        Abono.query.filter_by(pedido_id=id).delete()
         
         # Eliminar detalles y pedido
         DetallePedido.query.filter_by(pedido_id=id).delete()
@@ -303,7 +317,6 @@ def delete_pedido(id):
 @main_bp.route('/pedidos/cliente/<int:cliente_id>', methods=['GET'])
 def get_pedidos_cliente(cliente_id):
     try:
-        # Validar cliente
         cliente = Cliente.query.get(cliente_id)
         if not cliente:
             return jsonify({"error": "Cliente no encontrado"}), 404
@@ -330,7 +343,7 @@ def get_detalles_de_pedido(pedido_id):
 
 
 # ============================================================
-# MÓDULO: ABONOS DE PEDIDOS
+# MÓDULO: ABONOS DE PEDIDOS (unificado con Abono)
 # ============================================================
 
 @main_bp.route('/pedidos/<int:id>/abonos', methods=['GET'])
@@ -339,7 +352,8 @@ def get_abonos_pedido(id):
         pedido = Pedido.query.get(id)
         if not pedido:
             return jsonify({"error": "Pedido no encontrado"}), 404
-        abonos = [a.to_dict() for a in pedido.abonos_pedido]
+        # Usar la relación 'abonos' definida en Pedido (que apunta a Abono con pedido_id)
+        abonos = [abono.to_dict() for abono in pedido.abonos]
         return jsonify(abonos)
     except Exception as e:
         return jsonify({"error": f"Error al obtener abonos: {str(e)}"}), 500
@@ -353,8 +367,8 @@ def add_abono_pedido(id):
             return jsonify({"error": "Pedido no encontrado"}), 404
 
         # No permitir abonos si ya está entregado o cancelado
-        if pedido.estado in ['entregado', 'cancelado']:
-            return jsonify({"error": f"No se pueden registrar abonos en un pedido {pedido.estado}"}), 400
+        if pedido.estado.nombre in ['entregado', 'cancelado']:
+            return jsonify({"error": f"No se pueden registrar abonos en un pedido {pedido.estado.nombre}"}), 400
 
         data = request.get_json()
         monto = data.get('monto_abonado')
@@ -367,74 +381,26 @@ def add_abono_pedido(id):
         if nuevo_acumulado > pedido.total:
             return jsonify({"error": f"El abono excede el total del pedido. Máximo permitido: {pedido.total - pedido.abono_acumulado}"}), 400
 
-        # Registrar el abono en la nueva tabla
-        abono_pedido = AbonoPedido(
+        # Registrar el abono en la tabla unificada Abono (sin venta_id)
+        abono = Abono(
             pedido_id=pedido.id,
             monto=monto,
             observacion=data.get('observacion', '')
         )
-        db.session.add(abono_pedido)
+        db.session.add(abono)
 
         # Actualizar acumulado
         pedido.abono_acumulado = nuevo_acumulado
 
-        # Verificar si se completó el pago
-        pago_completo = nuevo_acumulado >= pedido.total
-        venta_id = None
-
-        if pago_completo:
-            # Crear venta si el pedido no está entregado
-            if pedido.estado != 'entregado':
-                # Verificar si ya existe venta
-                venta_existente = Venta.query.filter_by(pedido_id=pedido.id).first()
-                if not venta_existente:
-                    # Crear la venta
-                    venta = Venta(
-                        pedido_id=pedido.id,
-                        cliente_id=pedido.cliente_id,
-                        fecha_pedido=pedido.fecha,
-                        fecha_venta=datetime.utcnow(),
-                        total=pedido.total,
-                        metodo_pago=pedido.metodo_pago,
-                        metodo_entrega=pedido.metodo_entrega,
-                        direccion_entrega=pedido.direccion_entrega,
-                        transferencia_comprobante=pedido.transferencia_comprobante,
-                        estado='completada'
-                    )
-                    db.session.add(venta)
-                    db.session.flush()
-                    venta_id = venta.id
-                    
-                    # Migrar detalles (DetallePedido -> DetalleVenta)
-                    for detalle_pedido in pedido.items:
-                        detalle_venta = DetalleVenta(
-                            venta_id=venta.id,
-                            producto_id=detalle_pedido.producto_id,
-                            cantidad=detalle_pedido.cantidad,
-                            precio_unitario=detalle_pedido.precio_unitario,
-                            subtotal=detalle_pedido.subtotal
-                        )
-                        db.session.add(detalle_venta)
-                    
-                    # Registrar un Abono (tabla original) por el total pagado
-                    abono_total = Abono(
-                        venta_id=venta.id,
-                        monto_abonado=pedido.total,
-                        fecha=datetime.utcnow()
-                    )
-                    db.session.add(abono_total)
-
-                # Cambiar estado del pedido a 'entregado'
-                pedido.estado = 'entregado'
+        # NO se crea venta aquí, aunque se complete el pago. Solo se actualiza el acumulado.
+        # La venta se creará únicamente cuando se cambie el estado a 'entregado' vía PUT /pedidos/<id>
 
         db.session.commit()
 
         return jsonify({
             "message": "Abono registrado",
             "abono_acumulado": pedido.abono_acumulado,
-            "saldo_pendiente": pedido.total - pedido.abono_acumulado,
-            "pago_completo": pago_completo,
-            "venta_id": venta_id if pago_completo else None
+            "saldo_pendiente": pedido.total - pedido.abono_acumulado
         }), 201
         
     except Exception as e:
@@ -443,7 +409,7 @@ def add_abono_pedido(id):
 
 
 # ============================================================
-# MÓDULO: DETALLES DE PEDIDO
+# MÓDULO: DETALLES DE PEDIDO (con prohibición de cambio de producto)
 # ============================================================
 
 @main_bp.route('/detalle-pedido', methods=['GET'])
@@ -451,7 +417,6 @@ def get_detalles_pedido():
     try:
         pedido_id = request.args.get('pedido_id', type=int)
         if pedido_id:
-            # Validar que el pedido existe
             pedido = Pedido.query.get(pedido_id)
             if not pedido:
                 return jsonify({"error": "Pedido no encontrado"}), 404
@@ -474,24 +439,20 @@ def create_detalle_pedido():
             if field not in data:
                 return jsonify({"error": f"El campo '{field}' es requerido"}), 400
         
-        # Validar pedido
         pedido = Pedido.query.get(data['pedido_id'])
         if not pedido:
             return jsonify({"error": "El pedido especificado no existe"}), 404
         
-        # Validar estado del pedido
-        estados_permitidos = ['pendiente', 'confirmado']
-        if pedido.estado not in estados_permitidos:
-            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado}'. Solo se pueden modificar pedidos pendientes o confirmados"}), 400
+        # Solo permitir modificar pedidos en estado pendiente o confirmado
+        if pedido.estado.nombre not in ['pendiente', 'confirmado']:
+            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado.nombre}'. Solo se pueden modificar pedidos pendientes o confirmados"}), 400
         
-        # Validar producto
         producto = Producto.query.get(data['producto_id'])
         if not producto:
             return jsonify({"error": "El producto especificado no existe"}), 404
         if not producto.estado:
             return jsonify({"error": "No se puede agregar un producto inactivo"}), 400
         
-        # Validar cantidad
         try:
             cantidad = int(data['cantidad'])
         except (ValueError, TypeError):
@@ -500,13 +461,11 @@ def create_detalle_pedido():
         if cantidad <= 0:
             return jsonify({"error": "La cantidad debe ser mayor a 0"}), 400
         
-        # Validar stock
         if producto.stock < cantidad:
             return jsonify({
                 "error": f"Stock insuficiente para '{producto.nombre}'. Disponible: {producto.stock}"
             }), 400
         
-        # Validar precio
         try:
             precio = float(data['precio_unitario'])
         except (ValueError, TypeError):
@@ -517,10 +476,8 @@ def create_detalle_pedido():
         
         subtotal = cantidad * precio
         
-        # Descontar stock
         producto.stock -= cantidad
         
-        # Crear detalle
         detalle = DetallePedido(
             pedido_id=data['pedido_id'],
             producto_id=data['producto_id'],
@@ -551,36 +508,17 @@ def update_detalle_pedido(id):
         if not pedido:
             return jsonify({"error": "El pedido asociado no existe"}), 404
         
-        # Validar estado del pedido
-        estados_permitidos = ['pendiente', 'confirmado']
-        if pedido.estado not in estados_permitidos:
-            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado}'"}), 400
+        if pedido.estado.nombre not in ['pendiente', 'confirmado']:
+            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado.nombre}'"}), 400
         
         data = request.get_json()
+        
+        # No permitir cambio de producto
+        if 'producto_id' in data:
+            return jsonify({"error": "No se puede cambiar el producto de un detalle existente. Elimine el detalle y créelo de nuevo."}), 400
+        
         old_subtotal = detalle.subtotal
         old_cantidad = detalle.cantidad
-        old_producto_id = detalle.producto_id
-        
-        # Actualizar producto
-        if 'producto_id' in data:
-            producto = Producto.query.get(data['producto_id'])
-            if not producto:
-                return jsonify({"error": "El producto especificado no existe"}), 404
-            if not producto.estado:
-                return jsonify({"error": "No se puede asignar un producto inactivo"}), 400
-            
-            # Revertir stock del producto anterior
-            producto_anterior = Producto.query.get(old_producto_id)
-            if producto_anterior:
-                producto_anterior.stock += old_cantidad
-            
-            detalle.producto_id = data['producto_id']
-            
-            # Validar stock del nuevo producto
-            if producto.stock < detalle.cantidad:
-                return jsonify({"error": f"Stock insuficiente para '{producto.nombre}'"}), 400
-            
-            producto.stock -= detalle.cantidad
         
         # Actualizar cantidad
         if 'cantidad' in data:
@@ -592,7 +530,6 @@ def update_detalle_pedido(id):
             if nueva_cantidad <= 0:
                 return jsonify({"error": "La cantidad debe ser mayor a 0"}), 400
             
-            # Ajustar stock
             producto_actual = Producto.query.get(detalle.producto_id)
             if producto_actual:
                 producto_actual.stock += old_cantidad  # Revertir vieja
@@ -638,17 +575,13 @@ def delete_detalle_pedido(id):
         if not pedido:
             return jsonify({"error": "El pedido asociado no existe"}), 404
         
-        # Validar estado del pedido
-        estados_permitidos = ['pendiente', 'confirmado']
-        if pedido.estado not in estados_permitidos:
-            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado}'"}), 400
+        if pedido.estado.nombre not in ['pendiente', 'confirmado']:
+            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado.nombre}'"}), 400
         
-        # Revertir stock
         producto = Producto.query.get(detalle.producto_id)
         if producto:
             producto.stock += detalle.cantidad
         
-        # Actualizar total del pedido
         pedido.total -= detalle.subtotal
         
         db.session.delete(detalle)
