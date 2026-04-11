@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Cita, Servicio, Horario, EstadoCita, Empleado, Cliente
+from app.Models.models import Cita, Servicio, Horario, EstadoCita, Empleado, Cliente, Venta, EstadoVenta, DetalleVenta
 from datetime import datetime, timedelta
 from app.routes import main_bp
 
@@ -15,7 +15,6 @@ def get_citas():
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
 
-        # Ordenar por id descendente (más recientes primero)
         pagination = Cita.query.order_by(Cita.id.desc()).paginate(
             page=page, per_page=per_page, error_out=False
         )
@@ -28,7 +27,7 @@ def get_citas():
             'total_pages': pagination.pages
         })
     except Exception as e:
-        return jsonify({"error": "Error al obtener citas"}), 500
+        return jsonify({"error": f"Error al obtener citas: {str(e)}"}), 500
 
 @main_bp.route('/citas/<int:id>', methods=['GET'])
 def get_cita(id):
@@ -38,7 +37,7 @@ def get_cita(id):
             return jsonify({"error": "Cita no encontrada"}), 404
         return jsonify(cita.to_dict())
     except Exception as e:
-        return jsonify({"error": "Error al obtener la cita"}), 500
+        return jsonify({"error": f"Error al obtener la cita: {str(e)}"}), 500
 
 
 @main_bp.route('/citas', methods=['POST'])
@@ -50,27 +49,36 @@ def create_cita():
             if field not in data or data[field] is None:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
 
-        # 1. Procesar fecha y hora
-        fecha_date = datetime.strptime(data['fecha'], '%Y-%m-%d').date()
+        # Procesar fecha y hora
+        try:
+            fecha_date = datetime.strptime(data['fecha'], '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({"error": "Formato de fecha inválido. Use YYYY-MM-DD"}), 400
+        
         hora_str = data['hora']
-        if hora_str.count(':') == 1:
-            hora_time = datetime.strptime(hora_str, '%H:%M').time()
-        else:
-            hora_time = datetime.strptime(hora_str, '%H:%M:%S').time()
+        try:
+            if hora_str.count(':') == 1:
+                hora_time = datetime.strptime(hora_str, '%H:%M').time()
+            else:
+                hora_time = datetime.strptime(hora_str, '%H:%M:%S').time()
+        except ValueError:
+            return jsonify({"error": "Formato de hora inválido. Use HH:MM o HH:MM:SS"}), 400
 
-        # 2. Validar no pasado (usar UTC o zona horaria configurada)
+        # Validar que no sea en el pasado
         ahora = datetime.utcnow()
         fecha_hora_cita = datetime.combine(fecha_date, hora_time)
         if fecha_hora_cita < ahora:
             return jsonify({"error": "No se pueden programar citas en el pasado"}), 400
 
-        # 3. Obtener servicio y su duración (obligatorio, no permitir duración externa)
+        # Obtener servicio y duración
         servicio = Servicio.query.get(data['servicio_id'])
         if not servicio:
-            return jsonify({"error": "El servicio especificado no existe"}), 400
-        duracion = servicio.duracion_min  # forzado
+            return jsonify({"error": "El servicio especificado no existe"}), 404
+        if not servicio.estado:
+            return jsonify({"error": "El servicio no está activo"}), 400
+        duracion = servicio.duracion_min
 
-        # 4. Validar disponibilidad (horario laboral y solapamiento)
+        # Validar disponibilidad del empleado
         validacion = validar_disponibilidad_cita(
             empleado_id=data['empleado_id'],
             fecha=fecha_date,
@@ -81,7 +89,7 @@ def create_cita():
         if not validacion["disponible"]:
             return jsonify({"error": validacion["mensaje"]}), 400
 
-        # 5. Validar que cliente y empleado estén activos
+        # Validar cliente y empleado activos
         empleado = Empleado.query.get(data['empleado_id'])
         cliente = Cliente.query.get(data['cliente_id'])
         if not empleado or not empleado.estado:
@@ -89,10 +97,15 @@ def create_cita():
         if not cliente or not cliente.estado:
             return jsonify({"error": "El cliente seleccionado está inactivo"}), 400
 
-        # Crear la cita (sin campo duración del request)
+        # Validar que el estado de cita exista
+        estado_cita = EstadoCita.query.get(data['estado_cita_id'])
+        if not estado_cita:
+            return jsonify({"error": "Estado de cita inválido"}), 400
+
+        # Crear cita
         cita = Cita(
             cliente_id=data['cliente_id'],
-            servicio_id=data['servicio_id'],
+            servicio_id=servicio.id,
             empleado_id=data['empleado_id'],
             estado_cita_id=data['estado_cita_id'],
             metodo_pago=data.get('metodo_pago'),
@@ -142,6 +155,7 @@ def validar_disponibilidad_cita(empleado_id, fecha, hora, duracion, exclude_cita
                 "mensaje": f"El empleado ya tiene una cita programada desde las {cita.hora.strftime('%H:%M')}"
             }
     return {"disponible": True, "mensaje": "Horario disponible"}
+
 @main_bp.route('/citas/<int:id>', methods=['PUT'])
 def update_cita(id):
     try:
@@ -149,58 +163,63 @@ def update_cita(id):
         if not cita:
             return jsonify({"error": "Cita no encontrada"}), 404
 
-        # 🔒 No permitir modificar una cita cancelada
-        estado_actual = EstadoCita.query.get(cita.estado_cita_id)
-        if estado_actual and estado_actual.nombre.lower() == "cancelada":
+        # No permitir modificar cita cancelada
+        estado_actual_obj = EstadoCita.query.get(cita.estado_cita_id)
+        if estado_actual_obj and estado_actual_obj.nombre.lower() == "cancelada":
             return jsonify({"error": "No se puede modificar una cita que ya está cancelada"}), 400
 
-        # ⏰ No permitir modificar cita pasada
+        # No permitir modificar cita pasada
         ahora = datetime.utcnow()
         fecha_cita_actual = datetime.combine(cita.fecha, cita.hora)
         if fecha_cita_actual < ahora:
             return jsonify({"error": "No se puede modificar una cita que ya pasó"}), 400
 
         data = request.get_json()
-
-        # Guardar valores originales para validar solo si cambian
+        
+        # Variables para control de cambios
         nuevo_empleado_id = data.get('empleado_id', cita.empleado_id)
-        nueva_fecha = data.get('fecha')
-        nueva_hora = data.get('hora')
+        nueva_fecha_str = data.get('fecha')
+        nueva_hora_str = data.get('hora')
         nuevo_servicio_id = data.get('servicio_id', cita.servicio_id)
-
-        # Si se cambia servicio, forzar nueva duración
-        duracion = cita.duracion
-        if nuevo_servicio_id != cita.servicio_id:
-            servicio = Servicio.query.get(nuevo_servicio_id)
-            if not servicio:
-                return jsonify({"error": "Servicio no existe"}), 400
-            duracion = servicio.duracion_min
-            cita.servicio_id = nuevo_servicio_id
-            cita.duracion = duracion  # actualizar duración automáticamente
-
+        nuevo_estado_id = data.get('estado_cita_id', cita.estado_cita_id)
+        
         # Procesar nueva fecha/hora si vienen
         fecha_final = cita.fecha
         hora_final = cita.hora
-        if nueva_fecha:
-            fecha_final = datetime.strptime(nueva_fecha, '%Y-%m-%d').date()
-        if nueva_hora:
-            hora_str = nueva_hora
-            if hora_str.count(':') == 1:
-                hora_final = datetime.strptime(hora_str, '%H:%M').time()
-            else:
-                hora_final = datetime.strptime(hora_str, '%H:%M:%S').time()
-
+        if nueva_fecha_str:
+            try:
+                fecha_final = datetime.strptime(nueva_fecha_str, '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({"error": "Formato de fecha inválido. Use YYYY-MM-DD"}), 400
+        if nueva_hora_str:
+            try:
+                if nueva_hora_str.count(':') == 1:
+                    hora_final = datetime.strptime(nueva_hora_str, '%H:%M').time()
+                else:
+                    hora_final = datetime.strptime(nueva_hora_str, '%H:%M:%S').time()
+            except ValueError:
+                return jsonify({"error": "Formato de hora inválido. Use HH:MM o HH:MM:SS"}), 400
+        
         # Validar que la nueva fecha/hora no sea pasada
         nueva_fecha_hora = datetime.combine(fecha_final, hora_final)
         if nueva_fecha_hora < ahora:
             return jsonify({"error": "No se puede reprogramar la cita a una fecha/hora pasada"}), 400
-
-        # Validar disponibilidad si cambió empleado, fecha, hora o duración
+        
+        # Obtener duración (puede cambiar si cambia servicio)
+        duracion = cita.duracion
+        if nuevo_servicio_id != cita.servicio_id:
+            servicio = Servicio.query.get(nuevo_servicio_id)
+            if not servicio:
+                return jsonify({"error": "El servicio especificado no existe"}), 404
+            if not servicio.estado:
+                return jsonify({"error": "El servicio no está activo"}), 400
+            duracion = servicio.duracion_min
+        
+        # Validar disponibilidad si cambió empleado, fecha, hora o servicio
         if (nuevo_empleado_id != cita.empleado_id or
-            nueva_fecha is not None or
-            nueva_hora is not None or
+            nueva_fecha_str is not None or
+            nueva_hora_str is not None or
             nuevo_servicio_id != cita.servicio_id):
-
             validacion = validar_disponibilidad_cita(
                 empleado_id=nuevo_empleado_id,
                 fecha=fecha_final,
@@ -210,23 +229,72 @@ def update_cita(id):
             )
             if not validacion["disponible"]:
                 return jsonify({"error": validacion["mensaje"]}), 400
-
-        # Actualizar campos restantes
+        
+        # Actualizar campos de la cita
         if 'cliente_id' in data:
             cliente = Cliente.query.get(data['cliente_id'])
             if not cliente or not cliente.estado:
                 return jsonify({"error": "Cliente no válido o inactivo"}), 400
             cita.cliente_id = data['cliente_id']
-        if 'estado_cita_id' in data:
-            cita.estado_cita_id = data['estado_cita_id']
-        if 'metodo_pago' in data:
-            cita.metodo_pago = data['metodo_pago']
         if 'empleado_id' in data:
+            empleado = Empleado.query.get(data['empleado_id'])
+            if not empleado or not empleado.estado:
+                return jsonify({"error": "Empleado no válido o inactivo"}), 400
             cita.empleado_id = data['empleado_id']
+        if 'servicio_id' in data:
+            cita.servicio_id = nuevo_servicio_id
+            cita.duracion = duracion
         if 'fecha' in data:
             cita.fecha = fecha_final
         if 'hora' in data:
             cita.hora = hora_final
+        if 'metodo_pago' in data:
+            cita.metodo_pago = data['metodo_pago']
+        if 'estado_cita_id' in data:
+            # Validar que el nuevo estado exista
+            nuevo_estado = EstadoCita.query.get(nuevo_estado_id)
+            if not nuevo_estado:
+                return jsonify({"error": "Estado de cita inválido"}), 400
+            
+            # --- LÓGICA DE COMPLETADO (CREACIÓN DE VENTA) ---
+            if nuevo_estado_id == 3 and cita.estado_cita_id != 3:
+                # Verificar que no tenga ya una venta asociada
+                if hasattr(cita, 'venta') and cita.venta:
+                    return jsonify({"error": "Esta cita ya generó una venta"}), 400
+                
+                # Obtener servicio (ya debería estar actualizado)
+                servicio_actual = Servicio.query.get(cita.servicio_id)
+                if not servicio_actual:
+                    return jsonify({"error": "Servicio no encontrado"}), 404
+                
+                # Obtener estado de venta 'completada'
+                estado_venta = EstadoVenta.query.filter_by(nombre='completada').first()
+                if not estado_venta:
+                    return jsonify({"error": "Estado 'completada' no encontrado en EstadoVenta"}), 500
+                
+                # Crear la venta
+                venta = Venta(
+                    cita_id=cita.id,
+                    cliente_id=cita.cliente_id,
+                    fecha_venta=datetime.utcnow(),
+                    total=servicio_actual.precio,
+                    metodo_pago=cita.metodo_pago,
+                    estado_id=estado_venta.id
+                )
+                db.session.add(venta)
+                db.session.flush()  # Para obtener el ID de la venta
+                
+                # Crear detalle de venta (servicio)
+                detalle_venta = DetalleVenta(
+                    venta_id=venta.id,
+                    servicio_id=servicio_actual.id,
+                    cantidad=1,
+                    precio_unitario=servicio_actual.precio,
+                    subtotal=servicio_actual.precio
+                )
+                db.session.add(detalle_venta)
+            
+            cita.estado_cita_id = nuevo_estado_id
 
         db.session.commit()
         return jsonify({"message": "Cita actualizada", "cita": cita.to_dict()})
@@ -245,16 +313,22 @@ def delete_cita(id):
         
         # No permitir eliminar citas completadas
         estado_actual = EstadoCita.query.get(cita.estado_cita_id)
-        if estado_actual and estado_actual.nombre.lower() in ['completada']:
+        if estado_actual and estado_actual.nombre.lower() == 'completada':
             return jsonify({"error": "No se puede eliminar una cita que ya está completada"}), 400
-            
+        
+        # Opcional: también se podría prohibir eliminar citas pasadas, pero no es obligatorio
+        ahora = datetime.utcnow()
+        fecha_cita = datetime.combine(cita.fecha, cita.hora)
+        if fecha_cita < ahora:
+            return jsonify({"error": "No se puede eliminar una cita que ya pasó"}), 400
+        
         db.session.delete(cita)
         db.session.commit()
         return jsonify({"message": "Cita eliminada correctamente"})
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Error al eliminar cita"}), 500
+        return jsonify({"error": f"Error al eliminar cita: {str(e)}"}), 500
 
 
 # ============================================================
