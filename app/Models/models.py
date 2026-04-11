@@ -575,6 +575,33 @@ class Horario(db.Model):
             'hora_final': self.hora_final.isoformat(),
             'activo': self.activo
         }
+    
+class Novedad(db.Model):
+    __tablename__ = 'novedad'
+    id = db.Column(db.Integer, primary_key=True)
+    empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=False)
+    fecha_inicio = db.Column(db.Date, nullable=False)
+    fecha_fin = db.Column(db.Date, nullable=False)
+    hora_inicio = db.Column(db.Time, nullable=True)   # null = todo el día
+    hora_fin = db.Column(db.Time, nullable=True)     # null = todo el día
+    tipo = db.Column(db.String(50), nullable=False)   # 'vacaciones', 'incapacidad', 'permiso', 'licencia'
+    motivo = db.Column(db.String(255), nullable=True)
+    activo = db.Column(db.Boolean, default=True)
+
+    empleado = db.relationship('Empleado', backref='novedades')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'empleado_id': self.empleado_id,
+            'fecha_inicio': self.fecha_inicio.isoformat(),
+            'fecha_fin': self.fecha_fin.isoformat(),
+            'hora_inicio': self.hora_inicio.strftime('%H:%M') if self.hora_inicio else None,
+            'hora_fin': self.hora_fin.strftime('%H:%M') if self.hora_fin else None,
+            'tipo': self.tipo,
+            'motivo': self.motivo,
+            'activo': self.activo
+        }
 
 class HistorialFormula(db.Model):
     __tablename__ = 'historial_formula'
