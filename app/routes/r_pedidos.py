@@ -592,3 +592,66 @@ def delete_detalle_pedido(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar detalle de pedido: {str(e)}"}), 500
+    
+# ============================================================
+# MÓDULO: TABLAS MAESTRAS - ESTADO PEDIDO
+# ============================================================
+
+@main_bp.route('/estado-pedido', methods=['GET'])
+def get_estados_pedido():
+    try:
+        estados = EstadoPedido.query.all()
+        return jsonify([estado.to_dict() for estado in estados])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener estados de pedido"}), 500
+
+@main_bp.route('/estado-pedido', methods=['POST'])
+def create_estado_pedido():
+    try:
+        data = request.get_json()
+        if not data.get('nombre'):
+            return jsonify({"error": "El nombre es requerido"}), 400
+
+        estado = EstadoPedido(nombre=data['nombre'])
+        db.session.add(estado)
+        db.session.commit()
+        return jsonify({"message": "Estado de pedido creado", "estado": estado.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al crear estado de pedido"}), 500
+
+@main_bp.route('/estado-pedido/<int:id>', methods=['PUT'])
+def update_estado_pedido(id):
+    try:
+        estado = EstadoPedido.query.get(id)
+        if not estado:
+            return jsonify({"error": "Estado de pedido no encontrado"}), 404
+
+        data = request.get_json()
+        if 'nombre' in data:
+            estado.nombre = data['nombre']
+
+        db.session.commit()
+        return jsonify({"message": "Estado de pedido actualizado", "estado": estado.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al actualizar estado de pedido"}), 500
+
+@main_bp.route('/estado-pedido/<int:id>', methods=['DELETE'])
+def delete_estado_pedido(id):
+    try:
+        estado = EstadoPedido.query.get(id)
+        if not estado:
+            return jsonify({"error": "Estado de pedido no encontrado"}), 404
+
+        # Verificar que no haya pedidos usando este estado
+        from app.Models.models import Pedido
+        if Pedido.query.filter_by(estado_id=id).first():
+            return jsonify({"error": "No se puede eliminar un estado que está siendo usado por pedidos"}), 400
+
+        db.session.delete(estado)
+        db.session.commit()
+        return jsonify({"message": "Estado de pedido eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar estado de pedido"}), 500
