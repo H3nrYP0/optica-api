@@ -353,18 +353,6 @@ class Servicio(db.Model):
             'estado': self.estado
         }
 
-class EstadoCita(db.Model):
-    __tablename__ = 'estado_cita'
-    id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(23), nullable=False)
-    citas = db.relationship('Cita', backref='estado_cita', lazy=True)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'nombre': self.nombre
-        }
-
 # ===== TABLAS DE EMPLEADOS Y CLIENTES =====
 class Empleado(db.Model):
     __tablename__ = 'empleado'
@@ -452,36 +440,51 @@ class Cita(db.Model):
             'servicio_id': self.servicio_id,
             'empleado_id': self.empleado_id,
             'metodo_pago': self.metodo_pago,
-            'hora': self.hora.isoformat() if self.hora else None,  # ← Agregar hora
+            'hora': self.hora.isoformat() if self.hora else None,
             'duracion': self.duracion,
-            'fecha': self.fecha.isoformat() if self.fecha else None,  # ← Solo fecha
+            'fecha': self.fecha.isoformat() if self.fecha else None,
             'estado_cita_id': self.estado_cita_id,
             'estado_nombre': self.estado_cita.nombre if self.estado_cita else None,
             'cliente_nombre': f"{self.cliente.nombre} {self.cliente.apellido}" if self.cliente else None,
             'servicio_nombre': self.servicio.nombre if self.servicio else None,
+            'servicio_precio': self.servicio.precio if self.servicio else None,  # ← Nuevo campo
             'empleado_nombre': self.empleado.nombre if self.empleado else None
         }
 
+
+class EstadoCita(db.Model):
+    __tablename__ = 'estado_cita'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(23), nullable=False)
+    citas = db.relationship('Cita', backref='estado_cita', lazy=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'nombre': self.nombre
+        }
+    
 # ===== TABLAS DE VENTAS =====
 
 class Venta(db.Model):
     __tablename__ = 'venta'
     id = db.Column(db.Integer, primary_key=True)
-    pedido_id = db.Column(db.Integer, db.ForeignKey('pedido.id'), nullable=False, unique=True)
+    pedido_id = db.Column(db.Integer, db.ForeignKey('pedido.id'), nullable=True, unique=True)   # ← cambio: nullable=True
+    cita_id = db.Column(db.Integer, db.ForeignKey('cita.id'), nullable=True, unique=True)        # ← nueva columna
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=False)
-    fecha_pedido = db.Column(db.DateTime)
+    fecha_pedido = db.Column(db.DateTime)   # para ventas de pedido, se copia la fecha del pedido; para citas puede ir NULL
     fecha_venta = db.Column(db.DateTime, default=datetime.utcnow)
     total = db.Column(db.Float, nullable=False)
     metodo_pago = db.Column(db.String(20))
     metodo_entrega = db.Column(db.String(20))
     direccion_entrega = db.Column(db.String(255))
     transferencia_comprobante = db.Column(db.String(255))
-    # Relación con EstadoVenta
     estado_id = db.Column(db.Integer, db.ForeignKey('estado_venta.id'), nullable=False)
     estado_venta = db.relationship('EstadoVenta', backref='ventas')
     # Relaciones
     cliente = db.relationship('Cliente', backref='ventas')
     pedido = db.relationship('Pedido', backref='venta', uselist=False)
+    cita = db.relationship('Cita', backref='venta', uselist=False)   # ← nueva relación
     detalles = db.relationship('DetalleVenta', backref='venta', lazy=True, cascade='all, delete-orphan')
     abonos = db.relationship('Abono', foreign_keys='Abono.venta_id', backref='venta', lazy=True)
 
@@ -493,6 +496,7 @@ class Venta(db.Model):
         return {
             'id': self.id,
             'pedido_id': self.pedido_id,
+            'cita_id': self.cita_id,                      # ← nuevo
             'cliente_id': self.cliente_id,
             'fecha_pedido': self.fecha_pedido.isoformat() if self.fecha_pedido else None,
             'fecha_venta': self.fecha_venta.isoformat() if self.fecha_venta else None,
@@ -505,22 +509,26 @@ class Venta(db.Model):
             'estado_nombre': self.estado_venta.nombre if self.estado_venta else None,
             'saldo_pendiente': self.saldo_pendiente,
             'cliente_nombre': self.cliente.nombre if self.cliente else None,
+            # si quieres mostrar datos de la cita (opcional)
+            'cita_fecha': self.cita.fecha.isoformat() if self.cita else None,
+            'cita_servicio': self.cita.servicio.nombre if self.cita else None,
             'detalles': [item.to_dict() for item in self.detalles] if self.detalles else [],
             'abonos': [abono.to_dict() for abono in self.abonos] if self.abonos else []
         }
 
 class DetalleVenta(db.Model):
     __tablename__ = 'detalle_venta'
-
     id = db.Column(db.Integer, primary_key=True)
     venta_id = db.Column(db.Integer, db.ForeignKey('venta.id'), nullable=False)
-    producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=False)
-    cantidad = db.Column(db.Integer, nullable=False)
+    producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=True)   # ← ahora nullable
+    servicio_id = db.Column(db.Integer, db.ForeignKey('servicio.id'), nullable=True)   # ← nuevo campo
+    cantidad = db.Column(db.Integer, nullable=False, default=1)
     precio_unitario = db.Column(db.Float, nullable=False)
-    descuento = db.Column(db.Float, default=0.0)      # opcional
+    descuento = db.Column(db.Float, default=0.0)
     subtotal = db.Column(db.Float, nullable=False)
-
+    # Relaciones
     producto = db.relationship('Producto', backref='detalle_ventas')
+    servicio = db.relationship('Servicio', backref='detalle_ventas')
 
     def to_dict(self):
         return {
@@ -528,6 +536,8 @@ class DetalleVenta(db.Model):
             'venta_id': self.venta_id,
             'producto_id': self.producto_id,
             'producto_nombre': self.producto.nombre if self.producto else None,
+            'servicio_id': self.servicio_id,
+            'servicio_nombre': self.servicio.nombre if self.servicio else None,
             'cantidad': self.cantidad,
             'precio_unitario': self.precio_unitario,
             'descuento': self.descuento,

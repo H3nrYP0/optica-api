@@ -46,23 +46,22 @@ def update_venta(id):
         
         data = request.get_json()
         
-        # Solo se permite cambiar el estado usando estado_id
         if 'estado_id' in data:
             nuevo_estado_id = data['estado_id']
             nuevo_estado = EstadoVenta.query.get(nuevo_estado_id)
             if not nuevo_estado:
                 return jsonify({"error": "Estado inválido"}), 400
             
-            # Solo permitir 'completada' (1) o 'cancelada' (2)
             if nuevo_estado.nombre not in ['completada', 'cancelada']:
                 return jsonify({"error": "Solo se puede cambiar a 'completada' o 'cancelada'"}), 400
             
-            # Si se está cancelando y no estaba cancelada, restaurar stock
             if nuevo_estado.nombre == 'cancelada' and venta.estado_venta.nombre != 'cancelada':
+                # Restaurar stock solo para detalles que sean productos (no servicios)
                 for detalle in venta.detalles:
-                    producto = Producto.query.get(detalle.producto_id)
-                    if producto:
-                        producto.stock += detalle.cantidad
+                    if detalle.producto_id:   # ← solo si es producto
+                        producto = Producto.query.get(detalle.producto_id)
+                        if producto:
+                            producto.stock += detalle.cantidad
             
             venta.estado_id = nuevo_estado_id
         
@@ -93,16 +92,15 @@ def delete_venta(id):
         if not venta:
             return jsonify({"error": "Venta no encontrada"}), 404
         
-        # Validar que no tenga abonos registrados
         if venta.abonos and len(venta.abonos) > 0:
             return jsonify({"error": "No se puede eliminar una venta con abonos registrados"}), 400
         
-        # Si no está cancelada, restaurar stock antes de eliminar
         if venta.estado_venta.nombre != 'cancelada':
             for detalle in venta.detalles:
-                producto = Producto.query.get(detalle.producto_id)
-                if producto:
-                    producto.stock += detalle.cantidad
+                if detalle.producto_id:   # ← solo productos
+                    producto = Producto.query.get(detalle.producto_id)
+                    if producto:
+                        producto.stock += detalle.cantidad
         
         db.session.delete(venta)
         db.session.commit()
@@ -255,9 +253,9 @@ def update_detalle_venta(id):
         
         data = request.get_json()
         
-        # No permitir cambio de producto
-        if 'producto_id' in data:
-            return jsonify({"error": "No se puede cambiar el producto de un detalle existente. Elimine el detalle y créelo de nuevo."}), 400
+        # No permitir cambio de producto ni de servicio
+        if 'producto_id' in data or 'servicio_id' in data:
+            return jsonify({"error": "No se puede cambiar el producto o servicio de un detalle existente. Elimine el detalle y créelo de nuevo."}), 400
         
         old_subtotal = detalle.subtotal
         old_cantidad = detalle.cantidad
@@ -272,13 +270,14 @@ def update_detalle_venta(id):
             if nueva_cantidad <= 0:
                 return jsonify({"error": "La cantidad debe ser mayor a 0"}), 400
             
-            # Ajustar stock
-            producto = Producto.query.get(detalle.producto_id)
-            if producto:
-                producto.stock += old_cantidad  # devolver stock viejo
-                if producto.stock < nueva_cantidad:
-                    return jsonify({"error": f"Stock insuficiente para '{producto.nombre}'"}), 400
-                producto.stock -= nueva_cantidad  # descontar nuevo
+            # Ajustar stock solo si es producto
+            if detalle.producto_id:
+                producto = Producto.query.get(detalle.producto_id)
+                if producto:
+                    producto.stock += old_cantidad
+                    if producto.stock < nueva_cantidad:
+                        return jsonify({"error": f"Stock insuficiente para '{producto.nombre}'"}), 400
+                    producto.stock -= nueva_cantidad
             
             detalle.cantidad = nueva_cantidad
         
@@ -329,10 +328,11 @@ def delete_detalle_venta(id):
         if venta.estado_venta.nombre == 'cancelada':
             return jsonify({"error": "No se puede modificar una venta cancelada"}), 400
         
-        # Revertir stock
-        producto = Producto.query.get(detalle.producto_id)
-        if producto:
-            producto.stock += detalle.cantidad
+        # Revertir stock solo si es producto
+        if detalle.producto_id:
+            producto = Producto.query.get(detalle.producto_id)
+            if producto:
+                producto.stock += detalle.cantidad
         
         # Actualizar total de la venta
         venta.total -= detalle.subtotal
@@ -340,7 +340,7 @@ def delete_detalle_venta(id):
         db.session.delete(detalle)
         db.session.commit()
         
-        return jsonify({"message": "Detalle de venta eliminado correctamente y stock restaurado"})
+        return jsonify({"message": "Detalle de venta eliminado correctamente y stock restaurado (si aplica)"})
         
     except Exception as e:
         db.session.rollback()
