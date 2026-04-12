@@ -133,13 +133,24 @@ def validar_disponibilidad_cita(empleado_id, fecha, hora, duracion, exclude_cita
         Novedad.activo == True
     ).first()
     if novedad:
-        # Si la novedad es por día completo (sin horas)
+        empleado_nombre = Empleado.query.get(empleado_id).nombre
+        fecha_inicio_str = novedad.fecha_inicio.strftime('%d/%m/%Y')
+        fecha_fin_str = novedad.fecha_fin.strftime('%d/%m/%Y')
+        motivo_str = f": {novedad.motivo}" if novedad.motivo else ""
+        
         if novedad.hora_inicio is None and novedad.hora_fin is None:
-            return {"disponible": False, "mensaje": f"Empleado no disponible por {novedad.tipo}: {novedad.motivo or 'Sin motivo'}"}
-        # Si tiene horas específicas y la hora solicitada cae dentro
+            return {
+                "disponible": False,
+                "mensaje": f"El empleado {empleado_nombre} no está disponible por {novedad.tipo} del {fecha_inicio_str} al {fecha_fin_str}{motivo_str}."
+            }
         if novedad.hora_inicio and novedad.hora_fin:
             if novedad.hora_inicio <= hora <= novedad.hora_fin:
-                return {"disponible": False, "mensaje": f"Empleado no disponible por {novedad.tipo} en este horario: {novedad.motivo or ''}"}
+                hora_inicio_str = novedad.hora_inicio.strftime('%H:%M')
+                hora_fin_str = novedad.hora_fin.strftime('%H:%M')
+                return {
+                    "disponible": False,
+                    "mensaje": f"El empleado {empleado_nombre} no está disponible el {fecha_inicio_str} de {hora_inicio_str} a {hora_fin_str} por {novedad.tipo}{motivo_str}."
+                }
 
     # 2. Verificar horario laboral
     dia_semana = fecha.weekday()
@@ -510,12 +521,16 @@ def create_horario():
             return jsonify({"error": "Formato de hora inválido. Use HH:MM"}), 400
 
         if hora_final <= hora_inicio:
-            return jsonify({"error": "La hora final debe ser mayor que la hora inicio"}), 400
+            return jsonify({
+                "error": "La hora final debe ser posterior a la hora de inicio. Verifique que el horario tenga al menos 1 minuto de duración."
+            }), 400
 
         # VALIDACIÓN: Empleado existe y está activo
         empleado = Empleado.query.get(data['empleado_id'])
         if not empleado or not empleado.estado:
-            return jsonify({"error": "El empleado especificado no existe o está inactivo"}), 400
+            return jsonify({
+                "error": f"El empleado '{empleado.nombre if empleado else 'desconocido'}' está inactivo. No se pueden crear horarios para empleados inactivos."
+            }), 400
 
         # VALIDACIÓN: No duplicar horario para mismo empleado, día y activo
         horario_existente = Horario.query.filter_by(
@@ -525,7 +540,11 @@ def create_horario():
         ).first()
         
         if horario_existente:
-            return jsonify({"error": "El empleado ya tiene un horario activo para este día"}), 400
+            empleado_nombre = empleado.nombre
+            dia_nombre = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][data['dia']]
+            return jsonify({
+                "error": f"El empleado {empleado_nombre} ya tiene un horario activo para el día {dia_nombre}. Solo puede tener un horario por día."
+            }), 400
 
         horario = Horario(
             empleado_id=data['empleado_id'],
@@ -702,18 +721,22 @@ def verificar_disponibilidad():
             Novedad.activo == True
         ).first()
         if novedad:
-            # Si la novedad es por día completo (sin horas)
+            empleado_nombre = empleado.nombre
+            fecha_inicio_str = novedad.fecha_inicio.strftime('%d/%m/%Y')
+            fecha_fin_str = novedad.fecha_fin.strftime('%d/%m/%Y')
+            motivo_str = f": {novedad.motivo}" if novedad.motivo else ""
             if novedad.hora_inicio is None and novedad.hora_fin is None:
                 return jsonify({
                     "disponible": False,
-                    "mensaje": f"Empleado no disponible por {novedad.tipo}: {novedad.motivo or 'Sin motivo'}"
+                    "mensaje": f"El empleado {empleado_nombre} no está disponible por {novedad.tipo} del {fecha_inicio_str} al {fecha_fin_str}{motivo_str}."
                 })
-            # Si tiene rango horario y la hora solicitada cae dentro
             if novedad.hora_inicio and novedad.hora_fin:
                 if novedad.hora_inicio <= hora_time <= novedad.hora_fin:
+                    hora_inicio_str = novedad.hora_inicio.strftime('%H:%M')
+                    hora_fin_str = novedad.hora_fin.strftime('%H:%M')
                     return jsonify({
                         "disponible": False,
-                        "mensaje": f"Empleado no disponible por {novedad.tipo} en este horario: {novedad.motivo or ''}"
+                        "mensaje": f"El empleado {empleado_nombre} no está disponible el {fecha_inicio_str} de {hora_inicio_str} a {hora_fin_str} por {novedad.tipo}{motivo_str}."
                     })
 
         # ============================================================
@@ -908,7 +931,13 @@ def create_novedad():
             return jsonify({"error": "Formato de fecha inválido. Use YYYY-MM-DD"}), 400
 
         if fecha_inicio > fecha_fin:
-            return jsonify({"error": "La fecha inicio no puede ser mayor a fecha fin"}), 400
+            return jsonify({"error": "La fecha de inicio no puede ser posterior a la fecha de fin."}), 400
+
+        if hora_inicio and hora_fin and hora_fin <= hora_inicio:
+            return jsonify({"error": "La hora final debe ser mayor que la hora de inicio."}), 400
+
+        if (hora_inicio and not hora_fin) or (hora_fin and not hora_inicio):
+            return jsonify({"error": "Si especifica hora de inicio, también debe especificar hora de fin, y viceversa."}), 400
 
         # Validar horas si se proporcionan
         hora_inicio = None
