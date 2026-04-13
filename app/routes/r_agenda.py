@@ -2,8 +2,11 @@ from flask import jsonify, request
 from app.database import db
 from app.Models.models import Cita, Servicio, Horario, EstadoCita, Empleado, Cliente, Venta, EstadoVenta, DetalleVenta, Novedad
 from datetime import datetime, timedelta
+import pytz
 from app.routes import main_bp
 
+# Zona horaria de Colombia
+tz_colombia = pytz.timezone('America/Bogota')
 
 # ============================================================
 # MÓDULO: CITAS
