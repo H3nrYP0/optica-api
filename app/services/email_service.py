@@ -1,87 +1,115 @@
 import os
 import logging
 import re
-from sib_api_v3_sdk import Configuration, ApiClient, TransactionalEmailsApi, SendSmtpEmail
-from sib_api_v3_sdk.rest import ApiException
+from flask_mail import Mail, Message
+from flask import current_app
 
 logger = logging.getLogger(__name__)
+
+# Instancia global de Mail
+mail = Mail()
+
+def init_mail(app):
+    """Inicializa Mailtrap en la app Flask"""
+    app.config.update(
+        MAIL_SERVER=os.environ.get('MAIL_SERVER', 'sandbox.smtp.mailtrap.io'),
+        MAIL_PORT=int(os.environ.get('MAIL_PORT', 2525)),
+        MAIL_USE_TLS=os.environ.get('MAIL_USE_TLS', 'True') == 'True',
+        MAIL_USE_SSL=os.environ.get('MAIL_USE_SSL', 'False') == 'True',
+        MAIL_USERNAME=os.environ.get('MAIL_USERNAME'),
+        MAIL_PASSWORD=os.environ.get('MAIL_PASSWORD'),
+        MAIL_DEFAULT_SENDER=os.environ.get('MAIL_DEFAULT_SENDER', 'no-reply@visualoutlet.com')
+    )
+    mail.init_app(app)
 
 
 class EmailService:
     def __init__(self):
-        self.api_key = os.environ.get('BREVO_API_KEY')
-        self.sender_email = os.environ.get('BREVO_SENDER_EMAIL')
-        self.sender_name = os.environ.get('BREVO_SENDER_NAME', 'Visual Outlet')
-
-    def _get_api_instance(self):
-        config = Configuration()
-        config.api_key['api-key'] = self.api_key
-        return TransactionalEmailsApi(ApiClient(config))
+        self.sender_email = os.environ.get('MAIL_DEFAULT_SENDER', 'no-reply@visualoutlet.com')
+        self.modo_simulado = os.environ.get('FLASK_ENV') == 'development'
 
     def enviar_codigo_verificacion(self, correo: str, nombre: str, codigo: str) -> bool:
+        """Envía código de verificación usando Mailtrap"""
         html = f"""
-        <div style="font-family: Arial; padding: 20px;">
-            <h2>Hola {nombre}</h2>
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #1a1a2e;">¡Hola {nombre}!</h2>
+            <p>Gracias por registrarte en <strong>Visual Outlet</strong>.</p>
             <p>Tu código de verificación es:</p>
-            <div style="font-size: 32px; letter-spacing: 5px; padding: 15px; background: #f0f0ff;">
+            <div style="background: #f0f0ff; padding: 15px; text-align: center; font-size: 32px; letter-spacing: 5px; border-radius: 8px;">
                 <strong>{codigo}</strong>
             </div>
-            <p>Expira en 15 minutos.</p>
-        </div>
+            <p style="color: #666;">Este código expira en <strong>15 minutos</strong>.</p>
+            <hr>
+            <p style="color: #999; font-size: 11px;">Si no solicitaste este registro, ignora este mensaje.</p>
+        </body>
+        </html>
         """
-        return self._enviar_correo(correo, nombre, "Código de verificación", html, asincrono=True)
+        
+        if self.modo_simulado:
+            print(f"\n{'='*60}")
+            print(f"📧 [MAILTRAP SIMULADO] Código de verificación")
+            print(f"   Para: {correo} ({nombre})")
+            print(f"   Código: {codigo}")
+            print(f"   Link para ver: https://sandbox.mailtrap.io/inboxes")
+            print(f"{'='*60}\n")
+            return True
+        
+        return self._enviar_correo(correo, nombre, "🔐 Código de verificación — Visual Outlet", html)
 
     def enviar_codigo_reset(self, correo: str, nombre: str, codigo: str) -> bool:
+        """Envía código de recuperación usando Mailtrap"""
         html = f"""
-        <div style="font-family: Arial; padding: 20px;">
-            <h2>Restablecer contraseña</h2>
-            <p>Hola {nombre}, tu código es:</p>
-            <div style="font-size: 32px; letter-spacing: 5px; padding: 15px; background: #fff5f0;">
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #1a1a2e;">Restablecer contraseña</h2>
+            <p>Hola <strong>{nombre}</strong>,</p>
+            <p>Recibimos una solicitud para restablecer tu contraseña.</p>
+            <p>Usa este código:</p>
+            <div style="background: #fff5f0; padding: 15px; text-align: center; font-size: 32px; letter-spacing: 5px; border-radius: 8px;">
                 <strong>{codigo}</strong>
             </div>
-            <p>Expira en 15 minutos.</p>
-        </div>
+            <p style="color: #666;">Expira en <strong>15 minutos</strong>.</p>
+            <hr>
+            <p style="color: #999; font-size: 11px;">Si no solicitaste este cambio, ignora este mensaje.</p>
+        </body>
+        </html>
         """
-        return self._enviar_correo(correo, nombre, "Restablecer contraseña", html, asincrono=False)
-
-    def _enviar_correo(self, email: str, nombre: str, asunto: str, html: str, asincrono: bool) -> bool:
-        if os.environ.get('FLASK_ENV') == 'development' and not self.api_key:
-            print(f"\n📧 SIMULADO: {email} - Código: {self._extraer_codigo(html)}\n")
+        
+        if self.modo_simulado:
+            print(f"\n{'='*60}")
+            print(f"📧 [MAILTRAP SIMULADO] Código de recuperación")
+            print(f"   Para: {correo} ({nombre})")
+            print(f"   Código: {codigo}")
+            print(f"   Link para ver: https://sandbox.mailtrap.io/inboxes")
+            print(f"{'='*60}\n")
             return True
+        
+        return self._enviar_correo(correo, nombre, "🔑 Restablecer contraseña — Visual Outlet", html)
 
-        if not self.api_key or not self.sender_email:
-            logger.error("Brevo no configurado")
+    def _enviar_correo(self, email: str, nombre: str, asunto: str, html: str) -> bool:
+        """Envía correo real usando Flask-Mail con Mailtrap"""
+        try:
+            msg = Message(
+                subject=asunto,
+                recipients=[email],
+                html=html,
+                sender=self.sender_email
+            )
+            mail.send(msg)
+            logger.info(f"✅ Correo enviado a {email} via Mailtrap")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error enviando correo a {email}: {str(e)}")
             return False
 
-        def enviar():
-            try:
-                api = self._get_api_instance()
-                email_obj = SendSmtpEmail(
-                    to=[{"email": email, "name": nombre}],
-                    sender={"name": self.sender_name, "email": self.sender_email},
-                    subject=asunto,
-                    html_content=html
-                )
-                api.send_transac_email(email_obj)
-                logger.info(f"✅ Email enviado a {email}")
-                return True
-            except Exception as e:
-                logger.error(f"❌ Error: {e}")
-                return False
 
-        if asincrono:
-            import threading
-            threading.Thread(target=enviar, daemon=True).start()
-            return True
-        return enviar()
-
-    def _extraer_codigo(self, html: str) -> str:
-        match = re.search(r'(\d{6})', html)
-        return match.group(1) if match else '??????'
-
-
+# Instancia global
 email_service = EmailService()
 
+# Funciones de conveniencia
 def enviar_codigo_verificacion(correo, nombre, codigo):
     return email_service.enviar_codigo_verificacion(correo, nombre, codigo)
 

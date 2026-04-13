@@ -19,14 +19,15 @@ def create_app():
         supports_credentials=True
     )
 
+    # ── Inicializar Mailtrap (EMAIL) ──────────────────────────
+    from app.services.email_service import init_mail
+    init_mail(app)
+
     # ── Base de datos ─────────────────────────────────────────
     from app.database import init_db, db
     init_db(app)
 
     # ── Autenticación (JWT + callbacks + blueprint /auth) ─────
-    # init_auth hace init_app del JWTManager internamente.
-    # NO crear JWTManager(app) aquí — causaría doble inicialización
-    # y los callbacks de callbacks.py quedarían sin registrar.
     from app.auth import init_auth
     init_auth(app)
 
@@ -34,9 +35,7 @@ def create_app():
     from app.routes import main_bp
     app.register_blueprint(main_bp)
 
-    # ── Middleware global de autenticación ────────────────────
-    # Rutas que no requieren token. Usar el nombre del endpoint
-    # tal como Flask lo registra (blueprint.nombre_funcion).
+    # ── Middleware global de autenticación (solo JWT) ─────────
     RUTAS_PUBLICAS = {
         'auth.login',
         'auth.register',
@@ -52,6 +51,7 @@ def create_app():
         if request.method == 'OPTIONS':
             return None
 
+        # Rutas públicas no requieren autenticación
         if request.endpoint in RUTAS_PUBLICAS:
             return None
 
@@ -64,6 +64,8 @@ def create_app():
                 "error": "Token requerido o inválido",
                 "message": "Debes iniciar sesión para acceder a este recurso"
             }), 401
+
+        return None
 
     # ── Verificar base de datos al arrancar ───────────────────
     with app.app_context():
