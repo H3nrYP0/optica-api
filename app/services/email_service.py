@@ -1,115 +1,150 @@
 import os
 import logging
 import re
-from flask_mail import Mail, Message
-from flask import current_app
+import smtplib
+import threading
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 logger = logging.getLogger(__name__)
-
-# Instancia global de Mail
-mail = Mail()
-
-def init_mail(app):
-    """Inicializa Mailtrap en la app Flask"""
-    app.config.update(
-        MAIL_SERVER=os.environ.get('MAIL_SERVER', 'sandbox.smtp.mailtrap.io'),
-        MAIL_PORT=int(os.environ.get('MAIL_PORT', 2525)),
-        MAIL_USE_TLS=os.environ.get('MAIL_USE_TLS', 'True') == 'True',
-        MAIL_USE_SSL=os.environ.get('MAIL_USE_SSL', 'False') == 'True',
-        MAIL_USERNAME=os.environ.get('MAIL_USERNAME'),
-        MAIL_PASSWORD=os.environ.get('MAIL_PASSWORD'),
-        MAIL_DEFAULT_SENDER=os.environ.get('MAIL_DEFAULT_SENDER', 'no-reply@visualoutlet.com')
-    )
-    mail.init_app(app)
 
 
 class EmailService:
     def __init__(self):
-        self.sender_email = os.environ.get('MAIL_DEFAULT_SENDER', 'no-reply@visualoutlet.com')
-        self.modo_simulado = os.environ.get('FLASK_ENV') == 'development'
+        self.host     = os.environ.get('MAIL_SERVER', 'sandbox.smtp.mailtrap.io')
+        self.port     = int(os.environ.get('MAIL_PORT', 2525))
+        self.username = os.environ.get('MAIL_USERNAME')
+        self.password = os.environ.get('MAIL_PASSWORD')
+        self.sender   = os.environ.get('MAIL_DEFAULT_SENDER', 'no-reply@visualoutlet.com')
+        self.use_tls  = os.environ.get('MAIL_USE_TLS', 'True').lower() == 'true'
 
-    def enviar_codigo_verificacion(self, correo: str, nombre: str, codigo: str) -> bool:
-        """Envía código de verificación usando Mailtrap"""
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; padding: 20px;">
-            <h2 style="color: #1a1a2e;">¡Hola {nombre}!</h2>
-            <p>Gracias por registrarte en <strong>Visual Outlet</strong>.</p>
-            <p>Tu código de verificación es:</p>
-            <div style="background: #f0f0ff; padding: 15px; text-align: center; font-size: 32px; letter-spacing: 5px; border-radius: 8px;">
-                <strong>{codigo}</strong>
-            </div>
-            <p style="color: #666;">Este código expira en <strong>15 minutos</strong>.</p>
-            <hr>
-            <p style="color: #999; font-size: 11px;">Si no solicitaste este registro, ignora este mensaje.</p>
-        </body>
-        </html>
-        """
-        
-        if self.modo_simulado:
-            print(f"\n{'='*60}")
-            print(f"📧 [MAILTRAP SIMULADO] Código de verificación")
-            print(f"   Para: {correo} ({nombre})")
-            print(f"   Código: {codigo}")
-            print(f"   Link para ver: https://sandbox.mailtrap.io/inboxes")
-            print(f"{'='*60}\n")
-            return True
-        
-        return self._enviar_correo(correo, nombre, "🔐 Código de verificación — Visual Outlet", html)
+    def _esta_configurado(self) -> bool:
+        return bool(self.username and self.password)
 
-    def enviar_codigo_reset(self, correo: str, nombre: str, codigo: str) -> bool:
-        """Envía código de recuperación usando Mailtrap"""
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <body style="font-family: Arial, sans-serif; padding: 20px;">
-            <h2 style="color: #1a1a2e;">Restablecer contraseña</h2>
-            <p>Hola <strong>{nombre}</strong>,</p>
-            <p>Recibimos una solicitud para restablecer tu contraseña.</p>
-            <p>Usa este código:</p>
-            <div style="background: #fff5f0; padding: 15px; text-align: center; font-size: 32px; letter-spacing: 5px; border-radius: 8px;">
-                <strong>{codigo}</strong>
-            </div>
-            <p style="color: #666;">Expira en <strong>15 minutos</strong>.</p>
-            <hr>
-            <p style="color: #999; font-size: 11px;">Si no solicitaste este cambio, ignora este mensaje.</p>
-        </body>
-        </html>
-        """
-        
-        if self.modo_simulado:
-            print(f"\n{'='*60}")
-            print(f"📧 [MAILTRAP SIMULADO] Código de recuperación")
-            print(f"   Para: {correo} ({nombre})")
-            print(f"   Código: {codigo}")
-            print(f"   Link para ver: https://sandbox.mailtrap.io/inboxes")
-            print(f"{'='*60}\n")
-            return True
-        
-        return self._enviar_correo(correo, nombre, "🔑 Restablecer contraseña — Visual Outlet", html)
-
-    def _enviar_correo(self, email: str, nombre: str, asunto: str, html: str) -> bool:
-        """Envía correo real usando Flask-Mail con Mailtrap"""
+    def _enviar(self, destinatario_email: str, destinatario_nombre: str,
+                asunto: str, html: str) -> bool:
+        if not self._esta_configurado():
+            logger.error("Mailtrap no configurado: MAIL_USERNAME o MAIL_PASSWORD ausentes")
+            return False
         try:
-            msg = Message(
-                subject=asunto,
-                recipients=[email],
-                html=html,
-                sender=self.sender_email
-            )
-            mail.send(msg)
-            logger.info(f"✅ Correo enviado a {email} via Mailtrap")
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = asunto
+            msg['From']    = f"Visual Outlet <{self.sender}>"
+            msg['To']      = f"{destinatario_nombre} <{destinatario_email}>"
+            msg.attach(MIMEText(html, 'html'))
+
+            with smtplib.SMTP(self.host, self.port) as server:
+                if self.use_tls:
+                    server.starttls()
+                server.login(self.username, self.password)
+                server.sendmail(self.sender, destinatario_email, msg.as_string())
+
+            logger.info(f"✅ Email enviado a {destinatario_email} | {asunto}")
             return True
         except Exception as e:
-            logger.error(f"❌ Error enviando correo a {email}: {str(e)}")
+            logger.error(f"❌ Error enviando a {destinatario_email}: {e}")
             return False
 
+    def enviar_codigo_verificacion(self, correo: str, nombre: str, codigo: str) -> bool:
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="es">
+        <body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center" style="padding:40px 20px;">
+              <table width="560" cellpadding="0" cellspacing="0"
+                     style="background:#fff;border-radius:8px;overflow:hidden;
+                            box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+                <tr><td style="background:#1a1a2e;padding:28px 40px;">
+                  <h1 style="margin:0;color:#fff;font-size:22px;">Visual Outlet</h1>
+                </td></tr>
+                <tr><td style="padding:40px;">
+                  <h2 style="margin:0 0 12px;color:#1a1a2e;">Hola, {nombre} 👋</h2>
+                  <p style="margin:0 0 28px;color:#555;font-size:15px;line-height:1.6;">
+                    Tu código de verificación es (caduca en <strong>15 minutos</strong>):
+                  </p>
+                  <div style="text-align:center;margin:0 0 32px;">
+                    <span style="display:inline-block;background:#f0f0ff;
+                                 border:2px dashed #5b5fc7;border-radius:10px;
+                                 padding:18px 48px;font-size:36px;font-weight:700;
+                                 letter-spacing:12px;color:#3730a3;">
+                      {codigo}
+                    </span>
+                  </div>
+                  <p style="margin:0;color:#999;font-size:13px;">
+                    Si no solicitaste este registro, ignora este mensaje.
+                  </p>
+                </td></tr>
+                <tr><td style="background:#f8f8f8;padding:20px 40px;
+                               border-top:1px solid #eee;text-align:center;">
+                  <p style="margin:0;color:#bbb;font-size:12px;">
+                    © 2025 Visual Outlet · Correo automático, no responder.
+                  </p>
+                </td></tr>
+              </table>
+            </td></tr>
+          </table>
+        </body>
+        </html>
+        """
+        # Asíncrono: no bloquea el worker mientras Mailtrap responde
+        thread = threading.Thread(
+            target=self._enviar,
+            args=(correo, nombre, "Código de verificación — Visual Outlet", html),
+            daemon=True
+        )
+        thread.start()
+        return True
 
-# Instancia global
+    def enviar_codigo_reset(self, correo: str, nombre: str, codigo: str) -> bool:
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="es">
+        <body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center" style="padding:40px 20px;">
+              <table width="560" cellpadding="0" cellspacing="0"
+                     style="background:#fff;border-radius:8px;overflow:hidden;
+                            box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+                <tr><td style="background:#1a1a2e;padding:28px 40px;">
+                  <h1 style="margin:0;color:#fff;font-size:22px;">Visual Outlet</h1>
+                </td></tr>
+                <tr><td style="padding:40px;">
+                  <h2 style="margin:0 0 12px;color:#1a1a2e;">Restablecer contraseña</h2>
+                  <p style="margin:0 0 8px;color:#555;font-size:15px;line-height:1.6;">
+                    Hola <strong>{nombre}</strong>, tu código es
+                    (caduca en <strong>15 minutos</strong>):
+                  </p>
+                  <div style="text-align:center;margin:0 0 32px;">
+                    <span style="display:inline-block;background:#fff5f0;
+                                 border:2px dashed #ea580c;border-radius:10px;
+                                 padding:18px 48px;font-size:36px;font-weight:700;
+                                 letter-spacing:12px;color:#c2410c;">
+                      {codigo}
+                    </span>
+                  </div>
+                  <p style="margin:0;color:#999;font-size:13px;">
+                    Si no solicitaste este cambio, ignora este mensaje.
+                  </p>
+                </td></tr>
+                <tr><td style="background:#f8f8f8;padding:20px 40px;
+                               border-top:1px solid #eee;text-align:center;">
+                  <p style="margin:0;color:#bbb;font-size:12px;">
+                    © 2025 Visual Outlet · Correo automático, no responder.
+                  </p>
+                </td></tr>
+              </table>
+            </td></tr>
+          </table>
+        </body>
+        </html>
+        """
+        # Sincrónico: necesitamos saber si falló antes de guardar el código en memoria
+        return self._enviar(correo, nombre, "Restablecer contraseña — Visual Outlet", html)
+
+
 email_service = EmailService()
 
-# Funciones de conveniencia
 def enviar_codigo_verificacion(correo, nombre, codigo):
     return email_service.enviar_codigo_verificacion(correo, nombre, codigo)
 
