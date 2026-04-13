@@ -67,11 +67,10 @@ def create_cita():
         except ValueError:
             return jsonify({"error": "Formato de hora inválido. Use HH:MM o HH:MM:SS"}), 400
 
-        # Validar que no sea en el pasado (usando zona horaria Colombia)
+        # Validar que no sea en el pasado
+        ahora = datetime.utcnow()
         fecha_hora_cita = datetime.combine(fecha_date, hora_time)
-        fecha_hora_cita_local = tz_colombia.localize(fecha_hora_cita)
-        ahora_local = datetime.now(tz_colombia)
-        if fecha_hora_cita_local < ahora_local:
+        if fecha_hora_cita < ahora:
             return jsonify({"error": "No se pueden programar citas en el pasado"}), 400
 
         # Obtener servicio y duración
@@ -200,11 +199,10 @@ def update_cita(id):
         if estado_actual_obj and estado_actual_obj.nombre.lower() == "cancelada":
             return jsonify({"error": "No se puede modificar una cita que ya está cancelada"}), 400
 
-        # No permitir modificar cita pasada (zona horaria Colombia)
-        ahora_local = datetime.now(tz_colombia)
+        # No permitir modificar cita pasada
+        ahora = datetime.utcnow()
         fecha_cita_actual = datetime.combine(cita.fecha, cita.hora)
-        fecha_cita_actual_local = tz_colombia.localize(fecha_cita_actual)
-        if fecha_cita_actual_local < ahora_local:
+        if fecha_cita_actual < ahora:
             return jsonify({"error": "No se puede modificar una cita que ya pasó"}), 400
 
         data = request.get_json()
@@ -235,8 +233,7 @@ def update_cita(id):
         
         # Validar que la nueva fecha/hora no sea pasada
         nueva_fecha_hora = datetime.combine(fecha_final, hora_final)
-        nueva_fecha_hora_local = tz_colombia.localize(nueva_fecha_hora)
-        if nueva_fecha_hora_local < ahora_local:
+        if nueva_fecha_hora < ahora:
             return jsonify({"error": "No se puede reprogramar la cita a una fecha/hora pasada"}), 400
         
         # Obtener duración (puede cambiar si cambia servicio)
@@ -310,7 +307,7 @@ def update_cita(id):
                 venta = Venta(
                     cita_id=cita.id,
                     cliente_id=cita.cliente_id,
-                    fecha_venta=datetime.now(tz_colombia),
+                    fecha_venta=datetime.utcnow(),
                     total=servicio_actual.precio,
                     metodo_pago=cita.metodo_pago,
                     estado_id=estado_venta.id
@@ -350,11 +347,10 @@ def delete_cita(id):
         if estado_actual and estado_actual.nombre.lower() == 'completada':
             return jsonify({"error": "No se puede eliminar una cita que ya está completada"}), 400
         
-        # No permitir eliminar citas pasadas (zona horaria Colombia)
-        ahora_local = datetime.now(tz_colombia)
+        # Opcional: también se podría prohibir eliminar citas pasadas, pero no es obligatorio
+        ahora = datetime.utcnow()
         fecha_cita = datetime.combine(cita.fecha, cita.hora)
-        fecha_cita_local = tz_colombia.localize(fecha_cita)
-        if fecha_cita_local < ahora_local:
+        if fecha_cita < ahora:
             return jsonify({"error": "No se puede eliminar una cita que ya pasó"}), 400
         
         db.session.delete(cita)
@@ -709,11 +705,10 @@ def verificar_disponibilidad():
                 "mensaje": "Formato de fecha u hora inválido (use YYYY-MM-DD y HH:MM)"
             }), 400
 
-        # Validar que no sea en el pasado (zona horaria Colombia)
+        # Validar que no sea en el pasado (usando UTC)
+        ahora = datetime.utcnow()
         fecha_hora_solicitada = datetime.combine(fecha_date, hora_time)
-        fecha_hora_solicitada_local = tz_colombia.localize(fecha_hora_solicitada)
-        ahora_local = datetime.now(tz_colombia)
-        if fecha_hora_solicitada_local < ahora_local:
+        if fecha_hora_solicitada < ahora:
             return jsonify({
                 "disponible": False,
                 "mensaje": "No se pueden verificar disponibilidad en el pasado"

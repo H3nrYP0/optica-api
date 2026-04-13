@@ -1,69 +1,67 @@
-import bcrypt
+# app/auth/helpers.py
 import logging
 from datetime import datetime
+from werkzeug.security import check_password_hash
 from flask_jwt_extended import create_access_token
 
-# Logger de seguridad — registra eventos importantes
+# ─────────────────────────────────────────────
+# Logger de seguridad
+# ─────────────────────────────────────────────
 security_logger = logging.getLogger('security')
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
 
-def verificar_contrasenia(contrasenia_plana, contrasenia_guardada, usuario_id, db):
-    """
-    🔓 TEMPORALMENTE DESACTIVADA - Siempre retorna True
-    En producción, restaurar la verificación real
-    """
-    # ⚠️ DESACTIVADO PARA DESARROLLO - Cualquier contraseña funciona
-    security_logger.warning(f"⚠️ VERIFICACIÓN DE CONTRASEÑA DESACTIVADA - usuario_id={usuario_id}")
-    return True
-    
-    # ==============================================
-    # CÓDIGO ORIGINAL COMENTADO - REACTIVAR EN PRODUCCIÓN
-    # ==============================================
-    # """
-    # Verifica la contraseña. Si está en texto plano, la encripta.
-    # """
-    # # Verificación de hash bcrypt
-    # if contrasenia_guardada.startswith(("$2b$", "$2a$")):
-    #     return bcrypt.checkpw(
-    #         contrasenia_plana.encode('utf-8'),
-    #         contrasenia_guardada.encode('utf-8')
-    #     )
-    #
-    # # Autocorrección de texto plano a Hash
-    # if contrasenia_guardada == contrasenia_plana:
-    #     hash_nuevo = bcrypt.hashpw(contrasenia_plana.encode('utf-8'), bcrypt.gensalt())
-    #     from app.Models.models import Usuario
-    #     usuario = Usuario.query.get(usuario_id)
-    #     usuario.contrasenia = hash_nuevo.decode('utf-8')
-    #     db.session.commit()
-    #     security_logger.info(f"🔐 Password auto-hash: usuario_id={usuario_id}")
-    #     return True
-    # return False
 
-def generar_token(usuario, permisos, nombre_rol):
+def verificar_contrasenia(contrasenia_plana: str, contrasenia_guardada: str, usuario_id: int, db) -> bool:
     """
-    Genera el JWT. 
-    IMPORTANTE: nombre_rol.lower() asegura que el decorador reconozca al 'dev'.
+    Verifica la contraseña del usuario contra el hash almacenado.
     """
-    token_data = {
-        "id": usuario.id,
-        "nombre": usuario.nombre,
-        "correo": usuario.correo,
-        "rol": nombre_rol.lower() if nombre_rol else "", # Normalizado
-        "rol_id": usuario.rol_id,
-        "permisos": permisos, 
+    try:
+        resultado = check_password_hash(contrasenia_guardada, contrasenia_plana)
+        if resultado:
+            security_logger.info(f"🔐 Contraseña verificada OK: usuario_id={usuario_id}")
+        else:
+            security_logger.warning(f"🔐 Contraseña incorrecta: usuario_id={usuario_id}")
+        return resultado
+    except Exception as e:
+        security_logger.error(f"❌ Error verificando contraseña usuario_id={usuario_id}: {e}")
+        return False
+
+
+def generar_token(usuario, permisos: list, nombre_rol: str) -> str:
+    """
+    Genera el JWT con todos los datos necesarios para autorización.
+    """
+    claims = {
+        "id":       usuario.id,
+        "nombre":   usuario.nombre,
+        "correo":   usuario.correo,
+        "rol":      nombre_rol.lower().strip() if nombre_rol else "usuario",
+        "rol_id":   usuario.rol_id,
+        "permisos": permisos,
     }
 
     return create_access_token(
         identity=str(usuario.id),
-        additional_claims=token_data
+        additional_claims=claims
     )
 
-def log_login_exitoso(usuario_id, nombre_rol, ip):
-    security_logger.info(f"✅ Login OK: id={usuario_id} | rol={nombre_rol} | IP={ip} | {datetime.now()}")
 
-def log_login_fallido(motivo, correo, ip):
-    security_logger.warning(f"⚠️ Login FAIL - {motivo}: {correo} | IP={ip} | {datetime.now()}")
+def log_login_exitoso(usuario_id: int, nombre_rol: str, ip: str) -> None:
+    security_logger.info(
+        f"✅ Login OK | id={usuario_id} | rol={nombre_rol} | IP={ip} | {datetime.now().isoformat()}"
+    )
 
-def log_cuenta_inactiva(correo, ip):
-    security_logger.warning(f"⚠️ Login BLOCK - Inactiva: {correo} | IP={ip} | {datetime.now()}")
+
+def log_login_fallido(motivo: str, correo: str, ip: str) -> None:
+    security_logger.warning(
+        f"⚠️  Login FAIL | motivo={motivo} | correo={correo} | IP={ip} | {datetime.now().isoformat()}"
+    )
+
+
+def log_cuenta_inactiva(correo: str, ip: str) -> None:
+    security_logger.warning(
+        f"🚫 Login BLOCKED | cuenta inactiva | correo={correo} | IP={ip} | {datetime.now().isoformat()}"
+    )
