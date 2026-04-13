@@ -1,22 +1,133 @@
 from flask import jsonify, request
 from app.database import db
 from app.Models.models import Cliente, HistorialFormula, Usuario
+from app.auth.decorators import jwt_requerido, get_usuario_actual
 from datetime import datetime
 from app.routes import main_bp
 import re
 
-# Regex para validar email
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
-# Regex para validar teléfono (solo números, 7-15 dígitos)
 PHONE_REGEX = re.compile(r'^\d{7,15}$')
 
 
 # ============================================================
-# MÓDULO: CLIENTES
+# CLIENTE VE SU PROPIO PERFIL
 # ============================================================
 
-@main_bp.route('/clientes', methods=['GET'])
+@main_bp.route('/cliente/perfil', methods=['GET'])
+@jwt_requerido
+def get_mi_perfil():
+    """Cliente obtiene su propio perfil"""
+    try:
+        claims = get_usuario_actual()
+        usuario_id = claims.get('id')
+        
+        usuario = Usuario.query.get(usuario_id)
+        if not usuario:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+        
+        if not usuario.cliente_id:
+            return jsonify({"error": "No tienes un perfil de cliente asociado"}), 404
+        
+        cliente = Cliente.query.get(usuario.cliente_id)
+        return jsonify(cliente.to_dict())
+    except Exception as e:
+        return jsonify({"error": f"Error al obtener perfil: {str(e)}"}), 500
+
+
+@main_bp.route('/cliente/perfil', methods=['PUT'])
+@jwt_requerido
+def update_mi_perfil():
+    """Cliente edita su propio perfil (solo ciertos campos)"""
+    try:
+        claims = get_usuario_actual()
+        usuario_id = claims.get('id')
+        
+        usuario = Usuario.query.get(usuario_id)
+        if not usuario or not usuario.cliente_id:
+            return jsonify({"error": "No tienes un perfil de cliente asociado"}), 404
+        
+        cliente = Cliente.query.get(usuario.cliente_id)
+        if not cliente:
+            return jsonify({"error": "Cliente no encontrado"}), 404
+        
+        data = request.get_json()
+        
+        # Campos que el cliente puede editar
+        if 'nombre' in data:
+            nombre = data['nombre'].strip()
+            if nombre:
+                cliente.nombre = nombre
+        
+        if 'apellido' in data:
+            apellido = data['apellido'].strip()
+            if apellido:
+                cliente.apellido = apellido
+        
+        if 'telefono' in data:
+            telefono = data['telefono'].strip() if data['telefono'] else None
+            if telefono and not PHONE_REGEX.match(telefono):
+                return jsonify({"error": "El teléfono debe contener solo números (7-15 dígitos)"}), 400
+            cliente.telefono = telefono
+        
+        if 'direccion' in data:
+            cliente.direccion = data['direccion'].strip()
+        
+        if 'correo' in data:
+            correo = data['correo'].strip() if data['correo'] else None
+            if correo and not EMAIL_REGEX.match(correo):
+                return jsonify({"error": "Formato de correo electrónico inválido"}), 400
+            cliente.correo = correo
+        
+        db.session.commit()
+        return jsonify({"success": True, "message": "Perfil actualizado", "cliente": cliente.to_dict()})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al actualizar perfil: {str(e)}"}), 500
+
+
+@main_bp.route('/cliente/cambiar-contrasenia', methods=['POST'])
+@jwt_requerido
+def cambiar_mi_contrasenia():
+    """Cliente cambia su propia contraseña"""
+    try:
+        claims = get_usuario_actual()
+        usuario_id = claims.get('id')
+        
+        usuario = Usuario.query.get(usuario_id)
+        if not usuario:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+        
+        data = request.get_json()
+        
+        from app.auth.helpers import verificar_contrasenia
+        from werkzeug.security import generate_password_hash
+        
+        if not verificar_contrasenia(data.get('contrasenia_actual'), usuario.contrasenia, usuario.id, db):
+            return jsonify({"error": "Contraseña actual incorrecta"}), 401
+        
+        if len(data.get('nueva_contrasenia', '')) < 6:
+            return jsonify({"error": "La nueva contraseña debe tener al menos 6 caracteres"}), 400
+        
+        usuario.contrasenia = generate_password_hash(data['nueva_contrasenia'])
+        db.session.commit()
+        
+        return jsonify({"success": True, "message": "Contraseña actualizada"})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al cambiar contraseña: {str(e)}"}), 500
+
+
+# ============================================================
+# ADMIN GESTIONA CLIENTES (CRUD completo)
+# ============================================================
+
+@main_bp.route('/admin/clientes', methods=['GET'])
+@jwt_requerido
 def get_clientes():
+    """Admin lista todos los clientes"""
     try:
         clientes = Cliente.query.all()
         return jsonify([cliente.to_dict() for cliente in clientes])
@@ -24,8 +135,10 @@ def get_clientes():
         return jsonify({"error": "Error al obtener clientes"}), 500
 
 
-@main_bp.route('/clientes', methods=['POST'])
+@main_bp.route('/admin/clientes', methods=['POST'])
+@jwt_requerido
 def create_cliente():
+    """Admin crea un nuevo cliente"""
     try:
         data = request.get_json()
         required_fields = ['nombre', 'apellido', 'numero_documento', 'fecha_nacimiento']
@@ -34,19 +147,15 @@ def create_cliente():
             if field not in data or not data[field]:
                 return jsonify({"error": f"El campo {field} es requerido"}), 400
         
-        # Validación: nombre y apellido no vacíos
         nombre = data['nombre'].strip()
         apellido = data['apellido'].strip()
-        if not nombre:
-            return jsonify({"error": "El nombre no puede estar vacío"}), 400
-        if not apellido:
-            return jsonify({"error": "El apellido no puede estar vacío"}), 400
         
-        # Validación: documento único
+        if not nombre or not apellido:
+            return jsonify({"error": "Nombre y apellido son requeridos"}), 400
+        
         if Cliente.query.filter_by(numero_documento=data['numero_documento']).first():
-            return jsonify({"success": False, "error": "Ya existe un cliente con este número de documento"}), 400
+            return jsonify({"error": "Ya existe un cliente con este número de documento"}), 400
         
-        # Validación: fecha de nacimiento (no puede ser futura)
         try:
             fecha_nacimiento = datetime.strptime(data['fecha_nacimiento'], '%Y-%m-%d').date()
             if fecha_nacimiento > datetime.now().date():
@@ -54,25 +163,13 @@ def create_cliente():
         except ValueError:
             return jsonify({"error": "Formato de fecha inválido. Use YYYY-MM-DD"}), 400
         
-        # Validación: email (si se proporciona)
         correo = data.get('correo', '').strip()
         if correo and not EMAIL_REGEX.match(correo):
             return jsonify({"error": "Formato de correo electrónico inválido"}), 400
         
-        # Validación: teléfono (si se proporciona)
         telefono = data.get('telefono', '').strip()
         if telefono and not PHONE_REGEX.match(telefono):
             return jsonify({"error": "El teléfono debe contener solo números (7-15 dígitos)"}), 400
-        
-        # Validación: teléfono emergencia (si se proporciona)
-        telefono_emergencia = data.get('telefono_emergencia', '').strip()
-        if telefono_emergencia and not PHONE_REGEX.match(telefono_emergencia):
-            return jsonify({"error": "El teléfono de emergencia debe contener solo números (7-15 dígitos)"}), 400
-        
-        # Validación: género (si se proporciona)
-        genero = data.get('genero', '').strip()
-        if genero and genero not in ['Masculino', 'Femenino', 'Otro']:
-            return jsonify({"error": "Género debe ser: Masculino, Femenino u Otro"}), 400
         
         cliente = Cliente(
             nombre=nombre,
@@ -80,13 +177,13 @@ def create_cliente():
             tipo_documento=data.get('tipo_documento', '').strip(),
             numero_documento=data['numero_documento'].strip(),
             fecha_nacimiento=fecha_nacimiento,
-            genero=genero if genero else None,
-            telefono=telefono if telefono else None,
-            correo=correo if correo else None,
+            genero=data.get('genero', '').strip() or None,
+            telefono=telefono or None,
+            correo=correo or None,
             municipio=data.get('municipio', '').strip(),
             direccion=data.get('direccion', '').strip(),
             ocupacion=data.get('ocupacion', '').strip(),
-            telefono_emergencia=telefono_emergencia if telefono_emergencia else None,
+            telefono_emergencia=data.get('telefono_emergencia', '').strip() or None,
             estado=data.get('estado', True)
         )
         
@@ -96,120 +193,98 @@ def create_cliente():
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({"success": False, "error": f"Error al crear cliente: {str(e)}"}), 500
+        return jsonify({"error": f"Error al crear cliente: {str(e)}"}), 500
 
 
-@main_bp.route('/clientes/<int:id>', methods=['PUT'])
-def update_cliente(id):
+@main_bp.route('/admin/clientes/<int:id>', methods=['GET'])
+@jwt_requerido
+def get_cliente(id):
+    """Admin ve un cliente específico"""
     try:
         cliente = Cliente.query.get(id)
         if not cliente:
             return jsonify({"error": "Cliente no encontrado"}), 404
-            
+        return jsonify(cliente.to_dict())
+    except Exception as e:
+        return jsonify({"error": f"Error al obtener cliente: {str(e)}"}), 500
+
+
+@main_bp.route('/admin/clientes/<int:id>', methods=['PUT'])
+@jwt_requerido
+def update_cliente(id):
+    """Admin edita un cliente"""
+    try:
+        cliente = Cliente.query.get(id)
+        if not cliente:
+            return jsonify({"error": "Cliente no encontrado"}), 404
+        
         data = request.get_json()
         
-        # Validación: nombre
         if 'nombre' in data:
-            nombre = data['nombre'].strip()
-            if not nombre:
-                return jsonify({"error": "El nombre no puede estar vacío"}), 400
-            cliente.nombre = nombre
-            
-        # Validación: apellido
+            cliente.nombre = data['nombre'].strip()
         if 'apellido' in data:
-            apellido = data['apellido'].strip()
-            if not apellido:
-                return jsonify({"error": "El apellido no puede estar vacío"}), 400
-            cliente.apellido = apellido
-            
-        # Validación: documento único (si cambia)
+            cliente.apellido = data['apellido'].strip()
+        if 'tipo_documento' in data:
+            cliente.tipo_documento = data['tipo_documento'].strip()
         if 'numero_documento' in data:
             doc = data['numero_documento'].strip()
             existente = Cliente.query.filter_by(numero_documento=doc).first()
             if existente and existente.id != id:
                 return jsonify({"error": "Ya existe otro cliente con este número de documento"}), 400
             cliente.numero_documento = doc
-            
-        # Validación: fecha de nacimiento
         if 'fecha_nacimiento' in data:
             try:
-                fecha_nacimiento = datetime.strptime(data['fecha_nacimiento'], '%Y-%m-%d').date()
-                if fecha_nacimiento > datetime.now().date():
-                    return jsonify({"error": "La fecha de nacimiento no puede ser futura"}), 400
-                cliente.fecha_nacimiento = fecha_nacimiento
+                cliente.fecha_nacimiento = datetime.strptime(data['fecha_nacimiento'], '%Y-%m-%d').date()
             except ValueError:
                 return jsonify({"error": "Formato de fecha inválido. Use YYYY-MM-DD"}), 400
-                
-        # Validación: email
-        if 'correo' in data:
-            correo = data['correo'].strip() if data['correo'] else None
-            if correo and not EMAIL_REGEX.match(correo):
-                return jsonify({"error": "Formato de correo electrónico inválido"}), 400
-            cliente.correo = correo
-            
-        # Validación: teléfono
+        if 'genero' in data:
+            cliente.genero = data['genero'].strip() or None
         if 'telefono' in data:
             telefono = data['telefono'].strip() if data['telefono'] else None
             if telefono and not PHONE_REGEX.match(telefono):
                 return jsonify({"error": "El teléfono debe contener solo números (7-15 dígitos)"}), 400
             cliente.telefono = telefono
-            
-        # Validación: teléfono emergencia
-        if 'telefono_emergencia' in data:
-            telefono_emergencia = data['telefono_emergencia'].strip() if data['telefono_emergencia'] else None
-            if telefono_emergencia and not PHONE_REGEX.match(telefono_emergencia):
-                return jsonify({"error": "El teléfono de emergencia debe contener solo números (7-15 dígitos)"}), 400
-            cliente.telefono_emergencia = telefono_emergencia
-            
-        # Validación: género
-        if 'genero' in data:
-            genero = data['genero'].strip() if data['genero'] else None
-            if genero and genero not in ['Masculino', 'Femenino', 'Otro']:
-                return jsonify({"error": "Género debe ser: Masculino, Femenino u Otro"}), 400
-            cliente.genero = genero
-            
-        # Actualizar campos simples
-        if 'tipo_documento' in data:
-            cliente.tipo_documento = data['tipo_documento'].strip()
+        if 'correo' in data:
+            correo = data['correo'].strip() if data['correo'] else None
+            if correo and not EMAIL_REGEX.match(correo):
+                return jsonify({"error": "Formato de correo electrónico inválido"}), 400
+            cliente.correo = correo
         if 'municipio' in data:
             cliente.municipio = data['municipio'].strip()
         if 'direccion' in data:
             cliente.direccion = data['direccion'].strip()
         if 'ocupacion' in data:
             cliente.ocupacion = data['ocupacion'].strip()
+        if 'telefono_emergencia' in data:
+            cliente.telefono_emergencia = data['telefono_emergencia'].strip() or None
         if 'estado' in data:
             cliente.estado = data['estado']
-            
+        
         db.session.commit()
-        return jsonify({"success": True, "message": "Cliente actualizado exitosamente", "cliente": cliente.to_dict()})
+        return jsonify({"success": True, "message": "Cliente actualizado", "cliente": cliente.to_dict()})
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({"success": False, "error": f"Error al actualizar cliente: {str(e)}"}), 500
+        return jsonify({"error": f"Error al actualizar cliente: {str(e)}"}), 500
 
 
-@main_bp.route('/clientes/<int:id>', methods=['DELETE'])
+@main_bp.route('/admin/clientes/<int:id>', methods=['DELETE'])
+@jwt_requerido
 def delete_cliente(id):
+    """Admin elimina un cliente (solo si no tiene relaciones)"""
     try:
         cliente = Cliente.query.get(id)
         if not cliente:
             return jsonify({"error": "Cliente no encontrado"}), 404
         
-        # Validación: No eliminar si tiene citas asociadas
         if cliente.citas and len(cliente.citas) > 0:
             return jsonify({"error": "No se puede eliminar un cliente que tiene citas asociadas"}), 400
-        
-        # Validación: No eliminar si tiene ventas asociadas
         if cliente.ventas and len(cliente.ventas) > 0:
             return jsonify({"error": "No se puede eliminar un cliente que tiene ventas asociadas"}), 400
-        
-        # Validación: No eliminar si tiene pedidos asociados
         if cliente.pedidos and len(cliente.pedidos) > 0:
             return jsonify({"error": "No se puede eliminar un cliente que tiene pedidos asociados"}), 400
-        
-        # Validación: No eliminar si tiene usuario asociado
         if cliente.usuario:
-            return jsonify({"error": "No se puede eliminar un cliente que tiene un usuario asociado. Desactive el cliente en su lugar."}), 400
+            return jsonify({"error": "No se puede eliminar un cliente con usuario asociado. Desactívelo en su lugar."}), 400
         
         db.session.delete(cliente)
         db.session.commit()
@@ -220,68 +295,56 @@ def delete_cliente(id):
         return jsonify({"error": f"Error al eliminar cliente: {str(e)}"}), 500
 
 
-@main_bp.route('/clientes/usuario/<int:usuario_id>', methods=['GET'])
-def get_cliente_by_usuario(usuario_id):
+# ============================================================
+# HISTORIAL DE FÓRMULAS
+# ============================================================
+
+@main_bp.route('/cliente/historial', methods=['GET'])
+@jwt_requerido
+def get_mi_historial():
+    """Cliente ve su propio historial de fórmulas"""
     try:
+        claims = get_usuario_actual()
+        usuario_id = claims.get('id')
+        
         usuario = Usuario.query.get(usuario_id)
-        if not usuario:
-            return jsonify({"success": False, "error": "Usuario no encontrado"}), 404
-        if not usuario.cliente_id:
-            return jsonify({"success": False, "error": "Este usuario no tiene cliente asociado"}), 404
-        cliente = Cliente.query.get(usuario.cliente_id)
-        if not cliente:
-            return jsonify({"success": False, "error": "Cliente no encontrado"}), 404
-        return jsonify({"success": True, "cliente": cliente.to_dict()})
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Error al obtener cliente: {str(e)}"}), 500
-
-
-# ============================================================
-# MÓDULO: HISTORIAL DE FÓRMULAS
-# ============================================================
-
-@main_bp.route('/historial-formula', methods=['GET'])
-def get_historiales_formula():
-    try:
-        historiales = HistorialFormula.query.all()
+        if not usuario or not usuario.cliente_id:
+            return jsonify([])
+        
+        historiales = HistorialFormula.query.filter_by(cliente_id=usuario.cliente_id).all()
         return jsonify([historial.to_dict() for historial in historiales])
     except Exception as e:
-        return jsonify({"error": "Error al obtener historial de fórmulas"}), 500
+        return jsonify({"error": f"Error al obtener historial: {str(e)}"}), 500
 
 
-@main_bp.route('/historial-formula', methods=['POST'])
+@main_bp.route('/admin/clientes/<int:cliente_id>/historial', methods=['GET'])
+@jwt_requerido
+def get_historial_cliente(cliente_id):
+    """Admin ve el historial de un cliente específico"""
+    try:
+        cliente = Cliente.query.get(cliente_id)
+        if not cliente:
+            return jsonify({"error": "Cliente no encontrado"}), 404
+        
+        historiales = HistorialFormula.query.filter_by(cliente_id=cliente_id).all()
+        return jsonify([historial.to_dict() for historial in historiales])
+    except Exception as e:
+        return jsonify({"error": f"Error al obtener historial: {str(e)}"}), 500
+
+
+@main_bp.route('/admin/historial-formula', methods=['POST'])
+@jwt_requerido
 def create_historial_formula():
+    """Admin crea historial de fórmula para un cliente"""
     try:
         data = request.get_json()
         
         if not data.get('cliente_id'):
             return jsonify({"error": "El cliente_id es requerido"}), 400
         
-        # Validación: cliente existe
         cliente = Cliente.query.get(data['cliente_id'])
         if not cliente:
-            return jsonify({"error": "El cliente especificado no existe"}), 404
-        
-        # Validación: cliente activo
-        if not cliente.estado:
-            return jsonify({"error": "No se puede agregar historial a un cliente inactivo"}), 400
-        
-        # Validación de valores de fórmula (opcional - validar que sean números válidos)
-        def validar_valor_formula(valor):
-            if valor is None:
-                return True
-            try:
-                # Permite números positivos, negativos, decimales
-                float(valor)
-                return True
-            except (ValueError, TypeError):
-                return False
-        
-        campos_formula = ['od_esfera', 'od_cilindro', 'od_eje', 'oi_esfera', 'oi_cilindro', 'oi_eje']
-        for campo in campos_formula:
-            if campo in data and data[campo] is not None:
-                if not validar_valor_formula(data[campo]):
-                    return jsonify({"error": f"El campo {campo} debe ser un número válido"}), 400
+            return jsonify({"error": "Cliente no encontrado"}), 404
         
         historial = HistorialFormula(
             cliente_id=data['cliente_id'],
@@ -296,96 +359,8 @@ def create_historial_formula():
         
         db.session.add(historial)
         db.session.commit()
-        return jsonify({"message": "Historial de fórmula creado", "historial": historial.to_dict()}), 201
+        return jsonify({"message": "Historial creado", "historial": historial.to_dict()}), 201
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": f"Error al crear historial de fórmula: {str(e)}"}), 500
-
-
-@main_bp.route('/historial-formula/<int:id>', methods=['PUT'])
-def update_historial_formula(id):
-    try:
-        historial = HistorialFormula.query.get(id)
-        if not historial:
-            return jsonify({"error": "Historial de fórmula no encontrado"}), 404
-            
-        data = request.get_json()
-        
-        # Validación: cliente existe (si cambia)
-        if 'cliente_id' in data:
-            cliente = Cliente.query.get(data['cliente_id'])
-            if not cliente:
-                return jsonify({"error": "El cliente especificado no existe"}), 404
-            if not cliente.estado:
-                return jsonify({"error": "No se puede asignar historial a un cliente inactivo"}), 400
-            historial.cliente_id = data['cliente_id']
-            
-        # Validación de valores de fórmula
-        def validar_valor_formula(valor):
-            if valor is None:
-                return True
-            try:
-                float(valor)
-                return True
-            except (ValueError, TypeError):
-                return False
-        
-        campos_formula = ['od_esfera', 'od_cilindro', 'od_eje', 'oi_esfera', 'oi_cilindro', 'oi_eje']
-        for campo in campos_formula:
-            if campo in data and data[campo] is not None:
-                if not validar_valor_formula(data[campo]):
-                    return jsonify({"error": f"El campo {campo} debe ser un número válido"}), 400
-        
-        if 'descripcion' in data:
-            historial.descripcion = data['descripcion'].strip()
-        if 'od_esfera' in data:
-            historial.od_esfera = data['od_esfera']
-        if 'od_cilindro' in data:
-            historial.od_cilindro = data['od_cilindro']
-        if 'od_eje' in data:
-            historial.od_eje = data['od_eje']
-        if 'oi_esfera' in data:
-            historial.oi_esfera = data['oi_esfera']
-        if 'oi_cilindro' in data:
-            historial.oi_cilindro = data['oi_cilindro']
-        if 'oi_eje' in data:
-            historial.oi_eje = data['oi_eje']
-            
-        db.session.commit()
-        return jsonify({"message": "Historial de fórmula actualizado", "historial": historial.to_dict()})
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": f"Error al actualizar historial de fórmula: {str(e)}"}), 500
-
-
-@main_bp.route('/historial-formula/<int:id>', methods=['DELETE'])
-def delete_historial_formula(id):
-    try:
-        historial = HistorialFormula.query.get(id)
-        if not historial:
-            return jsonify({"error": "Historial de fórmula no encontrado"}), 404
-            
-        db.session.delete(historial)
-        db.session.commit()
-        return jsonify({"message": "Historial de fórmula eliminado correctamente"})
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": f"Error al eliminar historial de fórmula: {str(e)}"}), 500
-
-
-@main_bp.route('/clientes/<int:cliente_id>/historial', methods=['GET'])
-def get_historial_cliente(cliente_id):
-    try:
-        # Validación: cliente existe
-        cliente = Cliente.query.get(cliente_id)
-        if not cliente:
-            return jsonify({"error": "Cliente no encontrado"}), 404
-            
-        historiales = HistorialFormula.query.filter_by(cliente_id=cliente_id).all()
-        return jsonify([historial.to_dict() for historial in historiales])
-        
-    except Exception as e:
-        return jsonify({"error": f"Error al obtener historial del cliente: {str(e)}"}), 500
+        return jsonify({"error": f"Error al crear historial: {str(e)}"}), 500

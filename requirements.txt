@@ -8,4 +8,5 @@ psycopg2-binary==2.9.10
 bcrypt==4.0.1
 flask-jwt-extended==4.5.2
 Flask-Mail==0.9.1
-pytz==2024.1
+sib-api-v3-sdk==7.6.0
+Werkzeug==2.3.7
