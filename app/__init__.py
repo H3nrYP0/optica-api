@@ -19,10 +19,6 @@ def create_app():
         supports_credentials=True
     )
 
-    # ── Inicializar Mailtrap (EMAIL) ──────────────────────────
-    from app.services.email_service import init_mail
-    init_mail(app)
-
     # ── Base de datos ─────────────────────────────────────────
     from app.database import init_db, db
     init_db(app)
@@ -35,7 +31,7 @@ def create_app():
     from app.routes import main_bp
     app.register_blueprint(main_bp)
 
-    # ── Middleware global de autenticación (solo JWT) ─────────
+    # ── Middleware global de autenticación ────────────────────
     RUTAS_PUBLICAS = {
         'auth.login',
         'auth.register',
@@ -47,14 +43,10 @@ def create_app():
 
     @app.before_request
     def verificar_autenticacion():
-        # Preflight de CORS — siempre dejar pasar
         if request.method == 'OPTIONS':
             return None
-
-        # Rutas públicas no requieren autenticación
         if request.endpoint in RUTAS_PUBLICAS:
             return None
-
         from flask_jwt_extended import verify_jwt_in_request
         try:
             verify_jwt_in_request()
@@ -64,7 +56,6 @@ def create_app():
                 "error": "Token requerido o inválido",
                 "message": "Debes iniciar sesión para acceder a este recurso"
             }), 401
-
         return None
 
     # ── Verificar base de datos al arrancar ───────────────────
