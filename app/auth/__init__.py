@@ -24,7 +24,7 @@ def init_auth(app):
         init_auth(app)
     """
     init_callbacks(app)
-    app.register_blueprint(auth_bp, url_prefix="/auth")
+    """ app.register_blueprint(auth_bp, url_prefix="/auth") """
 
 
 __all__ = [
