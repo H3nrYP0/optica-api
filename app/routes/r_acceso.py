@@ -1,7 +1,7 @@
 from flask import jsonify, request
 from app.database import db
 from app.Models.models import Usuario, Rol, Permiso, PermisoPorRol
-from app.auth.decorators import jwt_requerido, permiso_requerido
+#from app.auth.decorators import jwt_requerido, permiso_requerido
 import re
 from datetime import datetime
 from werkzeug.security import generate_password_hash
