@@ -50,26 +50,12 @@ def create_app():
     # ============================================================
     # Lista de rutas que NO requieren token (públicas)
     RUTAS_PUBLICAS = {
-<<<<<<< HEAD
-        'auth.login',
-        'auth.register',
-        'auth.verify_register',
-        'auth.forgot_password',
-        'auth.reset_password',
-        'static',
-        # ✅ Agregar rutas públicas de clientes
-        'get_clientes',
-        'create_cliente',
-        'update_cliente',
-        'delete_cliente',
-=======
         'auth.login',           # Iniciar sesión
         'auth.register',        # Registrarse
         'auth.verify_register', # Verificar código
         'auth.forgot_password', # Olvidé contraseña
         'auth.reset_password',  # Resetear contraseña
         'static',               # Archivos estáticos
->>>>>>> dd2895734a7d0013f32f24cf44869e319cf70b76
     }
 
     @app.before_request
