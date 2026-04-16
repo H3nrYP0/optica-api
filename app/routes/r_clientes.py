@@ -14,7 +14,7 @@ PHONE_REGEX = re.compile(r'^\d{7,15}$')
 # ============================================================
 
 @main_bp.route('/clientes', methods=['GET'])
-def get_clientes():
+def get_clientes_publico():          # ← renombrada
     try:
         clientes = Cliente.query.all()
         return jsonify([cliente.to_dict() for cliente in clientes])
@@ -22,7 +22,7 @@ def get_clientes():
         return jsonify({"error": "Error al obtener clientes"}), 500
 
 @main_bp.route('/clientes', methods=['POST'])
-def create_cliente():
+def create_cliente_publico():        # ← renombrada
     try:
         data = request.get_json()
         required_fields = ['nombre', 'apellido', 'numero_documento', 'fecha_nacimiento']
@@ -69,8 +69,7 @@ def create_cliente():
         }), 500
 
 @main_bp.route('/clientes/<int:id>', methods=['PUT'])
-def update_cliente(id):
-    # Este método probablemente no lo necesites desde landing, pero lo dejas
+def update_cliente_publico(id):      # ← renombrada
     try:
         cliente = Cliente.query.get(id)
         if not cliente:
@@ -95,7 +94,7 @@ def update_cliente(id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 @main_bp.route('/clientes/<int:id>', methods=['DELETE'])
-def delete_cliente(id):
+def delete_cliente_publico(id):      # ← renombrada
     try:
         cliente = Cliente.query.get(id)
         if not cliente:
@@ -106,7 +105,6 @@ def delete_cliente(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al eliminar cliente"}), 500
-    
 # ============================================================
 # CLIENTE VE SU PROPIO PERFIL
 # ============================================================
