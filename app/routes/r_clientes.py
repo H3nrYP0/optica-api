@@ -106,7 +106,7 @@ def delete_cliente(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al eliminar cliente"}), 500
-
+    
 # ============================================================
 # CLIENTE VE SU PROPIO PERFIL
 # ============================================================

@@ -56,6 +56,10 @@ def create_app():
         'auth.forgot_password', # Olvidé contraseña
         'auth.reset_password',  # Resetear contraseña
         'static',               # Archivos estáticos
+        'get_clientes',
+        'create_cliente',
+        'update_cliente',
+        'delete_cliente',
     }
 
     @app.before_request
