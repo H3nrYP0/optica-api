@@ -9,6 +9,103 @@ import re
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 PHONE_REGEX = re.compile(r'^\d{7,15}$')
 
+# ============================================================
+# RUTAS PÚBLICAS (para landing page)
+# ============================================================
+
+@main_bp.route('/clientes', methods=['GET'])
+def get_clientes():
+    try:
+        clientes = Cliente.query.all()
+        return jsonify([cliente.to_dict() for cliente in clientes])
+    except Exception as e:
+        return jsonify({"error": "Error al obtener clientes"}), 500
+
+@main_bp.route('/clientes', methods=['POST'])
+def create_cliente():
+    try:
+        data = request.get_json()
+        required_fields = ['nombre', 'apellido', 'numero_documento', 'fecha_nacimiento']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        cliente_existente = Cliente.query.filter_by(numero_documento=data['numero_documento']).first()
+        if cliente_existente:
+            return jsonify({
+                "success": False,
+                "error": "Ya existe un cliente con este número de documento"
+            }), 400
+
+        cliente = Cliente(
+            nombre=data['nombre'],
+            apellido=data['apellido'],
+            tipo_documento=data.get('tipo_documento'),
+            numero_documento=data['numero_documento'],
+            fecha_nacimiento=datetime.strptime(data['fecha_nacimiento'], '%Y-%m-%d').date(),
+            genero=data.get('genero'),
+            telefono=data.get('telefono'),
+            correo=data.get('correo'),
+            municipio=data.get('municipio'),
+            direccion=data.get('direccion'),
+            ocupacion=data.get('ocupacion'),
+            telefono_emergencia=data.get('telefono_emergencia'),
+            estado=data.get('estado', True)
+        )
+        db.session.add(cliente)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Cliente creado exitosamente",
+            "cliente": cliente.to_dict()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "success": False,
+            "error": f"Error al crear cliente: {str(e)}"
+        }), 500
+
+@main_bp.route('/clientes/<int:id>', methods=['PUT'])
+def update_cliente(id):
+    # Este método probablemente no lo necesites desde landing, pero lo dejas
+    try:
+        cliente = Cliente.query.get(id)
+        if not cliente:
+            return jsonify({"error": "Cliente no encontrado"}), 404
+        data = request.get_json()
+        if 'nombre' in data: cliente.nombre = data['nombre']
+        if 'apellido' in data: cliente.apellido = data['apellido']
+        if 'tipo_documento' in data: cliente.tipo_documento = data['tipo_documento']
+        if 'numero_documento' in data: cliente.numero_documento = data['numero_documento']
+        if 'fecha_nacimiento' in data: cliente.fecha_nacimiento = datetime.strptime(data['fecha_nacimiento'], '%Y-%m-%d').date()
+        if 'genero' in data: cliente.genero = data['genero']
+        if 'telefono' in data: cliente.telefono = data['telefono']
+        if 'correo' in data: cliente.correo = data['correo']
+        if 'municipio' in data: cliente.municipio = data['municipio']
+        if 'direccion' in data: cliente.direccion = data['direccion']
+        if 'ocupacion' in data: cliente.ocupacion = data['ocupacion']
+        if 'telefono_emergencia' in data: cliente.telefono_emergencia = data['telefono_emergencia']
+        db.session.commit()
+        return jsonify({"success": True, "message": "Cliente actualizado", "cliente": cliente.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@main_bp.route('/clientes/<int:id>', methods=['DELETE'])
+def delete_cliente(id):
+    try:
+        cliente = Cliente.query.get(id)
+        if not cliente:
+            return jsonify({"error": "Cliente no encontrado"}), 404
+        db.session.delete(cliente)
+        db.session.commit()
+        return jsonify({"message": "Cliente eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Error al eliminar cliente"}), 500
 
 # ============================================================
 # CLIENTE VE SU PROPIO PERFIL

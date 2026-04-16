@@ -42,6 +42,11 @@ def create_app():
         'auth.forgot_password',
         'auth.reset_password',
         'static',
+        # ✅ Agregar rutas públicas de clientes
+        'get_clientes',
+        'create_cliente',
+        'update_cliente',
+        'delete_cliente',
     }
 
     @app.before_request
