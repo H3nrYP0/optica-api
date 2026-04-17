@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Cliente, HistorialFormula, Usuario
+from app.Models.models import Cliente, HistorialFormula, Usuario, Cita
 from app.auth.decorators import jwt_requerido, get_usuario_actual
 from datetime import datetime
 from app.routes import main_bp
@@ -213,6 +213,89 @@ def cambiar_mi_contrasenia():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al cambiar contraseña: {str(e)}"}), 500
+
+# ============================================================
+# CLIENTE: VER SUS CITAS
+# ============================================================
+@main_bp.route('/cliente/citas', methods=['GET'])
+@jwt_requerido
+def get_mis_citas():
+    """Cliente obtiene TODAS sus citas (ordenadas por fecha descendente)"""
+    try:
+        claims = get_usuario_actual()
+        usuario_id = claims.get('id')
+        
+        usuario = Usuario.query.get(usuario_id)
+        if not usuario or not usuario.cliente_id:
+            return jsonify({"error": "No tienes un perfil de cliente asociado"}), 404
+        
+        # Obtener todas las citas del cliente, ordenadas por fecha más reciente primero
+        citas = Cita.query.filter_by(cliente_id=usuario.cliente_id).order_by(Cita.fecha.desc(), Cita.hora.desc()).all()
+        
+        # to_dict() ya incluye servicio_nombre, estado_nombre, empleado_nombre, etc.
+        return jsonify([cita.to_dict() for cita in citas])
+    except Exception as e:
+        return jsonify({"error": f"Error al obtener citas: {str(e)}"}), 500
+
+
+# ============================================================
+# CLIENTE: CANCELAR UNA CITA PROPIA
+# ============================================================
+@main_bp.route('/cliente/citas/<int:cita_id>', methods=['DELETE'])
+@jwt_requerido
+def cancelar_mi_cita(cita_id):
+    """Cliente cancela una de sus citas (solo si está Pendiente o Confirmada)"""
+    try:
+        claims = get_usuario_actual()
+        usuario_id = claims.get('id')
+        
+        usuario = Usuario.query.get(usuario_id)
+        if not usuario or not usuario.cliente_id:
+            return jsonify({"error": "No tienes un perfil de cliente asociado"}), 404
+        
+        cita = Cita.query.get(cita_id)
+        if not cita:
+            return jsonify({"error": "Cita no encontrada"}), 404
+        
+        # Verificar que la cita pertenezca al cliente
+        if cita.cliente_id != usuario.cliente_id:
+            return jsonify({"error": "No puedes cancelar una cita que no te pertenece"}), 403
+        
+        # Solo se pueden cancelar citas en estado Pendiente (2) o Confirmada (1)
+        if cita.estado_cita_id not in [1, 2]:
+            return jsonify({"error": "Solo se pueden cancelar citas pendientes o confirmadas"}), 400
+        
+        # Verificar que la cita no sea en el pasado
+        ahora = datetime.utcnow()
+        fecha_hora_cita = datetime.combine(cita.fecha, cita.hora)
+        if fecha_hora_cita < ahora:
+            return jsonify({"error": "No se puede cancelar una cita que ya pasó"}), 400
+        
+        # Cambiar estado a Cancelada (id=4)
+        cita.estado_cita_id = 4
+        db.session.commit()
+        
+        # Datos para la notificación (se usará en el frontend para WhatsApp)
+        cliente_nombre = f"{usuario.cliente.nombre} {usuario.cliente.apellido}"
+        servicio_nombre = cita.servicio.nombre if cita.servicio else "servicio"
+        fecha_str = cita.fecha.strftime('%d/%m/%Y')
+        hora_str = cita.hora.strftime('%H:%M')
+        
+        return jsonify({
+            "success": True,
+            "message": "Cita cancelada correctamente",
+            "cita": {
+                "id": cita.id,
+                "servicio": servicio_nombre,
+                "fecha": fecha_str,
+                "hora": hora_str,
+                "cliente": cliente_nombre
+            }
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al cancelar cita: {str(e)}"}), 500
 
 
 # ============================================================
