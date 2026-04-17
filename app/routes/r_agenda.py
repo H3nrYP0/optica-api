@@ -810,7 +810,7 @@ def verificar_disponibilidad():
         }), 500
 
 # ============================================================
-# Disponibilidad Multiple
+# DISPONIBILIDAD MÚLTIPLE (OPTIMIZADO)
 # ============================================================
 @main_bp.route('/verificar-disponibilidad-multiple', methods=['GET'])
 def verificar_disponibilidad_multiple():
@@ -858,14 +858,20 @@ def verificar_disponibilidad_multiple():
             empleados = Empleado.query.filter_by(estado=True).all()
 
         if not empleados:
-            return jsonify({"error": "No hay empleados activos"}), 400
+            return jsonify({"horas_disponibles": []})
 
-        # Obtener horarios y novedades de todos los empleados (para filtrar rápidamente)
+        # ------------------- PRECARGAR DATOS ESTÁTICOS -------------------
         from app.Models.models import Horario, Novedad
+        from collections import defaultdict
+
+        # Horarios por empleado
         horarios_por_emp = {}
-        novedades_por_emp = {}
         for emp in empleados:
             horarios_por_emp[emp.id] = Horario.query.filter_by(empleado_id=emp.id, activo=True).all()
+
+        # Novedades por empleado (solo las que afectan esta fecha)
+        novedades_por_emp = {}
+        for emp in empleados:
             novedades_por_emp[emp.id] = Novedad.query.filter(
                 Novedad.empleado_id == emp.id,
                 Novedad.fecha_inicio <= fecha,
@@ -873,14 +879,24 @@ def verificar_disponibilidad_multiple():
                 Novedad.activo == True
             ).all()
 
-        # Determinar el rango horario global (mínimo inicio, máximo fin)
+        # ------------------- PRECARGAR CITAS DE LA FECHA -------------------
+        # Una sola consulta para todas las citas del día
+        citas_por_empleado = defaultdict(list)
+        todas_citas = Cita.query.filter(Cita.fecha == fecha).all()
+        ids_empleados = {emp.id for emp in empleados}
+        for cita in todas_citas:
+            if cita.empleado_id in ids_empleados:
+                inicio_cita = datetime.combine(cita.fecha, cita.hora)
+                fin_cita = inicio_cita + timedelta(minutes=cita.duracion or 30)
+                citas_por_empleado[cita.empleado_id].append((inicio_cita, fin_cita))
+
+        # ------------------- DETERMINAR RANGO HORARIO GLOBAL -------------------
         dia_semana = fecha.weekday()
         hora_global_inicio = 24
         hora_global_fin = 0
         for emp in empleados:
             horarios_dia = [h for h in horarios_por_emp.get(emp.id, []) if h.dia == dia_semana]
             if horarios_dia:
-                # Tomar el primer horario (puede haber varios? normalmente uno por día)
                 h = horarios_dia[0]
                 inicio_min = h.hora_inicio.hour * 60 + h.hora_inicio.minute
                 fin_min = h.hora_final.hour * 60 + h.hora_final.minute
@@ -890,9 +906,9 @@ def verificar_disponibilidad_multiple():
                     hora_global_fin = fin_min
 
         if hora_global_inicio == 24 or hora_global_fin == 0:
-            return jsonify({"horas_disponibles": []})  # nadie trabaja ese día
+            return jsonify({"horas_disponibles": []})
 
-        # Generar horas posibles con el intervalo dado
+        # ------------------- GENERAR HORAS POSIBLES -------------------
         horas_posibles = []
         current_min = hora_global_inicio
         while current_min + duracion <= hora_global_fin:
@@ -901,56 +917,41 @@ def verificar_disponibilidad_multiple():
             horas_posibles.append(f"{h:02d}:{m:02d}")
             current_min += intervalo
 
-        # Para cada hora, buscar empleado disponible
+        # ------------------- EVALUAR CADA HORA (USANDO DATOS PRECARGADOS) -------------------
         resultado = []
         for hora_str in horas_posibles:
-            try:
-                hora_time = datetime.strptime(hora_str, '%H:%M').time()
-            except ValueError:
-                continue
+            hora_time = datetime.strptime(hora_str, '%H:%M').time()
+            inicio_solicitado = datetime.combine(fecha, hora_time)
+            fin_solicitado = inicio_solicitado + timedelta(minutes=duracion)
 
             empleado_asignado = None
             for emp in empleados:
-                # Verificar novedades (solo si la novedad es por día completo o por rango horario)
-                tiene_novedad = False
-                for nov in novedades_por_emp.get(emp.id, []):
-                    if nov.hora_inicio is None and nov.hora_fin is None:
-                        tiene_novedad = True
-                        break
-                    if nov.hora_inicio and nov.hora_fin:
-                        if nov.hora_inicio <= hora_time <= nov.hora_fin:
-                            tiene_novedad = True
-                            break
+                # 1. Verificar novedades
+                tiene_novedad = any(
+                    (nov.hora_inicio is None and nov.hora_fin is None) or
+                    (nov.hora_inicio and nov.hora_fin and nov.hora_inicio <= hora_time <= nov.hora_fin)
+                    for nov in novedades_por_emp.get(emp.id, [])
+                )
                 if tiene_novedad:
                     continue
 
-                # Verificar horario laboral del empleado
+                # 2. Verificar horario laboral
                 horarios_dia = [h for h in horarios_por_emp.get(emp.id, []) if h.dia == dia_semana]
                 if not horarios_dia:
                     continue
                 horario_emp = horarios_dia[0]
-                if hora_time < horario_emp.hora_inicio or hora_time > horario_emp.hora_final:
+                if not (horario_emp.hora_inicio <= hora_time <= horario_emp.hora_final):
                     continue
-                # Verificar que quepa el servicio antes del fin de jornada
-                fin_servicio = datetime.combine(fecha, hora_time) + timedelta(minutes=duracion)
+                # 3. Verificar que el servicio quepa antes del fin de jornada
                 fin_jornada = datetime.combine(fecha, horario_emp.hora_final)
-                if fin_servicio > fin_jornada:
+                if fin_solicitado > fin_jornada:
                     continue
 
-                # Verificar conflictos con citas
-                inicio_solicitado = datetime.combine(fecha, hora_time)
-                fin_solicitado = inicio_solicitado + timedelta(minutes=duracion)
-                citas = Cita.query.filter(
-                    Cita.empleado_id == emp.id,
-                    Cita.fecha == fecha
-                ).all()
-                conflictivo = False
-                for c in citas:
-                    inicio_cita = datetime.combine(c.fecha, c.hora)
-                    fin_cita = inicio_cita + timedelta(minutes=c.duracion or 30)
-                    if inicio_solicitado < fin_cita and fin_solicitado > inicio_cita:
-                        conflictivo = True
-                        break
+                # 4. Verificar conflictos con citas (usando lista precargada)
+                conflictivo = any(
+                    inicio_solicitado < fin_cita and fin_solicitado > inicio_cita
+                    for (inicio_cita, fin_cita) in citas_por_empleado.get(emp.id, [])
+                )
                 if not conflictivo:
                     empleado_asignado = emp.id
                     break
