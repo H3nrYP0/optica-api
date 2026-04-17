@@ -6,7 +6,7 @@ class Rol(db.Model):
     __tablename__ = 'rol'
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(50), nullable=False)
-    descripcion = db.Column(db.String(60))
+    descripcion = db.Column(db.String(200))
     estado = db.Column(db.Boolean, default=True)
     usuarios = db.relationship('Usuario', backref='rol', lazy=True)
     permisos = db.relationship(
@@ -119,7 +119,7 @@ class CategoriaProducto(db.Model):
     __tablename__ = 'categoria_producto'
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(50), nullable=False)
-    descripcion = db.Column(db.String(100))
+    descripcion = db.Column(db.String(500))
     estado = db.Column(db.Boolean, default=True)
     productos = db.relationship('Producto', backref='categoria', lazy=True)
 
@@ -144,7 +144,7 @@ class Producto(db.Model):
     precio_compra = db.Column(db.Float, nullable=False)
     stock = db.Column(db.Integer, default=0)
     stock_minimo = db.Column(db.Integer, default=0)
-    descripcion = db.Column(db.String(120)) 
+    descripcion = db.Column(db.String(500)) 
     estado = db.Column(db.Boolean, default=True)
     
     # ✅ AGREGAR ESTA RELACIÓN
@@ -339,7 +339,7 @@ class Servicio(db.Model):
     nombre = db.Column(db.String(65), nullable=False)
     duracion_min = db.Column(db.Integer, nullable=False)
     precio = db.Column(db.Float, nullable=False)
-    descripcion = db.Column(db.String(200))
+    descripcion = db.Column(db.String(500))
     estado = db.Column(db.Boolean, default=True)
     citas = db.relationship('Cita', backref='servicio', lazy=True)
 
@@ -607,7 +607,7 @@ class HistorialFormula(db.Model):
     __tablename__ = 'historial_formula'
     id = db.Column(db.Integer, primary_key=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=False)
-    descripcion = db.Column(db.String(100))
+    descripcion = db.Column(db.String(500))
     od_esfera = db.Column(db.String(10))
     od_cilindro = db.Column(db.String(10))
     od_eje = db.Column(db.String(10))
@@ -630,14 +630,16 @@ class CampanaSalud(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=False)
     empresa = db.Column(db.String(60), nullable=False)
+    nit_empresa = db.Column(db.String(30), unique=True, nullable=False)  # Nuevo, único
     contacto = db.Column(db.String(15))
     fecha = db.Column(db.DateTime, nullable=False)
     hora = db.Column(db.Time, nullable=False)
     direccion = db.Column(db.String(30))
-    observaciones = db.Column(db.String(100))
+    observaciones = db.Column(db.String(500))
+    descripcion = db.Column(db.String(500))     # nuevo campo descripción (500)
     
-    # Nuevo campo: estado_cita_id como FK
-    estado_cita_id = db.Column(db.Integer, db.ForeignKey('estado_cita.id'), nullable=False, default=1)
+    # estado_cita_id como FK, default 2 (Pendiente)
+    estado_cita_id = db.Column(db.Integer, db.ForeignKey('estado_cita.id'), nullable=False, default=2)
     
     # Relaciones
     empleado = db.relationship('Empleado', backref='campanas_salud', lazy=True)
@@ -649,11 +651,13 @@ class CampanaSalud(db.Model):
             'empleado_id': self.empleado_id,
             'empleado_nombre': self.empleado.nombre if self.empleado else None,
             'empresa': self.empresa,
+            'nit_empresa': self.nit_empresa,
             'contacto': self.contacto,
             'fecha': self.fecha.isoformat() if self.fecha else None,
             'hora': self.hora.isoformat() if self.hora else None,
             'direccion': self.direccion,
             'observaciones': self.observaciones,
+            'descripcion': self.descripcion,
             'estado_cita_id': self.estado_cita_id,
             'estado_nombre': self.estado_cita.nombre if self.estado_cita else None
         }
