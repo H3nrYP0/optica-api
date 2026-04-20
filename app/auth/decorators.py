@@ -2,12 +2,17 @@ from functools import wraps
 from flask import jsonify
 from flask_jwt_extended import verify_jwt_in_request, get_jwt
 
+# Interruptor para activar/desactivar autenticación sin tocar el código de las rutas
+import os
+AUTH_ENABLED = os.getenv("AUTH_ENABLED", "true").lower() == "true"
+
 def jwt_requerido(f):
-    """
-    Verifica que la petición incluya un JWT válido y no expirado.
-    """
     @wraps(f)
     def decorated(*args, **kwargs):
+        if not AUTH_ENABLED:
+            # 🔥 Modo desarrollo: deja pasar todo
+            return f(*args, **kwargs)
+
         try:
             verify_jwt_in_request()
         except Exception:
@@ -16,17 +21,18 @@ def jwt_requerido(f):
                 "error": "Token requerido o inválido",
                 "message": "Debes iniciar sesión para acceder a este recurso"
             }), 401
+
         return f(*args, **kwargs)
     return decorated
 
-
 def rol_requerido(*roles_permitidos):
-    """
-    Verifica que el usuario autenticado tenga uno de los roles indicados.
-    """
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
+
+            if not AUTH_ENABLED:
+                return f(*args, **kwargs)
+
             try:
                 verify_jwt_in_request()
                 claims = get_jwt()
@@ -50,14 +56,14 @@ def rol_requerido(*roles_permitidos):
         return decorated
     return decorator
 
-
 def permiso_requerido(permiso: str):
-    """
-    Verifica que el usuario autenticado tenga el permiso específico.
-    """
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
+
+            if not AUTH_ENABLED:
+                return f(*args, **kwargs)
+
             try:
                 verify_jwt_in_request()
                 claims = get_jwt()
@@ -80,7 +86,6 @@ def permiso_requerido(permiso: str):
             return f(*args, **kwargs)
         return decorated
     return decorator
-
 
 def get_usuario_actual() -> dict:
     """
