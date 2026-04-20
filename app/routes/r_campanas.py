@@ -104,10 +104,10 @@ def create_campana_salud():
         if hasattr(empleado, 'estado') and not empleado.estado:
             return jsonify({"error": "No se puede asignar una campaña a un empleado inactivo"}), 400
         
-        # Validar NIT único
-        nit = data['nit_empresa'].strip()
-        if CampanaSalud.query.filter_by(nit_empresa=nit).first():
-            return jsonify({"error": "Ya existe una campaña con ese NIT de empresa"}), 400
+        # ❌ VALIDACIÓN DE NIT ÚNICO ELIMINADA
+        # nit = data['nit_empresa'].strip()
+        # if CampanaSalud.query.filter_by(nit_empresa=nit).first():
+        #     return jsonify({"error": "Ya existe una campaña con ese NIT de empresa"}), 400
         
         # Validar empresa no vacía
         empresa = data['empresa'].strip()
@@ -125,7 +125,7 @@ def create_campana_salud():
         if fecha < datetime.now().date():
             return jsonify({"error": "No se pueden crear campañas en fechas pasadas"}), 400
         
-        # Validar solapamiento por empresa (misma empresa, misma fecha y hora)
+        # ✅ Validar solapamiento por empresa (misma empresa, misma fecha y hora) - OPCIONAL, mantener o comentar
         conflicto_empresa = CampanaSalud.query.filter(
             CampanaSalud.empresa == empresa,
             CampanaSalud.fecha == fecha,
@@ -149,7 +149,7 @@ def create_campana_salud():
         campana = CampanaSalud(
             empleado_id=data['empleado_id'],
             empresa=empresa,
-            nit_empresa=nit,
+            nit_empresa=data['nit_empresa'].strip(),
             contacto=data.get('contacto', '').strip(),
             fecha=fecha,
             hora=hora,
@@ -193,14 +193,12 @@ def update_campana_salud(id):
                 return jsonify({"error": "El nombre de la empresa no puede estar vacío"}), 400
             campana.empresa = empresa
         
-        # Actualizar NIT (validando unicidad excepto esta campaña)
+        # ❌ ACTUALIZAR NIT SIN VALIDACIÓN DE UNICIDAD
         if 'nit_empresa' in data:
             nit = data['nit_empresa'].strip()
             if not nit:
                 return jsonify({"error": "El NIT de la empresa no puede estar vacío"}), 400
-            existente = CampanaSalud.query.filter(CampanaSalud.nit_empresa == nit, CampanaSalud.id != id).first()
-            if existente:
-                return jsonify({"error": "Ya existe otra campaña con ese NIT de empresa"}), 400
+            # Se asigna directamente sin verificar duplicados
             campana.nit_empresa = nit
         
         # Actualizar contacto
@@ -255,7 +253,7 @@ def update_campana_salud(id):
             if not disponibilidad['disponible']:
                 return jsonify({"error": disponibilidad['mensaje']}), 400
         
-        # Validar solapamiento por empresa (si cambió empresa, fecha u hora)
+        # ✅ Validar solapamiento por empresa (si cambió empresa, fecha u hora) - OPCIONAL
         if 'empresa' in data or 'fecha' in data or 'hora' in data:
             conflicto_empresa = CampanaSalud.query.filter(
                 CampanaSalud.empresa == campana.empresa,
