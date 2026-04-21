@@ -65,7 +65,12 @@ def create_pedido():
             metodo_pago=metodo_pago,
             metodo_entrega=metodo_entrega,
             direccion_entrega=data.get('direccion_entrega', '').strip(),
-            estado_id=estado_pendiente.id,          # ← Cambio clave
+            # Nuevos campos de dirección
+            departamento_entrega=data.get('departamento_entrega', '').strip(),
+            municipio_entrega=data.get('municipio_entrega', '').strip(),
+            barrio_entrega=data.get('barrio_entrega', '').strip(),
+            codigo_postal_entrega=data.get('codigo_postal_entrega', '').strip(),
+            estado_id=estado_pendiente.id,
             transferencia_comprobante=data.get('transferencia_comprobante'),
             total=0,
             abono_acumulado=0
@@ -256,6 +261,15 @@ def update_pedido(id):
             pedido.transferencia_comprobante = data['transferencia_comprobante']
         if 'direccion_entrega' in data:
             pedido.direccion_entrega = data['direccion_entrega'].strip()
+        if 'departamento_entrega' in data:
+            pedido.departamento_entrega = data['departamento_entrega'].strip()
+        if 'municipio_entrega' in data:
+            pedido.municipio_entrega = data['municipio_entrega'].strip()
+        if 'barrio_entrega' in data:
+            pedido.barrio_entrega = data['barrio_entrega'].strip()
+        if 'codigo_postal_entrega' in data:
+            pedido.codigo_postal_entrega = data['codigo_postal_entrega'].strip()
+        
         if 'metodo_pago' in data:
             if data['metodo_pago'] not in ['efectivo', 'transferencia', 'tarjeta']:
                 return jsonify({"error": "Método de pago inválido"}), 400

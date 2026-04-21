@@ -32,10 +32,7 @@ def create_cliente_publico():        # ← renombrada
 
         cliente_existente = Cliente.query.filter_by(numero_documento=data['numero_documento']).first()
         if cliente_existente:
-            return jsonify({
-                "success": False,
-                "error": "Ya existe un cliente con este número de documento"
-            }), 400
+            return jsonify({"success": False, "error": "Ya existe un cliente con este número de documento"}), 400
 
         cliente = Cliente(
             nombre=data['nombre'],
@@ -46,8 +43,13 @@ def create_cliente_publico():        # ← renombrada
             genero=data.get('genero'),
             telefono=data.get('telefono'),
             correo=data.get('correo'),
+            # Dirección antigua (se mantienen por compatibilidad)
             municipio=data.get('municipio'),
             direccion=data.get('direccion'),
+            # Nuevos campos
+            departamento=data.get('departamento'),
+            barrio=data.get('barrio'),
+            codigo_postal=data.get('codigo_postal'),
             ocupacion=data.get('ocupacion'),
             telefono_emergencia=data.get('telefono_emergencia'),
             estado=data.get('estado', True)
@@ -85,6 +87,10 @@ def update_cliente_publico(id):      # ← renombrada
         if 'correo' in data: cliente.correo = data['correo']
         if 'municipio' in data: cliente.municipio = data['municipio']
         if 'direccion' in data: cliente.direccion = data['direccion']
+        # Nuevos campos
+        if 'departamento' in data: cliente.departamento = data['departamento']
+        if 'barrio' in data: cliente.barrio = data['barrio']
+        if 'codigo_postal' in data: cliente.codigo_postal = data['codigo_postal']
         if 'ocupacion' in data: cliente.ocupacion = data['ocupacion']
         if 'telefono_emergencia' in data: cliente.telefono_emergencia = data['telefono_emergencia']
         db.session.commit()
@@ -147,36 +153,35 @@ def update_mi_perfil():
             return jsonify({"error": "Cliente no encontrado"}), 404
         
         data = request.get_json()
-        
-        # Campos que el cliente puede editar
+        # Campos permitidos
         if 'nombre' in data:
-            nombre = data['nombre'].strip()
-            if nombre:
-                cliente.nombre = nombre
-        
+            cliente.nombre = data['nombre'].strip()
         if 'apellido' in data:
-            apellido = data['apellido'].strip()
-            if apellido:
-                cliente.apellido = apellido
-        
+            cliente.apellido = data['apellido'].strip()
         if 'telefono' in data:
-            telefono = data['telefono'].strip() if data['telefono'] else None
+            telefono = data['telefono'].strip()
             if telefono and not PHONE_REGEX.match(telefono):
-                return jsonify({"error": "El teléfono debe contener solo números (7-15 dígitos)"}), 400
+                return jsonify({"error": "Teléfono inválido"}), 400
             cliente.telefono = telefono
-        
         if 'direccion' in data:
             cliente.direccion = data['direccion'].strip()
-        
         if 'correo' in data:
-            correo = data['correo'].strip() if data['correo'] else None
+            correo = data['correo'].strip()
             if correo and not EMAIL_REGEX.match(correo):
-                return jsonify({"error": "Formato de correo electrónico inválido"}), 400
+                return jsonify({"error": "Correo inválido"}), 400
             cliente.correo = correo
-        
+        # Nuevos campos editables por el cliente
+        if 'departamento' in data:
+            cliente.departamento = data['departamento'].strip()
+        if 'municipio' in data:
+            cliente.municipio = data['municipio'].strip()
+        if 'barrio' in data:
+            cliente.barrio = data['barrio'].strip()
+        if 'codigo_postal' in data:
+            cliente.codigo_postal = data['codigo_postal'].strip()
+        # ocupacion, telefono_emergencia no se permiten editar al cliente por seguridad (opcional)
         db.session.commit()
         return jsonify({"success": True, "message": "Perfil actualizado", "cliente": cliente.to_dict()})
-        
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar perfil: {str(e)}"}), 500
@@ -360,6 +365,9 @@ def create_cliente():
             correo=correo or None,
             municipio=data.get('municipio', '').strip(),
             direccion=data.get('direccion', '').strip(),
+            departamento=data.get('departamento', '').strip(),
+            barrio=data.get('barrio', '').strip(),
+            codigo_postal=data.get('codigo_postal', '').strip(),
             ocupacion=data.get('ocupacion', '').strip(),
             telefono_emergencia=data.get('telefono_emergencia', '').strip() or None,
             estado=data.get('estado', True)
@@ -431,6 +439,12 @@ def update_cliente(id):
             cliente.municipio = data['municipio'].strip()
         if 'direccion' in data:
             cliente.direccion = data['direccion'].strip()
+        if 'departamento' in data:
+            cliente.departamento = data['departamento'].strip()
+        if 'barrio' in data:
+            cliente.barrio = data['barrio'].strip()
+        if 'codigo_postal' in data:
+            cliente.codigo_postal = data['codigo_postal'].strip()
         if 'ocupacion' in data:
             cliente.ocupacion = data['ocupacion'].strip()
         if 'telefono_emergencia' in data:

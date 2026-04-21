@@ -176,13 +176,16 @@ class Pedido(db.Model):
     total = db.Column(db.Float, nullable=False)
     metodo_pago = db.Column(db.String(20))
     metodo_entrega = db.Column(db.String(20))
-    direccion_entrega = db.Column(db.String(255))
+    # Dirección de entrega detallada
+    direccion_entrega = db.Column(db.String(100))          # línea de dirección
+    departamento_entrega = db.Column(db.String(50))
+    municipio_entrega = db.Column(db.String(50))
+    barrio_entrega = db.Column(db.String(50))
+    codigo_postal_entrega = db.Column(db.String(10))
     transferencia_comprobante = db.Column(db.String(255))
     abono_acumulado = db.Column(db.Float, default=0.0)
-    # Relación con EstadoPedido
     estado_id = db.Column(db.Integer, db.ForeignKey('estado_pedido.id'), nullable=False)
     estado = db.relationship('EstadoPedido', backref='pedidos')
-    # Relaciones existentes
     cliente = db.relationship('Cliente', backref='pedidos')
     items = db.relationship('DetallePedido', backref='pedido', lazy=True, cascade='all, delete-orphan')
     abonos = db.relationship('Abono', foreign_keys='Abono.pedido_id', backref='pedido', lazy=True)
@@ -200,6 +203,10 @@ class Pedido(db.Model):
             'metodo_pago': self.metodo_pago,
             'metodo_entrega': self.metodo_entrega,
             'direccion_entrega': self.direccion_entrega,
+            'departamento_entrega': self.departamento_entrega,
+            'municipio_entrega': self.municipio_entrega,
+            'barrio_entrega': self.barrio_entrega,
+            'codigo_postal_entrega': self.codigo_postal_entrega,
             'transferencia_comprobante': self.transferencia_comprobante,
             'abono_acumulado': self.abono_acumulado,
             'saldo_pendiente': self.saldo_pendiente,
@@ -387,17 +394,22 @@ class Cliente(db.Model):
     __tablename__ = 'cliente'
     id = db.Column(db.Integer, primary_key=True)
     tipo_documento = db.Column(db.String(4))
-    numero_documento = db.Column(db.String(20), nullable=True)  # Cambié a String
+    numero_documento = db.Column(db.String(20), nullable=True)
     nombre = db.Column(db.String(25), nullable=False)
     apellido = db.Column(db.String(20), nullable=False)
     fecha_nacimiento = db.Column(db.Date, nullable=True)
-    genero = db.Column(db.String(10))  # 'Masculino', 'Femenino', 'Otro'
+    genero = db.Column(db.String(10))
     telefono = db.Column(db.String(20))
     correo = db.Column(db.String(30))
-    municipio = db.Column(db.String(15))
-    direccion = db.Column(db.String(30))
+    # Dirección anterior (la mantenemos pero actualizamos longitud)
+    municipio = db.Column(db.String(50))          # antes era 15
+    direccion = db.Column(db.String(100))         # antes era 30
+    # Nuevos campos
+    departamento = db.Column(db.String(50))
+    barrio = db.Column(db.String(50))
+    codigo_postal = db.Column(db.String(10))
     ocupacion = db.Column(db.String(20))
-    telefono_emergencia = db.Column(db.String(20))  # Cambié a String
+    telefono_emergencia = db.Column(db.String(20))
     estado = db.Column(db.Boolean, default=True)
     citas = db.relationship('Cita', backref='cliente', lazy=True)
     historiales = db.relationship('HistorialFormula', backref='cliente', lazy=True)
@@ -413,8 +425,11 @@ class Cliente(db.Model):
             'genero': self.genero,
             'telefono': self.telefono,
             'correo': self.correo,
+            'departamento': self.departamento,
             'municipio': self.municipio,
+            'barrio': self.barrio,
             'direccion': self.direccion,
+            'codigo_postal': self.codigo_postal,
             'ocupacion': self.ocupacion,
             'telefono_emergencia': self.telefono_emergencia,
             'estado': self.estado
