@@ -63,30 +63,73 @@ def create_app():
 
     @app.before_request
     def verificar_autenticacion():
-        # ✅ FIX CORS: las peticiones OPTIONS (preflight) SIEMPRE deben pasar
-        # sin verificar token — si las bloqueamos, el navegador rechaza la conexión
+        # 1. Las peticiones OPTIONS de CORS siempre pasan
         if request.method == 'OPTIONS':
             return None
 
-        # Mantén esto en None mientras desarrollas.
-        # Cuando actives la autenticación, elimina el return None de abajo
-        # y descomenta el bloque original.
-        return None
+        # 2. LISTA BLANCA: Rutas que no requieren token
+        # Formato: 'nombre_blueprint.nombre_funcion'
+        RUTAS_PUBLICAS = {
+            'auth.login',
+            'auth.register',
+            'auth.verify_register',
+            'auth.forgot_password',
+            'auth.reset_password',
+            'main.get_clientes_publico',
+            'main.create_cliente_publico',
+            'main.update_cliente_publico',
+            'main.delete_cliente_publico',
+            'static',
+        }
 
-        # ========== ACTIVAR EN PRODUCCIÓN ==========
-        # if request.endpoint in RUTAS_PUBLICAS:
-        #     return None
-        #
-        # from flask_jwt_extended import verify_jwt_in_request
-        # try:
-        #     verify_jwt_in_request()
-        # except Exception:
-        #     return jsonify({
-        #         "success": False,
-        #         "error": "Token requerido o inválido",
-        #         "message": "Debes iniciar sesión para acceder a este recurso"
-        #     }), 401
-        # ============================================
+        # 3. Si la ruta es pública, permitimos el acceso
+        if request.endpoint in RUTAS_PUBLICAS:
+            return None
+
+        # 4. AUTENTICACIÓN GLOBAL: Si no es pública, debe tener JWT
+        from flask_jwt_extended import verify_jwt_in_request
+        try:
+            # Esto verifica que el token sea válido y no haya expirado
+            verify_jwt_in_request()
+            # Si llega aquí, la persona es "quién dice ser"
+        except Exception:
+            return jsonify({
+                "success": False,
+                "error": "Token requerido",
+                "message": "Debes iniciar sesión para acceder a este recurso"
+            }), 401
+        
+        # 2. LISTA BLANCA: Rutas que no requieren token
+        # Formato: 'nombre_blueprint.nombre_funcion'
+        RUTAS_PUBLICAS = {
+            'auth.login',
+            'auth.register',
+            'auth.verify_register',
+            'auth.forgot_password',
+            'auth.reset_password',
+            'main.get_clientes_publico',
+            'main.create_cliente_publico',
+            'main.update_cliente_publico',
+            'main.delete_cliente_publico',
+            'static',
+        }
+
+        # 3. Si la ruta es pública, permitimos el acceso
+        if request.endpoint in RUTAS_PUBLICAS:
+            return None
+
+        # 4. AUTENTICACIÓN GLOBAL: Si no es pública, debe tener JWT
+        from flask_jwt_extended import verify_jwt_in_request
+        try:
+            # Esto verifica que el token sea válido y no haya expirado
+            verify_jwt_in_request()
+            # Si llega aquí, la persona es "quién dice ser"
+        except Exception:
+            return jsonify({
+                "success": False,
+                "error": "Token requerido",
+                "message": "Debes iniciar sesión para acceder a este recurso"
+            }), 401
 
     # ============================================================
     # 7. VERIFICAR BASE DE DATOS AL ARRANCAR
