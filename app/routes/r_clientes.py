@@ -1,7 +1,7 @@
 from flask import jsonify, request
 from app.database import db
 from app.Models.models import Cliente, HistorialFormula, Usuario, Cita
-from app.auth.decorators import jwt_requerido, get_usuario_actual
+from app.auth.decorators import get_usuario_actual
 from datetime import datetime
 from app.routes import main_bp
 import re
@@ -22,7 +22,7 @@ def get_clientes_publico():          # ← renombrada
         return jsonify({"error": "Error al obtener clientes"}), 500
 
 @main_bp.route('/clientes', methods=['POST'])
-def create_cliente_publico():        # ← renombrada
+def create_cliente_publico():        
     try:
         data = request.get_json()
         required_fields = ['nombre', 'apellido', 'numero_documento', 'fecha_nacimiento']
@@ -71,7 +71,7 @@ def create_cliente_publico():        # ← renombrada
         }), 500
 
 @main_bp.route('/clientes/<int:id>', methods=['PUT'])
-def update_cliente_publico(id):      # ← renombrada
+def update_cliente_publico(id):     
     try:
         cliente = Cliente.query.get(id)
         if not cliente:
@@ -100,7 +100,7 @@ def update_cliente_publico(id):      # ← renombrada
         return jsonify({"success": False, "error": str(e)}), 500
 
 @main_bp.route('/clientes/<int:id>', methods=['DELETE'])
-def delete_cliente_publico(id):      # ← renombrada
+def delete_cliente_publico(id):      
     try:
         cliente = Cliente.query.get(id)
         if not cliente:
@@ -116,7 +116,7 @@ def delete_cliente_publico(id):      # ← renombrada
 # ============================================================
 
 @main_bp.route('/cliente/perfil', methods=['GET'])
-@jwt_requerido
+
 def get_mi_perfil():
     """Cliente obtiene su propio perfil"""
     try:
@@ -137,7 +137,7 @@ def get_mi_perfil():
 
 
 @main_bp.route('/cliente/perfil', methods=['PUT'])
-@jwt_requerido
+
 def update_mi_perfil():
     """Cliente edita su propio perfil (solo ciertos campos)"""
     try:
@@ -188,7 +188,7 @@ def update_mi_perfil():
 
 
 @main_bp.route('/cliente/cambiar-contrasenia', methods=['POST'])
-@jwt_requerido
+
 def cambiar_mi_contrasenia():
     """Cliente cambia su propia contraseña"""
     try:
@@ -223,7 +223,7 @@ def cambiar_mi_contrasenia():
 # CLIENTE: VER SUS CITAS
 # ============================================================
 @main_bp.route('/cliente/citas', methods=['GET'])
-@jwt_requerido
+
 def get_mis_citas():
     """Cliente obtiene TODAS sus citas (ordenadas por fecha descendente)"""
     try:
@@ -247,7 +247,7 @@ def get_mis_citas():
 # CLIENTE: CANCELAR UNA CITA PROPIA
 # ============================================================
 @main_bp.route('/cliente/citas/<int:cita_id>', methods=['DELETE'])
-@jwt_requerido
+
 def cancelar_mi_cita(cita_id):
     """Cliente cancela una de sus citas (solo si está Pendiente o Confirmada)"""
     try:
@@ -304,11 +304,11 @@ def cancelar_mi_cita(cita_id):
 
 
 # ============================================================
-# ADMIN GESTIONA CLIENTES (CRUD completo)
+# ADMIN GESTIONA CLIENTES (CRUD completo)(Eliminar, Admin solo gestion roles administrativos)
 # ============================================================
 
 @main_bp.route('/admin/clientes', methods=['GET'])
-@jwt_requerido
+
 def get_clientes():
     """Admin lista todos los clientes"""
     try:
@@ -319,7 +319,7 @@ def get_clientes():
 
 
 @main_bp.route('/admin/clientes', methods=['POST'])
-@jwt_requerido
+
 def create_cliente():
     """Admin crea un nuevo cliente"""
     try:
@@ -383,7 +383,7 @@ def create_cliente():
 
 
 @main_bp.route('/admin/clientes/<int:id>', methods=['GET'])
-@jwt_requerido
+
 def get_cliente(id):
     """Admin ve un cliente específico"""
     try:
@@ -396,7 +396,7 @@ def get_cliente(id):
 
 
 @main_bp.route('/admin/clientes/<int:id>', methods=['PUT'])
-@jwt_requerido
+
 def update_cliente(id):
     """Admin edita un cliente"""
     try:
@@ -461,7 +461,7 @@ def update_cliente(id):
 
 
 @main_bp.route('/admin/clientes/<int:id>', methods=['DELETE'])
-@jwt_requerido
+
 def delete_cliente(id):
     """Admin elimina un cliente (solo si no tiene relaciones)"""
     try:
@@ -492,7 +492,7 @@ def delete_cliente(id):
 # ============================================================
 
 @main_bp.route('/cliente/historial', methods=['GET'])
-@jwt_requerido
+
 def get_mi_historial():
     """Cliente ve su propio historial de fórmulas"""
     try:
@@ -510,7 +510,7 @@ def get_mi_historial():
 
 
 @main_bp.route('/admin/clientes/<int:cliente_id>/historial', methods=['GET'])
-@jwt_requerido
+
 def get_historial_cliente(cliente_id):
     """Admin ve el historial de un cliente específico"""
     try:
@@ -525,7 +525,7 @@ def get_historial_cliente(cliente_id):
 
 
 @main_bp.route('/admin/historial-formula', methods=['POST'])
-@jwt_requerido
+
 def create_historial_formula():
     """Admin crea historial de fórmula para un cliente"""
     try:
