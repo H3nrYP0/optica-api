@@ -810,7 +810,7 @@ def verificar_disponibilidad():
         }), 500
 
 # ============================================================
-# DISPONIBILIDAD MÚLTIPLE (VERSIÓN CORREGIDA)
+# DISPONIBILIDAD MÚLTIPLE 
 # ============================================================
 @main_bp.route('/verificar-disponibilidad-multiple', methods=['GET'])
 def verificar_disponibilidad_multiple():

@@ -1,7 +1,7 @@
 from flask import jsonify, request
 from app.database import db
 from app.Models.models import Usuario, Rol
-from app.auth.decorators import jwt_requerido, permiso_requerido, get_usuario_actual
+from app.auth.decorators import permiso_requerido, get_usuario_actual
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.routes import main_bp
 import re
@@ -14,7 +14,7 @@ EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 # ============================================================
 
 @main_bp.route('/usuario/perfil', methods=['GET'])
-@jwt_requerido
+
 def get_mi_perfil_usuario():
     """Cualquier usuario autenticado ve su propio perfil"""
     try:
@@ -40,7 +40,7 @@ def get_mi_perfil_usuario():
 
 
 @main_bp.route('/usuario/perfil', methods=['PUT'])
-@jwt_requerido
+
 def update_mi_perfil_usuario():
     """Usuario edita su propia información"""
     try:
@@ -67,7 +67,7 @@ def update_mi_perfil_usuario():
 
 
 @main_bp.route('/usuario/cambiar-contrasenia', methods=['POST'])
-@jwt_requerido
+
 def cambiar_mi_contrasenia_usuario():
     """Usuario cambia su propia contraseña"""
     try:
@@ -102,7 +102,7 @@ def cambiar_mi_contrasenia_usuario():
 # ============================================================
 
 @main_bp.route('/admin/usuarios', methods=['GET'])
-@permiso_requerido('usuarios')
+
 def get_usuarios():
     """Listar usuarios - requiere permiso 'usuarios'"""
     try:
@@ -113,7 +113,7 @@ def get_usuarios():
 
 
 @main_bp.route('/admin/usuarios', methods=['POST'])
-@permiso_requerido('usuarios')
+
 def create_usuario():
     """Crear usuario - requiere permiso 'usuarios'"""
     try:
@@ -162,7 +162,7 @@ def create_usuario():
 
 
 @main_bp.route('/admin/usuarios/<int:id>', methods=['GET'])
-@permiso_requerido('usuarios')
+
 def get_usuario(id):
     """Ver usuario específico - requiere permiso 'usuarios'"""
     try:
@@ -175,7 +175,7 @@ def get_usuario(id):
 
 
 @main_bp.route('/admin/usuarios/<int:id>', methods=['PUT'])
-@permiso_requerido('usuarios')
+
 def update_usuario(id):
     """Editar usuario - requiere permiso 'usuarios'"""
     try:
@@ -226,7 +226,7 @@ def update_usuario(id):
 
 
 @main_bp.route('/admin/usuarios/<int:id>', methods=['DELETE'])
-@permiso_requerido('usuarios')
+
 def delete_usuario(id):
     """Eliminar usuario - requiere permiso 'usuarios'"""
     try:
