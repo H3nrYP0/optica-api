@@ -102,7 +102,7 @@ def cambiar_mi_contrasenia_usuario():
 # ============================================================
 
 @main_bp.route('/admin/usuarios', methods=['GET'])
-
+@permiso_requerido("usuarios")
 def get_usuarios():
     """Listar usuarios - requiere permiso 'usuarios'"""
     try:
@@ -113,7 +113,7 @@ def get_usuarios():
 
 
 @main_bp.route('/admin/usuarios', methods=['POST'])
-
+@permiso_requerido("usuarios")
 def create_usuario():
     """Crear usuario - requiere permiso 'usuarios'"""
     try:
@@ -162,7 +162,7 @@ def create_usuario():
 
 
 @main_bp.route('/admin/usuarios/<int:id>', methods=['GET'])
-
+@permiso_requerido("usuarios")
 def get_usuario(id):
     """Ver usuario específico - requiere permiso 'usuarios'"""
     try:
@@ -175,7 +175,7 @@ def get_usuario(id):
 
 
 @main_bp.route('/admin/usuarios/<int:id>', methods=['PUT'])
-
+@permiso_requerido("usuarios")
 def update_usuario(id):
     """Editar usuario - requiere permiso 'usuarios'"""
     try:
@@ -226,7 +226,7 @@ def update_usuario(id):
 
 
 @main_bp.route('/admin/usuarios/<int:id>', methods=['DELETE'])
-
+@permiso_requerido("usuarios")
 def delete_usuario(id):
     """Eliminar usuario - requiere permiso 'usuarios'"""
     try:

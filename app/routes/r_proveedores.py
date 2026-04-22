@@ -2,6 +2,7 @@ from flask import jsonify, request
 from app.database import db
 from app.Models.models import Proveedor, Compra
 from app.routes import main_bp
+from app.auth.decorators import permiso_requerido
 import re
 
 # Regex para validar email
@@ -15,6 +16,7 @@ PHONE_REGEX = re.compile(r'^\d{7,15}$')
 # ============================================================
 
 @main_bp.route('/proveedores', methods=['GET'])
+@permiso_requerido("proveedores")
 def get_proveedores():
     try:
         proveedores = Proveedor.query.all()
@@ -24,6 +26,7 @@ def get_proveedores():
 
 
 @main_bp.route('/proveedores', methods=['POST'])
+@permiso_requerido("proveedores")
 def create_proveedor():
     try:
         data = request.get_json()
@@ -96,6 +99,7 @@ def create_proveedor():
 
 
 @main_bp.route('/proveedores/<int:id>', methods=['PUT'])
+@permiso_requerido("proveedores")
 def update_proveedor(id):
     try:
         proveedor = Proveedor.query.get(id)
@@ -190,6 +194,7 @@ def update_proveedor(id):
 
 
 @main_bp.route('/proveedores/<int:id>', methods=['DELETE'])
+@permiso_requerido("proveedores")
 def delete_proveedor(id):
     try:
         proveedor = Proveedor.query.get(id)

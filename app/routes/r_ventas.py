@@ -3,6 +3,7 @@ from app.database import db
 from app.Models.models import Venta, DetalleVenta, Abono, Producto, Cliente, EstadoVenta
 from datetime import datetime
 from app.routes import main_bp
+from app.auth.decorators import permiso_requerido
 
 
 # ============================================================
@@ -10,6 +11,7 @@ from app.routes import main_bp
 # ============================================================
 
 @main_bp.route('/ventas', methods=['GET'])
+@permiso_requerido("ventas")
 def get_ventas():
     try:
         ventas = Venta.query.all()
@@ -19,6 +21,7 @@ def get_ventas():
 
 
 @main_bp.route('/ventas', methods=['POST'])
+@permiso_requerido("ventas")
 def create_venta():
     # Ya no se permiten ventas directas. Solo desde pedidos.
     return jsonify({
@@ -27,6 +30,7 @@ def create_venta():
 
 
 @main_bp.route('/ventas/<int:id>', methods=['GET'])
+@permiso_requerido("ventas")
 def get_venta(id):
     try:
         venta = Venta.query.get(id)
@@ -38,6 +42,7 @@ def get_venta(id):
 
 
 @main_bp.route('/ventas/<int:id>', methods=['PUT'])
+@permiso_requerido("ventas")
 def update_venta(id):
     try:
         venta = Venta.query.get(id)
@@ -86,6 +91,7 @@ def update_venta(id):
 
 
 @main_bp.route('/ventas/<int:id>', methods=['DELETE'])
+@permiso_requerido("ventas")
 def delete_venta(id):
     try:
         venta = Venta.query.get(id)
@@ -112,6 +118,7 @@ def delete_venta(id):
 
 
 @main_bp.route('/ventas/<int:venta_id>/detalles', methods=['GET'])
+@permiso_requerido("ventas")
 def get_detalles_venta_especifica(venta_id):
     try:
         venta = Venta.query.get(venta_id)
@@ -130,6 +137,7 @@ def get_detalles_venta_especifica(venta_id):
 # ============================================================
 
 @main_bp.route('/estado-venta', methods=['GET'])
+@permiso_requerido("ventas")
 def get_estados_venta():
     try:
         estados = EstadoVenta.query.all()
@@ -138,6 +146,7 @@ def get_estados_venta():
         return jsonify({"error": "Error al obtener estados de venta"}), 500
 
 @main_bp.route('/estado-venta', methods=['POST'])
+@permiso_requerido("ventas")
 def create_estado_venta():
     try:
         data = request.get_json()
@@ -153,6 +162,7 @@ def create_estado_venta():
         return jsonify({"error": "Error al crear estado de venta"}), 500
 
 @main_bp.route('/estado-venta/<int:id>', methods=['PUT'])
+@permiso_requerido("ventas")
 def update_estado_venta(id):
     try:
         estado = EstadoVenta.query.get(id)
@@ -170,6 +180,7 @@ def update_estado_venta(id):
         return jsonify({"error": "Error al actualizar estado de venta"}), 500
 
 @main_bp.route('/estado-venta/<int:id>', methods=['DELETE'])
+@permiso_requerido("ventas")
 def delete_estado_venta(id):
     try:
         estado = EstadoVenta.query.get(id)
@@ -192,14 +203,17 @@ def delete_estado_venta(id):
 # ============================================================
 
 @main_bp.route('/ventas/<int:venta_id>/abonos', methods=['POST'])
+@permiso_requerido("ventas")
 def add_abono(venta_id):
     return jsonify({"error": "No se permiten abonos directos sobre ventas. Registre abonos en el pedido correspondiente."}), 400
 
 @main_bp.route('/ventas/<int:venta_id>/abonos', methods=['GET'])
+@permiso_requerido("ventas")
 def get_abonos(venta_id):
     return jsonify({"error": "Los abonos de una venta se pueden consultar a través del endpoint GET /ventas/<id>"}), 400
 
 @main_bp.route('/abonos/<int:id>', methods=['DELETE'])
+@permiso_requerido("ventas")
 def delete_abono(id):
     try:
         abono = Abono.query.get(id)
@@ -225,6 +239,7 @@ def delete_abono(id):
 # ============================================================
 
 @main_bp.route('/detalle-venta', methods=['GET'])
+@permiso_requerido("ventas")
 def get_detalles_venta():
     try:
         detalles = DetalleVenta.query.all()
@@ -234,11 +249,13 @@ def get_detalles_venta():
 
 
 @main_bp.route('/detalle-venta', methods=['POST'])
+@permiso_requerido("ventas")
 def create_detalle_venta():
     return jsonify({"error": "No se pueden crear detalles de venta manualmente. Se crean automáticamente desde el pedido."}), 400
 
 
 @main_bp.route('/detalle-venta/<int:id>', methods=['PUT'])
+@permiso_requerido("ventas")
 def update_detalle_venta(id):
     try:
         detalle = DetalleVenta.query.get(id)
@@ -316,6 +333,7 @@ def update_detalle_venta(id):
 
 
 @main_bp.route('/detalle-venta/<int:id>', methods=['DELETE'])
+@permiso_requerido("ventas")
 def delete_detalle_venta(id):
     try:
         detalle = DetalleVenta.query.get(id)
