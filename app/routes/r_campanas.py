@@ -3,6 +3,7 @@ from app.database import db
 from app.Models.models import CampanaSalud, EstadoCita, Empleado, Horario, Novedad, Cita
 from datetime import datetime, timedelta
 from app.routes import main_bp
+from app.auth.decorators import permiso_requerido
 
 # ============================================================
 # FUNCIÓN AUXILIAR: VALIDAR DISPONIBILIDAD DE EMPLEADO
@@ -67,6 +68,7 @@ def validar_disponibilidad_empleado(empleado_id, fecha, hora, duracion=60, exclu
 # ============================================================
 
 @main_bp.route('/campanas-salud', methods=['GET'])
+@permiso_requerido("citas")
 def get_campanas_salud():
     try:
         campanas = CampanaSalud.query.all()
@@ -76,6 +78,7 @@ def get_campanas_salud():
 
 
 @main_bp.route('/campanas-salud/<int:id>', methods=['GET'])
+@permiso_requerido("citas")
 def get_campana_salud(id):
     try:
         campana = CampanaSalud.query.get(id)
@@ -87,6 +90,7 @@ def get_campana_salud(id):
 
 
 @main_bp.route('/campanas-salud', methods=['POST'])
+@permiso_requerido("citas")
 def create_campana_salud():
     try:
         data = request.get_json()
@@ -169,6 +173,7 @@ def create_campana_salud():
 
 
 @main_bp.route('/campanas-salud/<int:id>', methods=['PUT'])
+@permiso_requerido("citas")
 def update_campana_salud(id):
     try:
         campana = CampanaSalud.query.get(id)
@@ -273,6 +278,7 @@ def update_campana_salud(id):
 
 
 @main_bp.route('/campanas-salud/<int:id>', methods=['DELETE'])
+@permiso_requerido("citas")
 def delete_campana_salud(id):
     try:
         campana = CampanaSalud.query.get(id)
@@ -295,6 +301,7 @@ def delete_campana_salud(id):
 
 
 @main_bp.route('/empleados/<int:empleado_id>/campanas', methods=['GET'])
+@permiso_requerido("citas")
 def get_campanas_por_empleado(empleado_id):
     try:
         empleado = Empleado.query.get(empleado_id)

@@ -2,6 +2,7 @@ from flask import jsonify, request
 from app.database import db
 from app.Models.models import Marca, CategoriaProducto, Producto, Imagen, Multimedia
 from app.routes import main_bp
+from app.auth.decorators import permiso_requerido
 
 
 # ============================================================
@@ -18,6 +19,7 @@ def get_marcas():
 
 
 @main_bp.route('/marcas', methods=['POST'])
+@permiso_requerido("productos")
 def create_marca():
     try:
         data = request.get_json()
@@ -46,6 +48,7 @@ def create_marca():
 
 
 @main_bp.route('/marcas/<int:id>', methods=['PUT'])
+@permiso_requerido("productos")
 def update_marca(id):
     try:
         marca = Marca.query.get(id)
@@ -74,6 +77,7 @@ def update_marca(id):
 
 
 @main_bp.route('/marcas/<int:id>', methods=['DELETE'])
+@permiso_requerido("productos")
 def delete_marca(id):
     try:
         marca = Marca.query.get(id)
@@ -108,6 +112,7 @@ def get_categorias():
 
 
 @main_bp.route('/categorias', methods=['POST'])
+@permiso_requerido("productos")
 def create_categoria():
     try:
         data = request.get_json()
@@ -137,6 +142,7 @@ def create_categoria():
 
 
 @main_bp.route('/categorias/<int:id>', methods=['PUT'])
+@permiso_requerido("productos")
 def update_categoria(id):
     try:
         categoria = CategoriaProducto.query.get(id)
@@ -172,6 +178,7 @@ def update_categoria(id):
 
 
 @main_bp.route('/categorias/<int:id>', methods=['DELETE'])
+@permiso_requerido("productos")
 def delete_categoria(id):
     try:
         categoria = CategoriaProducto.query.get(id)
@@ -206,6 +213,7 @@ def get_productos():
 
 
 @main_bp.route('/productos', methods=['POST'])
+@permiso_requerido("productos")
 def create_producto():
     try:
         data = request.get_json()
@@ -268,6 +276,7 @@ def create_producto():
 
 
 @main_bp.route('/productos/<int:id>', methods=['PUT'])
+@permiso_requerido("productos")
 def update_producto(id):
     try:
         producto = Producto.query.get(id)
@@ -342,6 +351,7 @@ def update_producto(id):
 
 
 @main_bp.route('/productos/<int:id>', methods=['DELETE'])
+@permiso_requerido("productos")
 def delete_producto(id):
     try:
         producto = Producto.query.get(id)
@@ -365,6 +375,7 @@ def delete_producto(id):
 # ============================================================
 
 @main_bp.route('/imagenes', methods=['POST'])
+@permiso_requerido("productos")
 def crear_imagen():
     try:
         data = request.get_json()
@@ -420,6 +431,7 @@ def get_imagenes_por_producto(producto_id):
 
 
 @main_bp.route('/imagenes/<int:id>', methods=['PUT'])
+@permiso_requerido("productos")
 def update_imagen(id):
     try:
         imagen = Imagen.query.get(id)
@@ -450,6 +462,7 @@ def update_imagen(id):
 
 
 @main_bp.route('/imagenes/<int:id>', methods=['DELETE'])
+@permiso_requerido("productos")
 def delete_imagen(id):
     try:
         imagen = Imagen.query.get(id)
@@ -470,6 +483,7 @@ def delete_imagen(id):
 # ============================================================
 
 @main_bp.route('/multimedia', methods=['POST'])
+@permiso_requerido("productos")
 def crear_multimedia():
     try:
         data = request.get_json()
@@ -544,6 +558,7 @@ def obtener_comprobante_pedido(pedido_id):
 
 
 @main_bp.route('/multimedia/<int:id>', methods=['PUT'])
+@permiso_requerido("productos")
 def actualizar_multimedia(id):
     try:
         multimedia = Multimedia.query.get(id)

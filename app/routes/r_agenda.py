@@ -4,6 +4,7 @@ from app.Models.models import Cita, Servicio, Horario, EstadoCita, Empleado, Cli
 from datetime import datetime, timedelta
 import pytz
 from app.routes import main_bp
+from app.auth.decorators import permiso_requerido
 
 # Zona horaria de Colombia
 tz_colombia = pytz.timezone('America/Bogota')
@@ -13,6 +14,7 @@ tz_colombia = pytz.timezone('America/Bogota')
 # ============================================================
 
 @main_bp.route('/citas', methods=['GET'])
+@permiso_requerido("citas")
 def get_citas():
     try:
         page = request.args.get('page', 1, type=int)
@@ -33,6 +35,7 @@ def get_citas():
         return jsonify({"error": f"Error al obtener citas: {str(e)}"}), 500
 
 @main_bp.route('/citas/<int:id>', methods=['GET'])
+@permiso_requerido("citas")
 def get_cita(id):
     try:
         cita = Cita.query.get(id)
@@ -44,6 +47,7 @@ def get_cita(id):
 
 
 @main_bp.route('/citas', methods=['POST'])
+@permiso_requerido("citas")
 def create_cita():
     try:
         data = request.get_json()
@@ -188,6 +192,7 @@ def validar_disponibilidad_cita(empleado_id, fecha, hora, duracion, exclude_cita
     return {"disponible": True, "mensaje": "Horario disponible"}
 
 @main_bp.route('/citas/<int:id>', methods=['PUT'])
+@permiso_requerido("citas")
 def update_cita(id):
     try:
         cita = Cita.query.get(id)
@@ -336,6 +341,7 @@ def update_cita(id):
 
 
 @main_bp.route('/citas/<int:id>', methods=['DELETE'])
+@permiso_requerido("citas")
 def delete_cita(id):
     try:
         cita = Cita.query.get(id)
@@ -376,6 +382,7 @@ def get_servicios():
 
 
 @main_bp.route('/servicios', methods=['POST'])
+@permiso_requerido("servicios")
 def create_servicio():
     try:
         data = request.get_json()
@@ -416,6 +423,7 @@ def create_servicio():
 
 
 @main_bp.route('/servicios/<int:id>', methods=['PUT'])
+@permiso_requerido("servicios")
 def update_servicio(id):
     try:
         servicio = Servicio.query.get(id)
@@ -468,6 +476,7 @@ def update_servicio(id):
 
 
 @main_bp.route('/servicios/<int:id>', methods=['DELETE'])
+@permiso_requerido("servicios")
 def delete_servicio(id):
     try:
         servicio = Servicio.query.get(id)
@@ -494,6 +503,7 @@ def delete_servicio(id):
 # ============================================================
 
 @main_bp.route('/horario', methods=['GET'])
+@permiso_requerido("empleados")
 def get_horarios():
     try:
         horarios = Horario.query.all()
@@ -503,6 +513,7 @@ def get_horarios():
 
 
 @main_bp.route('/horario', methods=['POST'])
+@permiso_requerido("empleados")
 def create_horario():
     try:
         data = request.get_json()
@@ -568,6 +579,7 @@ def create_horario():
 
 
 @main_bp.route('/horario/<int:id>', methods=['PUT'])
+@permiso_requerido("empleados")
 def update_horario(id):
     try:
         horario = Horario.query.get(id)
@@ -615,6 +627,7 @@ def update_horario(id):
 
 
 @main_bp.route('/horario/<int:id>', methods=['DELETE'])
+@permiso_requerido("empleados")
 def delete_horario(id):
     try:
         horario = Horario.query.get(id)
@@ -631,6 +644,7 @@ def delete_horario(id):
 
 
 @main_bp.route('/horario/empleado/<int:empleado_id>', methods=['GET'])
+@permiso_requerido("empleados")
 def get_horarios_por_empleado(empleado_id):
     try:
         horarios = Horario.query.filter_by(empleado_id=empleado_id).all()
@@ -640,6 +654,7 @@ def get_horarios_por_empleado(empleado_id):
 
 
 @main_bp.route('/empleados/<int:empleado_id>/horarios', methods=['GET'])
+@permiso_requerido("empleados")
 def get_horarios_empleado(empleado_id):
     try:
         horarios = Horario.query.filter_by(empleado_id=empleado_id).all()
@@ -1021,6 +1036,7 @@ def get_estados_cita():
 
 
 @main_bp.route('/estado-cita', methods=['POST'])
+@permiso_requerido("citas")
 def create_estado_cita():
     try:
         data = request.get_json()
@@ -1045,6 +1061,7 @@ def create_estado_cita():
 
 
 @main_bp.route('/estado-cita/<int:id>', methods=['PUT'])
+@permiso_requerido("citas")
 def update_estado_cita(id):
     try:
         estado = EstadoCita.query.get(id)
@@ -1072,6 +1089,7 @@ def update_estado_cita(id):
 
 
 @main_bp.route('/estado-cita/<int:id>', methods=['DELETE'])
+@permiso_requerido("citas")
 def delete_estado_cita(id):
     try:
         estado = EstadoCita.query.get(id)
@@ -1095,6 +1113,7 @@ def delete_estado_cita(id):
 # ============================================================
 
 @main_bp.route('/novedades', methods=['GET'])
+@permiso_requerido("empleados")
 def get_novedades():
     try:
         novedades = Novedad.query.all()
@@ -1103,6 +1122,7 @@ def get_novedades():
         return jsonify({"error": "Error al obtener novedades"}), 500
 
 @main_bp.route('/novedades/empleado/<int:empleado_id>', methods=['GET'])
+@permiso_requerido("empleados")
 def get_novedades_por_empleado(empleado_id):
     try:
         novedades = Novedad.query.filter_by(empleado_id=empleado_id).all()
@@ -1111,6 +1131,7 @@ def get_novedades_por_empleado(empleado_id):
         return jsonify({"error": "Error al obtener novedades"}), 500
 
 @main_bp.route('/novedades', methods=['POST'])
+@permiso_requerido("empleados")
 def create_novedad():
     try:
         data = request.get_json()
@@ -1179,6 +1200,7 @@ def create_novedad():
         return jsonify({"error": f"Error al crear novedad: {str(e)}"}), 500
 
 @main_bp.route('/novedades/<int:id>', methods=['PUT'])
+@permiso_requerido("empleados")
 def update_novedad(id):
     try:
         novedad = Novedad.query.get(id)
@@ -1240,6 +1262,7 @@ def update_novedad(id):
         return jsonify({"error": f"Error al actualizar novedad: {str(e)}"}), 500
 
 @main_bp.route('/novedades/<int:id>', methods=['DELETE'])
+@permiso_requerido("empleados")
 def delete_novedad(id):
     try:
         novedad = Novedad.query.get(id)
