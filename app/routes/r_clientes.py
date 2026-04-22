@@ -444,15 +444,15 @@ def create_historial_formula():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear historial: {str(e)}"}), 500
-
-
+    
 @main_bp.route('/admin/historial-formula/<int:id>', methods=['DELETE'])
-@permiso_requerido('clientes')
 def delete_historial_formula(id):
+    """Admin elimina un registro de historial de fórmula"""
     try:
         historial = HistorialFormula.query.get(id)
         if not historial:
             return jsonify({"error": "Historial no encontrado"}), 404
+        
         db.session.delete(historial)
         db.session.commit()
         return jsonify({"message": "Fórmula eliminada correctamente"})
