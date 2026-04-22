@@ -40,9 +40,29 @@ def create_app():
             return None
 
         # ================================================================
-        # RUTAS PÚBLICAS — accesibles sin token (landing page + auth)
-        # Formato: 'blueprint.nombre_funcion'
+        # LOS 13 PERMISOS DEL SISTEMA (asignados por rol en BD):
+        #
+        #   citas        → /citas, /campanas-salud, /estado-cita (escritura)
+        #   servicios    → /servicios (escritura)
+        #   clientes     → /admin/clientes/*, /admin/historial-formula
+        #   empleados    → /empleados, /horario, /novedades
+        #   pedidos      → /pedidos, /detalle-pedido, /estado-pedido, abonos
+        #   productos    → /productos, /marcas, /categorias, /imagenes (escritura)
+        #   proveedores  → /proveedores
+        #   roles        → /roles
+        #   usuarios     → /usuarios, /admin/usuarios
+        #   ventas       → /ventas, /detalle-venta, /estado-venta, /abonos
+        #   compras      → /compras, /detalle-compra
+        #   dashboard    → /dashboard/estadisticas (futuro)
+        #   configuracion→ /permiso, /permiso-rol
+        #
+        # Rol cliente (usuario registrado desde landing):
+        #   Autenticado con JWT — sin @permiso_requerido en sus rutas propias:
+        #   /cliente/perfil, /cliente/citas, /cliente/historial,
+        #   /cliente/cambiar-contrasenia, /pedidos (POST su propio pedido)
         # ================================================================
+
+        # RUTAS PÚBLICAS — accesibles SIN token (landing + auth)
         RUTAS_PUBLICAS = {
             # Auth
             'auth.login',
@@ -51,29 +71,24 @@ def create_app():
             'auth.forgot_password',
             'auth.reset_password',
 
-            # Clientes (registro público desde landing)
+            # Registro de clientes desde landing
             'main.get_clientes_publico',
             'main.create_cliente_publico',
 
-            # Catálogo público (landing page)
+            # Catálogo landing
             'main.get_productos',
             'main.get_categorias',
             'main.get_marcas',
             'main.get_servicios',
 
-            # Imágenes públicas
+            # Imágenes y multimedia públicas
             'main.get_imagenes',
             'main.get_imagen',
             'main.get_imagenes_por_producto',
-            'main.get_imagen_producto',          # alias si existe
+            'main.obtener_comprobante_pedido',
 
-            # Multimedia pública (imágenes de categorías)
-            'main.obtener_comprobante_pedido',    # usado en landing para ver estado pedido
-
-            # Estados de cita (necesario para agendar cita desde landing)
+            # Agendamiento desde landing
             'main.get_estados_cita',
-
-            # Disponibilidad (agendar cita desde landing)
             'main.verificar_disponibilidad',
             'main.verificar_disponibilidad_multiple',
 
@@ -81,13 +96,12 @@ def create_app():
             'static',
             'main.home',
             'main.get_all_endpoints',
+            'main.get_elemento',
         }
 
-        # Permitir acceso si es pública o si la ruta no existe (Flask maneja el 404)
         if not request.endpoint or request.endpoint in RUTAS_PUBLICAS:
             return None
 
-        # Verificación obligatoria de JWT para todo lo demás
         from flask_jwt_extended import verify_jwt_in_request
         try:
             verify_jwt_in_request()
