@@ -3,12 +3,14 @@ from app.database import db
 from app.Models.models import Pedido, DetallePedido, Venta, DetalleVenta, Producto, Cliente, Abono, EstadoPedido
 from datetime import datetime
 from app.routes import main_bp
+from app.auth.decorators import permiso_requerido
 
 # ============================================================
 # MÓDULO: PEDIDOS
 # ============================================================
 
 @main_bp.route('/pedidos', methods=['GET'])
+@permiso_requerido("pedidos")
 def get_pedidos():
     try:
         pedidos = Pedido.query.all()
@@ -18,6 +20,7 @@ def get_pedidos():
 
 
 @main_bp.route('/pedidos', methods=['POST'])
+@permiso_requerido("pedidos")
 def create_pedido():
     try:
         data = request.get_json()
@@ -146,6 +149,7 @@ def create_pedido():
 
 
 @main_bp.route('/pedidos/<int:id>', methods=['GET'])
+@permiso_requerido("pedidos")
 def get_pedido(id):
     try:
         pedido = Pedido.query.get(id)
@@ -157,6 +161,7 @@ def get_pedido(id):
 
 
 @main_bp.route('/pedidos/<int:id>', methods=['PUT'])
+@permiso_requerido("pedidos")
 def update_pedido(id):
     try:
         pedido = Pedido.query.get(id)
@@ -292,6 +297,7 @@ def update_pedido(id):
 
 
 @main_bp.route('/pedidos/<int:id>', methods=['DELETE'])
+@permiso_requerido("pedidos")
 def delete_pedido(id):
     try:
         pedido = Pedido.query.get(id)
@@ -329,6 +335,7 @@ def delete_pedido(id):
 
 
 @main_bp.route('/pedidos/cliente/<int:cliente_id>', methods=['GET'])
+@permiso_requerido("pedidos")
 def get_pedidos_cliente(cliente_id):
     try:
         cliente = Cliente.query.get(cliente_id)
@@ -343,6 +350,7 @@ def get_pedidos_cliente(cliente_id):
 
 
 @main_bp.route('/pedidos/<int:pedido_id>/detalles', methods=['GET'])
+@permiso_requerido("pedidos")
 def get_detalles_de_pedido(pedido_id):
     try:
         pedido = Pedido.query.get(pedido_id)
@@ -361,6 +369,7 @@ def get_detalles_de_pedido(pedido_id):
 # ============================================================
 
 @main_bp.route('/pedidos/<int:id>/abonos', methods=['GET'])
+@permiso_requerido("pedidos")
 def get_abonos_pedido(id):
     try:
         pedido = Pedido.query.get(id)
@@ -374,6 +383,7 @@ def get_abonos_pedido(id):
 
 
 @main_bp.route('/pedidos/<int:id>/abonos', methods=['POST'])
+@permiso_requerido("pedidos")
 def add_abono_pedido(id):
     try:
         pedido = Pedido.query.get(id)
@@ -427,6 +437,7 @@ def add_abono_pedido(id):
 # ============================================================
 
 @main_bp.route('/detalle-pedido', methods=['GET'])
+@permiso_requerido("pedidos")
 def get_detalles_pedido():
     try:
         pedido_id = request.args.get('pedido_id', type=int)
@@ -444,6 +455,7 @@ def get_detalles_pedido():
 
 
 @main_bp.route('/detalle-pedido', methods=['POST'])
+@permiso_requerido("pedidos")
 def create_detalle_pedido():
     try:
         data = request.get_json()
@@ -512,6 +524,7 @@ def create_detalle_pedido():
 
 
 @main_bp.route('/detalle-pedido/<int:id>', methods=['PUT'])
+@permiso_requerido("pedidos")
 def update_detalle_pedido(id):
     try:
         detalle = DetallePedido.query.get(id)
@@ -579,6 +592,7 @@ def update_detalle_pedido(id):
 
 
 @main_bp.route('/detalle-pedido/<int:id>', methods=['DELETE'])
+@permiso_requerido("pedidos")
 def delete_detalle_pedido(id):
     try:
         detalle = DetallePedido.query.get(id)
@@ -612,6 +626,7 @@ def delete_detalle_pedido(id):
 # ============================================================
 
 @main_bp.route('/estado-pedido', methods=['GET'])
+@permiso_requerido("pedidos")
 def get_estados_pedido():
     try:
         estados = EstadoPedido.query.all()
@@ -620,6 +635,7 @@ def get_estados_pedido():
         return jsonify({"error": "Error al obtener estados de pedido"}), 500
 
 @main_bp.route('/estado-pedido', methods=['POST'])
+@permiso_requerido("pedidos")
 def create_estado_pedido():
     try:
         data = request.get_json()
@@ -635,6 +651,7 @@ def create_estado_pedido():
         return jsonify({"error": "Error al crear estado de pedido"}), 500
 
 @main_bp.route('/estado-pedido/<int:id>', methods=['PUT'])
+@permiso_requerido("pedidos")
 def update_estado_pedido(id):
     try:
         estado = EstadoPedido.query.get(id)
@@ -652,6 +669,7 @@ def update_estado_pedido(id):
         return jsonify({"error": "Error al actualizar estado de pedido"}), 500
 
 @main_bp.route('/estado-pedido/<int:id>', methods=['DELETE'])
+@permiso_requerido("pedidos")
 def delete_estado_pedido(id):
     try:
         estado = EstadoPedido.query.get(id)
