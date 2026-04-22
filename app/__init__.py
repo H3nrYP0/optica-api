@@ -49,6 +49,10 @@ def create_app():
             'main.get_clientes_publico',
             'main.create_cliente_publico',
             'static',
+            'main.get_productos',    
+            'main.get_categorias',  
+            'main.get_marcas',       
+            'main.get_servicios'
         }
 
         # Permitir acceso si es pública o si la ruta no existe (para que Flask maneje el 404)
