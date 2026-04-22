@@ -52,7 +52,9 @@ def create_app():
             'main.get_productos',    
             'main.get_categorias',  
             'main.get_marcas',       
-            'main.get_servicios'
+            'main.get_servicios',
+            'main.get_estados_cita',
+            'main.get_imagen_producto'
         }
 
         # Permitir acceso si es pública o si la ruta no existe (para que Flask maneje el 404)
