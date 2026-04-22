@@ -39,25 +39,51 @@ def create_app():
         if request.method == 'OPTIONS':
             return None
 
-        # Lista blanca de endpoints (blueprint.funcion)
+        # ================================================================
+        # RUTAS PÚBLICAS — accesibles sin token (landing page + auth)
+        # Formato: 'blueprint.nombre_funcion'
+        # ================================================================
         RUTAS_PUBLICAS = {
+            # Auth
             'auth.login',
             'auth.register',
             'auth.verify_register',
             'auth.forgot_password',
             'auth.reset_password',
+
+            # Clientes (registro público desde landing)
             'main.get_clientes_publico',
             'main.create_cliente_publico',
-            'static',
-            'main.get_productos',    
-            'main.get_categorias',  
-            'main.get_marcas',       
+
+            # Catálogo público (landing page)
+            'main.get_productos',
+            'main.get_categorias',
+            'main.get_marcas',
             'main.get_servicios',
+
+            # Imágenes públicas
+            'main.get_imagenes',
+            'main.get_imagen',
+            'main.get_imagenes_por_producto',
+            'main.get_imagen_producto',          # alias si existe
+
+            # Multimedia pública (imágenes de categorías)
+            'main.obtener_comprobante_pedido',    # usado en landing para ver estado pedido
+
+            # Estados de cita (necesario para agendar cita desde landing)
             'main.get_estados_cita',
-            'main.get_imagen_producto'
+
+            # Disponibilidad (agendar cita desde landing)
+            'main.verificar_disponibilidad',
+            'main.verificar_disponibilidad_multiple',
+
+            # Utilidades
+            'static',
+            'main.home',
+            'main.get_all_endpoints',
         }
 
-        # Permitir acceso si es pública o si la ruta no existe (para que Flask maneje el 404)
+        # Permitir acceso si es pública o si la ruta no existe (Flask maneja el 404)
         if not request.endpoint or request.endpoint in RUTAS_PUBLICAS:
             return None
 
