@@ -3,6 +3,7 @@ from app.database import db
 from app.Models.models import Empleado, Cita, Horario
 from datetime import datetime
 from app.routes import main_bp
+from app.auth.decorators import permiso_requerido
 import re
 
 # Regex para validar email
@@ -15,6 +16,7 @@ PHONE_REGEX = re.compile(r'^\d{7,15}$')
 # ============================================================
 
 @main_bp.route('/empleados', methods=['GET'])
+@permiso_requerido("empleados")
 def get_empleados():
     try:
         empleados = Empleado.query.order_by(Empleado.id.desc()).all()
@@ -23,6 +25,7 @@ def get_empleados():
         return jsonify({"error": "Error interno al obtener empleados", "detalle": str(e)}), 500
 
 @main_bp.route('/empleados/<int:id>', methods=['GET'])
+@permiso_requerido("empleados")
 def get_empleado(id):
     try:
         empleado = Empleado.query.get(id)
@@ -33,6 +36,7 @@ def get_empleado(id):
         return jsonify({"error": "Error interno al obtener empleado", "detalle": str(e)}), 500
 
 @main_bp.route('/empleados', methods=['POST'])
+@permiso_requerido("empleados")
 def create_empleado():
     try:
         data = request.get_json()
@@ -129,6 +133,7 @@ def create_empleado():
 
 
 @main_bp.route('/empleados/<int:id>', methods=['PUT'])
+@permiso_requerido("empleados")
 def update_empleado(id):
     try:
         empleado = Empleado.query.get(id)
@@ -247,6 +252,7 @@ def update_empleado(id):
 
 
 @main_bp.route('/empleados/<int:id>', methods=['DELETE'])
+@permiso_requerido("empleados")
 def delete_empleado(id):
     try:
         empleado = Empleado.query.get(id)

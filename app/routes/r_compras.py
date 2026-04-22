@@ -3,6 +3,7 @@ from app.database import db
 from app.Models.models import Compra, DetalleCompra, Producto, Proveedor
 from datetime import datetime
 from app.routes import main_bp
+from app.auth.decorators import permiso_requerido
 
 
 # ============================================================
@@ -10,6 +11,7 @@ from app.routes import main_bp
 # ============================================================
 
 @main_bp.route('/compras', methods=['GET'])
+@permiso_requerido("compras")
 def get_compras():
     try:
         compras = Compra.query.all()
@@ -19,6 +21,7 @@ def get_compras():
 
 
 @main_bp.route('/compras', methods=['POST'])
+@permiso_requerido("compras")
 def create_compra():
     try:
         data = request.get_json()
@@ -120,6 +123,7 @@ def create_compra():
 
 
 @main_bp.route('/compras/<int:id>', methods=['PUT'])
+@permiso_requerido("compras")
 def update_compra(id):
     try:
         compra = Compra.query.get(id)
@@ -156,6 +160,7 @@ def update_compra(id):
 
 
 @main_bp.route('/compras/<int:id>', methods=['DELETE'])
+@permiso_requerido("compras")
 def delete_compra(id):
     """
     Eliminar una compra es delicado porque ya alteró el stock.
@@ -187,6 +192,7 @@ def delete_compra(id):
 
 
 @main_bp.route('/compras/<int:compra_id>/detalles', methods=['GET'])
+@permiso_requerido("compras")
 def get_detalles_compra_especifica(compra_id):
     try:
         compra = Compra.query.get(compra_id)
@@ -205,6 +211,7 @@ def get_detalles_compra_especifica(compra_id):
 # ============================================================
 
 @main_bp.route('/detalle-compra', methods=['GET'])
+@permiso_requerido("compras")
 def get_detalles_compra():
     try:
         detalles = DetalleCompra.query.all()
@@ -214,6 +221,7 @@ def get_detalles_compra():
 
 
 @main_bp.route('/detalle-compra', methods=['POST'])
+@permiso_requerido("compras")
 def create_detalle_compra():
     try:
         data = request.get_json()
@@ -272,6 +280,7 @@ def create_detalle_compra():
 
 
 @main_bp.route('/detalle-compra/<int:id>', methods=['PUT'])
+@permiso_requerido("compras")
 def update_detalle_compra(id):
     try:
         detalle = DetalleCompra.query.get(id)
@@ -345,6 +354,7 @@ def update_detalle_compra(id):
 
 
 @main_bp.route('/detalle-compra/<int:id>', methods=['DELETE'])
+@permiso_requerido("compras")
 def delete_detalle_compra(id):
     try:
         detalle = DetalleCompra.query.get(id)
