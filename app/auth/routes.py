@@ -28,7 +28,7 @@ from .helpers import (
     log_login_fallido,
     log_cuenta_inactiva,
 )
-from .decorators import jwt_requerido, get_usuario_actual
+from .decorators import get_usuario_actual
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -354,7 +354,7 @@ def reset_password():
 # POST /auth/logout
 # =============================================
 @auth_bp.route('/logout', methods=['POST'])
-@jwt_requerido
+
 def logout():
     return jsonify({
         "success": True,
@@ -366,7 +366,7 @@ def logout():
 # GET /auth/me
 # =============================================
 @auth_bp.route('/me', methods=['GET'])
-@jwt_requerido
+
 def me():
     claims = get_usuario_actual()
     return jsonify({
