@@ -636,7 +636,13 @@ class HistorialFormula(db.Model):
             'id': self.id,
             'cliente_id': self.cliente_id,
             'descripcion': self.descripcion,
-            'fecha': self.fecha.isoformat()
+            'fecha': self.fecha.isoformat(),
+            'od_esfera': self.od_esfera,
+            'od_cilindro': self.od_cilindro,
+            'od_eje': self.od_eje,
+            'oi_esfera': self.oi_esfera,
+            'oi_cilindro': self.oi_cilindro,
+            'oi_eje': self.oi_eje,
         }
     
 class CampanaSalud(db.Model):
