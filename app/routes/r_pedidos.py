@@ -13,8 +13,29 @@ from app.auth.decorators import permiso_requerido
 @permiso_requerido("pedidos")
 def get_pedidos():
     try:
-        pedidos = Pedido.query.all()
-        return jsonify([pedido.to_dict() for pedido in pedidos])
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+        estado_id = request.args.get('estado_id', type=int)
+        cliente_id = request.args.get('cliente_id', type=int)
+
+        query = Pedido.query
+        if estado_id:
+            query = query.filter(Pedido.estado_id == estado_id)
+        if cliente_id:
+            query = query.filter(Pedido.cliente_id == cliente_id)
+
+        # Ordenar por fecha descendente
+        query = query.order_by(Pedido.fecha.desc())
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        return jsonify({
+            'data': [pedido.to_dict() for pedido in pagination.items],
+            'total': pagination.total,
+            'page': pagination.page,
+            'per_page': pagination.per_page,
+            'total_pages': pagination.pages
+        })
     except Exception as e:
         return jsonify({"error": f"Error al obtener pedidos: {str(e)}"}), 500
 
@@ -341,10 +362,26 @@ def get_pedidos_cliente(cliente_id):
         cliente = Cliente.query.get(cliente_id)
         if not cliente:
             return jsonify({"error": "Cliente no encontrado"}), 404
-        
-        pedidos = Pedido.query.filter_by(cliente_id=cliente_id).order_by(Pedido.fecha.desc()).all()
-        return jsonify([pedido.to_dict() for pedido in pedidos])
-        
+
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+        estado_id = request.args.get('estado_id', type=int)
+
+        query = Pedido.query.filter_by(cliente_id=cliente_id)
+        if estado_id:
+            query = query.filter(Pedido.estado_id == estado_id)
+
+        query = query.order_by(Pedido.fecha.desc())
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        return jsonify({
+            'data': [pedido.to_dict() for pedido in pagination.items],
+            'total': pagination.total,
+            'page': pagination.page,
+            'per_page': pagination.per_page,
+            'total_pages': pagination.pages
+        })
     except Exception as e:
         return jsonify({"error": f"Error al obtener pedidos del cliente: {str(e)}"}), 500
 

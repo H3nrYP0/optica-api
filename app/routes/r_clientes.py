@@ -192,8 +192,27 @@ def get_mis_citas():
         usuario = Usuario.query.get(usuario_id)
         if not usuario or not usuario.cliente_id:
             return jsonify({"error": "No tienes un perfil de cliente asociado"}), 404
-        citas = Cita.query.filter_by(cliente_id=usuario.cliente_id).order_by(Cita.fecha.desc(), Cita.hora.desc()).all()
-        return jsonify([cita.to_dict() for cita in citas])
+
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+        estado_id = request.args.get('estado_id', type=int)
+
+        query = Cita.query.filter_by(cliente_id=usuario.cliente_id)
+        if estado_id:
+            query = query.filter(Cita.estado_cita_id == estado_id)
+
+        # Ordenar por fecha y hora descendente
+        query = query.order_by(Cita.fecha.desc(), Cita.hora.desc())
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        return jsonify({
+            'data': [cita.to_dict() for cita in pagination.items],
+            'total': pagination.total,
+            'page': pagination.page,
+            'per_page': pagination.per_page,
+            'total_pages': pagination.pages
+        })
     except Exception as e:
         return jsonify({"error": f"Error al obtener citas: {str(e)}"}), 500
 

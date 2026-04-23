@@ -14,10 +14,21 @@ from app.auth.decorators import permiso_requerido
 @permiso_requerido("compras")
 def get_compras():
     try:
-        compras = Compra.query.all()
-        return jsonify([compra.to_dict() for compra in compras])
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+
+        query = Compra.query.order_by(Compra.fecha.desc())
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        return jsonify({
+            'data': [compra.to_dict() for compra in pagination.items],
+            'total': pagination.total,
+            'page': pagination.page,
+            'per_page': pagination.per_page,
+            'total_pages': pagination.pages
+        })
     except Exception as e:
-        return jsonify({"error": "Error al obtener compras"}), 500
+        return jsonify({"error": f"Error al obtener compras: {str(e)}"}), 500
 
 
 @main_bp.route('/compras', methods=['POST'])

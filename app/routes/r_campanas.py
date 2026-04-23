@@ -71,10 +71,38 @@ def validar_disponibilidad_empleado(empleado_id, fecha, hora, duracion=60, exclu
 @permiso_requerido("citas")
 def get_campanas_salud():
     try:
-        campanas = CampanaSalud.query.all()
-        return jsonify([campana.to_dict() for campana in campanas])
+        # Parámetros de paginación
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+        
+        # Filtros opcionales (útiles para el frontend)
+        estado_id = request.args.get('estado_id', type=int)
+        empleado_id = request.args.get('empleado_id', type=int)
+        empresa = request.args.get('empresa', type=str)
+        
+        query = CampanaSalud.query
+        
+        if estado_id:
+            query = query.filter(CampanaSalud.estado_cita_id == estado_id)
+        if empleado_id:
+            query = query.filter(CampanaSalud.empleado_id == empleado_id)
+        if empresa:
+            query = query.filter(CampanaSalud.empresa.ilike(f'%{empresa}%'))
+        
+        # Ordenar por fecha y hora descendente (más reciente primero)
+        query = query.order_by(CampanaSalud.fecha.desc(), CampanaSalud.hora.desc())
+        
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        return jsonify({
+            'data': [campana.to_dict() for campana in pagination.items],
+            'total': pagination.total,
+            'page': pagination.page,
+            'per_page': pagination.per_page,
+            'total_pages': pagination.pages
+        })
     except Exception as e:
-        return jsonify({"error": "Error al obtener campañas"}), 500
+        return jsonify({"error": f"Error al obtener campañas: {str(e)}"}), 500
 
 
 @main_bp.route('/campanas-salud/<int:id>', methods=['GET'])
@@ -301,15 +329,27 @@ def delete_campana_salud(id):
 
 
 @main_bp.route('/empleados/<int:empleado_id>/campanas', methods=['GET'])
-@permiso_requerido("citas")
+@permiso_requerido("citas")   # o el permiso que corresponda
 def get_campanas_por_empleado(empleado_id):
     try:
         empleado = Empleado.query.get(empleado_id)
         if not empleado:
             return jsonify({"error": "Empleado no encontrado"}), 404
-        
-        campanas = CampanaSalud.query.filter_by(empleado_id=empleado_id).all()
-        return jsonify([campana.to_dict() for campana in campanas])
-        
+
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+
+        query = CampanaSalud.query.filter_by(empleado_id=empleado_id).order_by(
+            CampanaSalud.fecha.desc(), CampanaSalud.hora.desc()
+        )
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        return jsonify({
+            'data': [campana.to_dict() for campana in pagination.items],
+            'total': pagination.total,
+            'page': pagination.page,
+            'per_page': pagination.per_page,
+            'total_pages': pagination.pages
+        })
     except Exception as e:
         return jsonify({"error": f"Error al obtener campañas del empleado: {str(e)}"}), 500
