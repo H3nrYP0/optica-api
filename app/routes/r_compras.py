@@ -17,8 +17,9 @@ def get_compras():
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
 
-        query = Compra.query.order_by(Compra.fecha.desc())
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        pagination = Compra.query.order_by(Compra.id.desc()).paginate(
+            page=page, per_page=per_page, error_out=False
+        )
 
         return jsonify({
             'data': [compra.to_dict() for compra in pagination.items],

@@ -15,19 +15,10 @@ def get_pedidos():
     try:
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
-        estado_id = request.args.get('estado_id', type=int)
-        cliente_id = request.args.get('cliente_id', type=int)
 
-        query = Pedido.query
-        if estado_id:
-            query = query.filter(Pedido.estado_id == estado_id)
-        if cliente_id:
-            query = query.filter(Pedido.cliente_id == cliente_id)
-
-        # Ordenar por fecha descendente
-        query = query.order_by(Pedido.fecha.desc())
-
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        pagination = Pedido.query.order_by(Pedido.id.desc()).paginate(
+            page=page, per_page=per_page, error_out=False
+        )
 
         return jsonify({
             'data': [pedido.to_dict() for pedido in pagination.items],
@@ -38,7 +29,6 @@ def get_pedidos():
         })
     except Exception as e:
         return jsonify({"error": f"Error al obtener pedidos: {str(e)}"}), 500
-
 
 @main_bp.route('/pedidos', methods=['POST'])
 @permiso_requerido("pedidos")
@@ -365,14 +355,8 @@ def get_pedidos_cliente(cliente_id):
 
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
-        estado_id = request.args.get('estado_id', type=int)
 
-        query = Pedido.query.filter_by(cliente_id=cliente_id)
-        if estado_id:
-            query = query.filter(Pedido.estado_id == estado_id)
-
-        query = query.order_by(Pedido.fecha.desc())
-
+        query = Pedido.query.filter_by(cliente_id=cliente_id).order_by(Pedido.id.desc())
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
 
         return jsonify({
