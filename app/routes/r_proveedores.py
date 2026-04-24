@@ -19,7 +19,7 @@ PHONE_REGEX = re.compile(r'^\d{7,15}$')
 @permiso_requerido("proveedores")
 def get_proveedores():
     try:
-        proveedores = Proveedor.query.all()
+        proveedores = Proveedor.query.order_by(Proveedor.razon_social_o_nombre.asc()).all()
         return jsonify([proveedor.to_dict() for proveedor in proveedores])
     except Exception as e:
         return jsonify({"error": f"Error al obtener proveedores: {str(e)}"}), 500

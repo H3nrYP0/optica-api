@@ -375,7 +375,7 @@ def delete_cita(id):
 @main_bp.route('/servicios', methods=['GET'])
 def get_servicios():
     try:
-        servicios = Servicio.query.all()
+        servicios = Servicio.query.order_by(Servicio.nombre.asc()).all()
         return jsonify([servicio.to_dict() for servicio in servicios])
     except Exception as e:
         return jsonify({"error": "Error al obtener servicios"}), 500

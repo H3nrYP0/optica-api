@@ -12,7 +12,7 @@ from app.auth.decorators import permiso_requerido
 @main_bp.route('/marcas', methods=['GET'])
 def get_marcas():
     try:
-        marcas = Marca.query.all()
+        marcas = Marca.query.order_by(Marca.nombre.asc()).all()
         return jsonify([marca.to_dict() for marca in marcas])
     except Exception as e:
         return jsonify({"error": "Error al obtener marcas"}), 500
@@ -206,7 +206,7 @@ def delete_categoria(id):
 @main_bp.route('/productos', methods=['GET'])
 def get_productos():
     try:
-        productos = Producto.query.all()
+        productos = Producto.query.order_by(Producto.nombre.asc()).all()
         return jsonify([producto.to_dict() for producto in productos])
     except Exception as e:
         return jsonify({"error": "Error al obtener productos"}), 500
