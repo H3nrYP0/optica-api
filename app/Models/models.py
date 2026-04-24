@@ -29,6 +29,7 @@ class Usuario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
     nombre = db.Column(db.String(50), nullable=False)
+    apellido = db.Column(db.String(50), nullable=False)
     correo = db.Column(db.String(100), nullable=False)
     contrasenia = db.Column(db.String(255), nullable=False)
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=True)
@@ -44,6 +45,7 @@ class Usuario(db.Model):
             'id': self.id,
             'rol_id': self.rol_id,
             'nombre': self.nombre,
+            'apellido': self.apellido,
             'correo': self.correo,
             'contrasenia': self.contrasenia,
             'cliente_id': self.cliente_id,
