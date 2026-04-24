@@ -14,7 +14,7 @@ from app.auth.decorators import permiso_requerido
 @permiso_requerido("compras")
 def get_compras():
     try:
-        compras = Compra.query.order_by(Compra.id.desc()).all()
+        compras = Compra.query.order_by(Compra.fecha.desc()).all()
         return jsonify([compra.to_dict() for compra in compras])
     except Exception as e:
         return jsonify({"error": f"Error al obtener compras: {str(e)}"}), 500

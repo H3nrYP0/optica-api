@@ -14,7 +14,7 @@ from app.auth.decorators import permiso_requerido
 @permiso_requerido("ventas")
 def get_ventas():
     try:
-        ventas = Venta.query.order_by(Venta.id.desc()).all()
+        ventas = Venta.query.order_by(Venta.fecha_venta.desc()).all()
         return jsonify([venta.to_dict() for venta in ventas])
     except Exception as e:
         return jsonify({"error": f"Error al obtener ventas: {str(e)}"}), 500

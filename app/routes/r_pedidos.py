@@ -13,7 +13,7 @@ from app.auth.decorators import permiso_requerido
 @permiso_requerido("pedidos")
 def get_pedidos():
     try:
-        pedidos = Pedido.query.all()
+        pedidos = Pedido.query.order_by(Pedido.fecha.desc()).all()
         return jsonify([pedido.to_dict() for pedido in pedidos])
     except Exception as e:
         return jsonify({"error": f"Error al obtener pedidos: {str(e)}"}), 500
@@ -341,13 +341,12 @@ def get_pedidos_cliente(cliente_id):
         cliente = Cliente.query.get(cliente_id)
         if not cliente:
             return jsonify({"error": "Cliente no encontrado"}), 404
-        
-        pedidos = Pedido.query.filter_by(cliente_id=cliente_id).order_by(Pedido.fecha.desc()).all()
+
+        pedidos = Pedido.query.filter_by(cliente_id=cliente_id)\
+            .order_by(Pedido.fecha.desc()).all()
         return jsonify([pedido.to_dict() for pedido in pedidos])
-        
     except Exception as e:
         return jsonify({"error": f"Error al obtener pedidos del cliente: {str(e)}"}), 500
-
 
 @main_bp.route('/pedidos/<int:pedido_id>/detalles', methods=['GET'])
 @permiso_requerido("pedidos")

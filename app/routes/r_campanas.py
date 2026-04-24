@@ -71,10 +71,13 @@ def validar_disponibilidad_empleado(empleado_id, fecha, hora, duracion=60, exclu
 @permiso_requerido("citas")
 def get_campanas_salud():
     try:
-        campanas = CampanaSalud.query.all()
+        campanas = CampanaSalud.query.order_by(
+            CampanaSalud.fecha.desc(), 
+            CampanaSalud.hora.desc()
+        ).all()
         return jsonify([campana.to_dict() for campana in campanas])
     except Exception as e:
-        return jsonify({"error": "Error al obtener campañas"}), 500
+        return jsonify({"error": f"Error al obtener campañas: {str(e)}"}), 500
 
 
 @main_bp.route('/campanas-salud/<int:id>', methods=['GET'])
@@ -307,9 +310,9 @@ def get_campanas_por_empleado(empleado_id):
         empleado = Empleado.query.get(empleado_id)
         if not empleado:
             return jsonify({"error": "Empleado no encontrado"}), 404
-        
-        campanas = CampanaSalud.query.filter_by(empleado_id=empleado_id).all()
+
+        campanas = CampanaSalud.query.filter_by(empleado_id=empleado_id)\
+            .order_by(CampanaSalud.fecha.desc(), CampanaSalud.hora.desc()).all()
         return jsonify([campana.to_dict() for campana in campanas])
-        
     except Exception as e:
         return jsonify({"error": f"Error al obtener campañas del empleado: {str(e)}"}), 500
