@@ -14,20 +14,8 @@ from app.auth.decorators import permiso_requerido
 @permiso_requerido("ventas")
 def get_ventas():
     try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 10, type=int)
-
-        pagination = Venta.query.order_by(Venta.id.desc()).paginate(
-            page=page, per_page=per_page, error_out=False
-        )
-
-        return jsonify({
-            'data': [venta.to_dict() for venta in pagination.items],
-            'total': pagination.total,
-            'page': pagination.page,
-            'per_page': pagination.per_page,
-            'total_pages': pagination.pages
-        })
+        ventas = Venta.query.order_by(Venta.id.desc()).all()
+        return jsonify([venta.to_dict() for venta in ventas])
     except Exception as e:
         return jsonify({"error": f"Error al obtener ventas: {str(e)}"}), 500
 

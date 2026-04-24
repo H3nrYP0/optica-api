@@ -13,20 +13,8 @@ from app.auth.decorators import permiso_requerido
 @permiso_requerido("pedidos")
 def get_pedidos():
     try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 10, type=int)
-
-        pagination = Pedido.query.order_by(Pedido.id.desc()).paginate(
-            page=page, per_page=per_page, error_out=False
-        )
-
-        return jsonify({
-            'data': [pedido.to_dict() for pedido in pagination.items],
-            'total': pagination.total,
-            'page': pagination.page,
-            'per_page': pagination.per_page,
-            'total_pages': pagination.pages
-        })
+        pedidos = Pedido.query.order_by(Pedido.id.desc()).all()
+        return jsonify([pedido.to_dict() for pedido in pedidos])
     except Exception as e:
         return jsonify({"error": f"Error al obtener pedidos: {str(e)}"}), 500
 
@@ -353,19 +341,9 @@ def get_pedidos_cliente(cliente_id):
         if not cliente:
             return jsonify({"error": "Cliente no encontrado"}), 404
 
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 10, type=int)
-
-        query = Pedido.query.filter_by(cliente_id=cliente_id).order_by(Pedido.id.desc())
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-
-        return jsonify({
-            'data': [pedido.to_dict() for pedido in pagination.items],
-            'total': pagination.total,
-            'page': pagination.page,
-            'per_page': pagination.per_page,
-            'total_pages': pagination.pages
-        })
+        pedidos = Pedido.query.filter_by(cliente_id=cliente_id)\
+            .order_by(Pedido.id.desc()).all()
+        return jsonify([pedido.to_dict() for pedido in pedidos])
     except Exception as e:
         return jsonify({"error": f"Error al obtener pedidos del cliente: {str(e)}"}), 500
 

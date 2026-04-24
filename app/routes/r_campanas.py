@@ -71,20 +71,8 @@ def validar_disponibilidad_empleado(empleado_id, fecha, hora, duracion=60, exclu
 @permiso_requerido("citas")
 def get_campanas_salud():
     try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 10, type=int)
-
-        pagination = CampanaSalud.query.order_by(CampanaSalud.id.desc()).paginate(
-            page=page, per_page=per_page, error_out=False
-        )
-
-        return jsonify({
-            'data': [campana.to_dict() for campana in pagination.items],
-            'total': pagination.total,
-            'page': pagination.page,
-            'per_page': pagination.per_page,
-            'total_pages': pagination.pages
-        })
+        campanas = CampanaSalud.query.order_by(CampanaSalud.id.desc()).all()
+        return jsonify([campana.to_dict() for campana in campanas])
     except Exception as e:
         return jsonify({"error": f"Error al obtener campañas: {str(e)}"}), 500
 
@@ -320,18 +308,8 @@ def get_campanas_por_empleado(empleado_id):
         if not empleado:
             return jsonify({"error": "Empleado no encontrado"}), 404
 
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 10, type=int)
-
-        query = CampanaSalud.query.filter_by(empleado_id=empleado_id).order_by(CampanaSalud.id.desc())
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-
-        return jsonify({
-            'data': [campana.to_dict() for campana in pagination.items],
-            'total': pagination.total,
-            'page': pagination.page,
-            'per_page': pagination.per_page,
-            'total_pages': pagination.pages
-        })
+        campanas = CampanaSalud.query.filter_by(empleado_id=empleado_id)\
+            .order_by(CampanaSalud.id.desc()).all()
+        return jsonify([campana.to_dict() for campana in campanas])
     except Exception as e:
         return jsonify({"error": f"Error al obtener campañas del empleado: {str(e)}"}), 500
