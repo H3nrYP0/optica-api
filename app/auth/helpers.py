@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from werkzeug.security import check_password_hash
 from flask_jwt_extended import create_access_token
 
@@ -7,7 +6,7 @@ security_logger = logging.getLogger('security')
 
 
 def verificar_contrasenia(contrasenia_plana: str, contrasenia_guardada: str, usuario_id: int) -> bool:
-    """Verifica la contraseña y loguea el resultado."""
+    """Verifica contraseña"""
     try:
         resultado = check_password_hash(contrasenia_guardada, contrasenia_plana)
         if resultado:
@@ -16,26 +15,23 @@ def verificar_contrasenia(contrasenia_plana: str, contrasenia_guardada: str, usu
             security_logger.warning(f"⚠️ Contraseña INCORRECTA: usuario_id={usuario_id}")
         return resultado
     except Exception as e:
-        security_logger.error(f"❌ Error en verificación (user {usuario_id}): {e}")
+        security_logger.error(f"❌ Error: {e}")
         return False
 
 
 def generar_token(usuario, permisos: list, nombre_rol: str, nombre_completo: str, es_cliente: bool, empleado_id: int = None) -> str:
-    """Genera JWT con claims de identidad, rol, permisos y tipo de usuario."""
+    """Genera JWT con claims"""
     claims = {
         "id": usuario.id,
         "nombre": nombre_completo,
         "correo": usuario.correo,
-        "rol": nombre_rol.lower().strip() if nombre_rol else "usuario",
+        "rol": nombre_rol.lower() if nombre_rol else None,
         "rol_id": usuario.rol_id,
         "permisos": permisos,
         "es_cliente": es_cliente,
         "empleado_id": empleado_id
     }
-    return create_access_token(
-        identity=str(usuario.id),
-        additional_claims=claims
-    )
+    return create_access_token(identity=str(usuario.id), additional_claims=claims)
 
 
 def log_login_exitoso(usuario_id: int, nombre_rol: str, ip: str) -> None:
