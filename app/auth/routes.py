@@ -1,11 +1,10 @@
-# app/auth/routes.py
 """
 Blueprint de autenticación: /auth
 
 Rutas:
     POST /auth/login            → login con JWT
     POST /auth/register         → inicia registro, envía código por Brevo
-    POST /auth/verify-register  → verifica código y crea el usuario
+    POST /auth/verify-register  → verifica código y crea el cliente + usuario
     POST /auth/forgot-password  → envía código de recuperación por Brevo
     POST /auth/reset-password   → verifica código y actualiza contraseña
     POST /auth/logout           → cierra sesión (instrucción al frontend)
@@ -19,7 +18,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request
 
 from app.database import db
-from app.Models.models import Usuario, Cliente, Rol
+from app.Models.models import Usuario, Cliente, Empleado, Rol
 from app.services.email_service import enviar_codigo_verificacion, enviar_codigo_reset
 from .helpers import (
     verificar_contrasenia,
@@ -28,17 +27,13 @@ from .helpers import (
     log_login_fallido,
     log_cuenta_inactiva,
 )
-from .decorators import get_usuario_actual
+from .decorators import get_usuario_actual, jwt_requerido
 
 auth_bp = Blueprint('auth', __name__)
 
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Almacenamiento temporal de códigos en memoria RAM.
-#
-# TODO (producción): mover a tabla PostgreSQL 'codigos_temporales'
-# ─────────────────────────────────────────────────────────────────────────────
 codigos_verificacion: dict = {}
 codigos_reset: dict = {}
 
@@ -81,37 +76,58 @@ def login():
             log_cuenta_inactiva(correo, ip_cliente)
             return jsonify({"success": False, "error": "Tu cuenta está inactiva. Contacta al administrador."}), 403
 
-        # Cambio temporal 
-        contrasenia_valida = True    #verificar_contrasenia(
-        #    contrasenia,
-        #    usuario.contrasenia,
-        #    usuario.id,
-        #    db
-        #)
+        # Verificar contraseña
+        contrasenia_valida = verificar_contrasenia(
+            contrasenia,
+            usuario.contrasenia,
+            usuario.id
+        )
         if not contrasenia_valida:
             log_login_fallido("contraseña incorrecta", correo, ip_cliente)
             return jsonify({"success": False, "error": "Correo o contraseña incorrectos"}), 401
 
-        nombre_rol = "usuario"
+        # ============================================================
+        # DETERMINAR TIPO DE USUARIO (CRÍTICO)
+        # ============================================================
+        es_cliente = False
+        nombre_completo = ""
         permisos = []
+        rol_nombre = None
+        empleado_id = None
 
-        if usuario.rol:
-            nombre_rol = usuario.rol.nombre.lower().strip()
-            permisos = [p.nombre for p in usuario.rol.permisos]
+        if usuario.empleado_id and usuario.rol_id:
+            # Empleado administrativo
+            empleado = usuario.empleado
+            nombre_completo = f"{empleado.nombre} {empleado.apellido}"
+            permisos = [p.nombre for p in usuario.rol.permisos] if usuario.rol.permisos else []
+            rol_nombre = usuario.rol.nombre
+            empleado_id = empleado.id
+            es_cliente = False
+        elif usuario.cliente_id:
+            # Cliente registrado (sin rol)
+            cliente = usuario.cliente
+            nombre_completo = f"{cliente.nombre} {cliente.apellido}"
+            permisos = []
+            rol_nombre = None
+            es_cliente = True
+        else:
+            return jsonify({"success": False, "error": "Configuración de usuario inválida"}), 401
 
-        token = generar_token(usuario, permisos, nombre_rol)
-        log_login_exitoso(usuario.id, nombre_rol, ip_cliente)
+        token = generar_token(usuario, permisos, rol_nombre, nombre_completo, es_cliente, empleado_id)
+        log_login_exitoso(usuario.id, rol_nombre or "cliente", ip_cliente)
 
         return jsonify({
             "success": True,
             "token": token,
             "usuario": {
-                "id":       usuario.id,
-                "nombre":   usuario.nombre,
-                "correo":   usuario.correo,
-                "rol":      nombre_rol,
-                "rol_id":   usuario.rol_id,
+                "id": usuario.id,
+                "nombre": nombre_completo,
+                "correo": usuario.correo,
+                "rol": rol_nombre,
+                "rol_id": usuario.rol_id,
                 "permisos": permisos,
+                "es_cliente": es_cliente,
+                "empleado_id": empleado_id
             }
         }), 200
 
@@ -120,7 +136,7 @@ def login():
 
 
 # =============================================
-# POST /auth/register
+# POST /auth/register - Registro de CLIENTE
 # =============================================
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -129,12 +145,14 @@ def register():
         if not data:
             return jsonify({"success": False, "error": "Cuerpo de la petición inválido"}), 400
 
-        required_fields = ['nombre', 'correo', 'contrasenia', 'numeroDocumento', 'fechaNacimiento']
+        required_fields = ['nombre', 'apellido', 'correo', 'contrasenia', 'numeroDocumento', 'fechaNacimiento']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({"success": False, "error": f"El campo '{field}' es requerido"}), 400
 
         correo = data['correo'].strip().lower()
+        nombre = data['nombre'].strip()
+        apellido = data['apellido'].strip()
 
         if not EMAIL_REGEX.match(correo):
             return jsonify({"success": False, "error": "Formato de correo inválido"}), 400
@@ -148,13 +166,13 @@ def register():
         codigo = str(secrets.randbelow(900000) + 100000)
         codigos_verificacion[correo] = {
             "codigo": codigo,
-            "data":   data,
+            "data": data,
             "expira": datetime.utcnow() + timedelta(minutes=EXPIRACION_MINUTOS)
         }
 
         enviado = enviar_codigo_verificacion(
             correo=correo,
-            nombre=data['nombre'],
+            nombre=f"{nombre} {apellido}",
             codigo=codigo
         )
 
@@ -172,7 +190,7 @@ def register():
 
 
 # =============================================
-# POST /auth/verify-register
+# POST /auth/verify-register - CREA CLIENTE + USUARIO
 # =============================================
 @auth_bp.route('/verify-register', methods=['POST'])
 def verify_register():
@@ -194,10 +212,7 @@ def verify_register():
 
         if _codigo_expirado(registro):
             del codigos_verificacion[correo]
-            return jsonify({
-                "success": False,
-                "error": "El código ha expirado. Solicita uno nuevo."
-            }), 400
+            return jsonify({"success": False, "error": "El código ha expirado. Solicita uno nuevo."}), 400
 
         if registro['codigo'] != codigo:
             return jsonify({"success": False, "error": "Código incorrecto"}), 400
@@ -206,58 +221,76 @@ def verify_register():
 
         from werkzeug.security import generate_password_hash
 
-        contrasenia_hash = generate_password_hash(form_data['contrasenia'])
-
-        nombre_parts = form_data['nombre'].strip().split(' ', 1)
-        primer_nombre = nombre_parts[0]
-        apellido = nombre_parts[1] if len(nombre_parts) > 1 else ''
-
-        # ──────────────────────────────────────────────────────────────
-        # 🔥 CAMBIO IMPORTANTE: Buscar el rol "Cliente" por nombre (ID 14)
-        # ──────────────────────────────────────────────────────────────
-        rol_cliente = Rol.query.filter_by(nombre='Cliente').first()
-        if not rol_cliente:
-            # Si por alguna razón no existe, lo creamos
-            rol_cliente = Rol(
-                nombre='Cliente',
-                descripcion='Cliente registrado desde landing page',
-                estado=True
-            )
-            db.session.add(rol_cliente)
-            db.session.commit()
-
+        # ============================================================
+        # 1. CREAR CLIENTE
+        # ============================================================
         cliente = Cliente(
-            nombre=primer_nombre,
-            apellido=apellido,
+            nombre=form_data['nombre'].strip(),
+            apellido=form_data['apellido'].strip(),
             correo=correo,
-            numero_documento=form_data['numeroDocumento'],
+            numero_documento=str(form_data['numeroDocumento']).strip(),
             tipo_documento=form_data.get('tipoDocumento', 'CC'),
             fecha_nacimiento=datetime.strptime(form_data['fechaNacimiento'], '%Y-%m-%d').date(),
-            telefono=form_data.get('telefono'),
+            telefono=form_data.get('telefono', ''),
+            genero=form_data.get('genero', ''),
+            direccion=form_data.get('direccion', ''),
+            departamento=form_data.get('departamento', ''),
+            municipio=form_data.get('municipio', ''),
+            barrio=form_data.get('barrio', ''),
+            codigo_postal=form_data.get('codigoPostal', ''),
+            ocupacion=form_data.get('ocupacion', ''),
+            telefono_emergencia=form_data.get('telefonoEmergencia', ''),
             estado=True
         )
         db.session.add(cliente)
-        db.session.flush()
+        db.session.flush()  # Para obtener el ID del cliente
 
-        # Usar el rol Cliente encontrado
+        # ============================================================
+        # 2. CREAR USUARIO (SIN ROL - rol_id = NULL)
+        # ============================================================
         usuario = Usuario(
-            nombre=form_data['nombre'],
             correo=correo,
-            contrasenia=contrasenia_hash,
-            rol_id=rol_cliente.id,  # ← Ahora usa el ID del rol Cliente
+            contrasenia=generate_password_hash(form_data['contrasenia']),
+            rol_id=None,               # Cliente NO tiene rol
             estado=True,
-            cliente_id=cliente.id
+            cliente_id=cliente.id,
+            empleado_id=None
         )
         db.session.add(usuario)
         db.session.commit()
 
+        # Limpiar código
         del codigos_verificacion[correo]
 
-        return jsonify({"success": True, "message": "Cuenta creada exitosamente. Ya puedes iniciar sesión."}), 201
+        # ============================================================
+        # 3. GENERAR JWT PARA EL CLIENTE
+        # ============================================================
+        nombre_completo = f"{cliente.nombre} {cliente.apellido}"
+        token = generar_token(
+            usuario=usuario,
+            permisos=[],
+            nombre_rol=None,
+            nombre_completo=nombre_completo,
+            es_cliente=True,
+            empleado_id=None
+        )
+
+        return jsonify({
+            "success": True,
+            "message": "Cliente registrado exitosamente",
+            "token": token,
+            "usuario": {
+                "id": usuario.id,
+                "nombre": nombre_completo,
+                "correo": usuario.correo,
+                "es_cliente": True,
+                "cliente_id": cliente.id
+            }
+        }), 201
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({"success": False, "error": "No se pudo crear la cuenta. Intenta de nuevo."}), 500
+        return jsonify({"success": False, "error": f"No se pudo crear el cliente: {str(e)}"}), 500
 
 
 # =============================================
@@ -278,22 +311,28 @@ def forgot_password():
         if not usuario:
             return jsonify(RESPUESTA_GENERICA), 200
 
+        # Solo empleados administrativos pueden recuperar contraseña
+        if not usuario.empleado_id:
+            return jsonify(RESPUESTA_GENERICA), 200
+
+        empleado = usuario.empleado
         codigo = str(secrets.randbelow(900000) + 100000)
+
         codigos_reset[correo] = {
-            "codigo":      codigo,
-            "usuario_id":  usuario.id,
-            "expira":      datetime.utcnow() + timedelta(minutes=EXPIRACION_MINUTOS)
+            "codigo": codigo,
+            "usuario_id": usuario.id,
+            "expira": datetime.utcnow() + timedelta(minutes=EXPIRACION_MINUTOS)
         }
 
+        nombre_completo = f"{empleado.nombre} {empleado.apellido}"
         enviado = enviar_codigo_reset(
             correo=correo,
-            nombre=usuario.nombre,
+            nombre=nombre_completo,
             codigo=codigo
         )
 
         if not enviado:
             del codigos_reset[correo]
-            return jsonify({"success": False, "error": "No se pudo enviar el código. Intenta de nuevo."}), 500
 
         return jsonify(RESPUESTA_GENERICA), 200
 
@@ -354,7 +393,6 @@ def reset_password():
 # POST /auth/logout
 # =============================================
 @auth_bp.route('/logout', methods=['POST'])
-
 def logout():
     return jsonify({
         "success": True,
@@ -366,17 +404,19 @@ def logout():
 # GET /auth/me
 # =============================================
 @auth_bp.route('/me', methods=['GET'])
-
+@jwt_requerido
 def me():
     claims = get_usuario_actual()
     return jsonify({
         "success": True,
         "usuario": {
-            "id":       claims.get("id"),
-            "nombre":   claims.get("nombre"),
-            "correo":   claims.get("correo"),
-            "rol":      claims.get("rol"),
-            "rol_id":   claims.get("rol_id"),
+            "id": claims.get("id"),
+            "nombre": claims.get("nombre"),
+            "correo": claims.get("correo"),
+            "rol": claims.get("rol"),
+            "rol_id": claims.get("rol_id"),
             "permisos": claims.get("permisos", []),
+            "es_cliente": claims.get("es_cliente", False),
+            "empleado_id": claims.get("empleado_id")
         }
     }), 200

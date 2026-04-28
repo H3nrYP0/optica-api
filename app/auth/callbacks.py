@@ -8,10 +8,6 @@ def init_callbacks(app):
     """
     Registra todos los callbacks de error de JWT en la app Flask.
     Llamar UNA SOLA VEZ desde init_auth(app).
-
-    IMPORTANTE: el JWTManager de este módulo es el único que debe
-    existir. En create_app() NO crear otro JWTManager(app) — solo
-    llamar init_auth(app) que llega aquí y hace init_app(app).
     """
     jwt.init_app(app)
 
