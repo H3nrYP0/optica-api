@@ -1,11 +1,14 @@
 from app.database import db
 from datetime import datetime
 
-# ===== TABLAS DE ROLES Y USUARIOS =====
+# ============================================================
+# TABLAS DE ROLES Y USUARIOS
+# ============================================================
+
 class Rol(db.Model):
     __tablename__ = 'rol'
     id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(50), nullable=False)
+    nombre = db.Column(db.String(50), nullable=False, unique=True)
     descripcion = db.Column(db.String(200))
     estado = db.Column(db.Boolean, default=True)
     usuarios = db.relationship('Usuario', backref='rol', lazy=True)
@@ -30,7 +33,7 @@ class Usuario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     correo = db.Column(db.String(100), nullable=False, unique=True)
     contrasenia = db.Column(db.String(255), nullable=False)
-    rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
+    rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=True)  # NULL = cliente sin rol
     estado = db.Column(db.Boolean, default=True)
     empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=True)
@@ -39,6 +42,20 @@ class Usuario(db.Model):
     cliente = db.relationship('Cliente', backref=db.backref('usuario', uselist=False), lazy=True)
 
     def to_dict(self):
+        # Determinar si es administrativo o cliente
+        if self.empleado_id and self.empleado:
+            nombre = self.empleado.nombre
+            apellido = self.empleado.apellido
+            es_admin = True
+        elif self.cliente_id and self.cliente:
+            nombre = self.cliente.nombre
+            apellido = self.cliente.apellido
+            es_admin = False
+        else:
+            nombre = None
+            apellido = None
+            es_admin = False
+            
         return {
             'id': self.id,
             'correo': self.correo,
@@ -47,14 +64,16 @@ class Usuario(db.Model):
             'estado': self.estado,
             'empleado_id': self.empleado_id,
             'cliente_id': self.cliente_id,
-            'nombre': self.empleado.nombre if self.empleado else (self.cliente.nombre if self.cliente else None),
-            'apellido': self.empleado.apellido if self.empleado else (self.cliente.apellido if self.cliente else None),
+            'nombre': nombre,
+            'apellido': apellido,
+            'es_admin': es_admin
         }
+
 
 class Permiso(db.Model):
     __tablename__ = 'permiso'
     id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(50), nullable=False)
+    nombre = db.Column(db.String(50), nullable=False, unique=True)
 
     def to_dict(self):
         return {
@@ -77,7 +96,10 @@ class PermisoPorRol(db.Model):
         }
 
 
-# ===== TABLAS DE PRODUCTOS =====
+# ============================================================
+# TABLAS DE PRODUCTOS
+# ============================================================
+
 class Marca(db.Model):
     __tablename__ = 'marca'
     id = db.Column(db.Integer, primary_key=True)
@@ -157,7 +179,10 @@ class Producto(db.Model):
         }
 
 
-# ===== TABLA DE PEDIDOS =====
+# ============================================================
+# TABLA DE PEDIDOS
+# ============================================================
+
 class Pedido(db.Model):
     __tablename__ = 'pedido'
     id = db.Column(db.Integer, primary_key=True)
@@ -237,7 +262,10 @@ class EstadoPedido(db.Model):
         return {'id': self.id, 'nombre': self.nombre}
 
 
-# ===== TABLA DE ABONO =====
+# ============================================================
+# TABLA DE ABONO
+# ============================================================
+
 class Abono(db.Model):
     __tablename__ = 'abono'
     id = db.Column(db.Integer, primary_key=True)
@@ -258,7 +286,10 @@ class Abono(db.Model):
         }
 
 
-# ===== TABLAS DE PROVEEDORES Y COMPRAS =====
+# ============================================================
+# TABLAS DE PROVEEDORES Y COMPRAS
+# ============================================================
+
 class Proveedor(db.Model):
     __tablename__ = 'proveedor'
     id = db.Column(db.Integer, primary_key=True)
@@ -331,7 +362,10 @@ class DetalleCompra(db.Model):
         }
 
 
-# ===== TABLAS DE SERVICIOS Y CITAS =====
+# ============================================================
+# TABLAS DE SERVICIOS Y CITAS
+# ============================================================
+
 class Servicio(db.Model):
     __tablename__ = 'servicio'
     id = db.Column(db.Integer, primary_key=True)
@@ -353,7 +387,10 @@ class Servicio(db.Model):
         }
 
 
-# ===== TABLAS DE EMPLEADOS Y CLIENTES =====
+# ============================================================
+# TABLAS DE EMPLEADOS Y CLIENTES
+# ============================================================
+
 class Empleado(db.Model):
     __tablename__ = 'empleado'
     id = db.Column(db.Integer, primary_key=True)
@@ -392,13 +429,13 @@ class Cliente(db.Model):
     __tablename__ = 'cliente'
     id = db.Column(db.Integer, primary_key=True)
     tipo_documento = db.Column(db.String(4))
-    numero_documento = db.Column(db.String(20), nullable=True)
+    numero_documento = db.Column(db.String(20), nullable=False, unique=True)
     nombre = db.Column(db.String(25), nullable=False)
     apellido = db.Column(db.String(20), nullable=False)
     fecha_nacimiento = db.Column(db.Date, nullable=True)
     genero = db.Column(db.String(10))
     telefono = db.Column(db.String(20))
-    correo = db.Column(db.String(30))
+    correo = db.Column(db.String(30), unique=True)
     municipio = db.Column(db.String(50))
     direccion = db.Column(db.String(100))
     departamento = db.Column(db.String(50))
@@ -433,7 +470,10 @@ class Cliente(db.Model):
         }
 
 
-# ===== TABLAS DE CITAS =====
+# ============================================================
+# TABLAS DE CITAS
+# ============================================================
+
 class Cita(db.Model):
     __tablename__ = 'cita'
     id = db.Column(db.Integer, primary_key=True)
@@ -478,7 +518,10 @@ class EstadoCita(db.Model):
         }
 
 
-# ===== TABLAS DE VENTAS =====
+# ============================================================
+# TABLAS DE VENTAS
+# ============================================================
+
 class Venta(db.Model):
     __tablename__ = 'venta'
     id = db.Column(db.Integer, primary_key=True)
@@ -565,7 +608,10 @@ class EstadoVenta(db.Model):
         return {'id': self.id, 'nombre': self.nombre}
 
 
-# ===== TABLAS ADICIONALES =====
+# ============================================================
+# TABLAS ADICIONALES
+# ============================================================
+
 class Horario(db.Model):
     __tablename__ = 'horario'
     id = db.Column(db.Integer, primary_key=True)
