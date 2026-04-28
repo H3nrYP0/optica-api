@@ -32,9 +32,11 @@ class Usuario(db.Model):
     contrasenia = db.Column(db.String(255), nullable=False)
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
     estado = db.Column(db.Boolean, default=True)
-    # NULLABLE: un usuario SIEMPRE debe tener empleado, pero en BD es FK nullable
     empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=True)
+    cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=True)
+    
     empleado = db.relationship('Empleado', backref=db.backref('usuario', uselist=False), lazy=True)
+    cliente = db.relationship('Cliente', backref=db.backref('usuario', uselist=False), lazy=True)
 
     def to_dict(self):
         return {
@@ -44,10 +46,10 @@ class Usuario(db.Model):
             'rol_nombre': self.rol.nombre if self.rol else None,
             'estado': self.estado,
             'empleado_id': self.empleado_id,
-            'empleado_nombre': self.empleado.nombre if self.empleado else None,
-            'empleado_apellido': self.empleado.apellido if self.empleado else None,
+            'cliente_id': self.cliente_id,
+            'nombre': self.empleado.nombre if self.empleado else (self.cliente.nombre if self.cliente else None),
+            'apellido': self.empleado.apellido if self.empleado else (self.cliente.apellido if self.cliente else None),
         }
-
 
 class Permiso(db.Model):
     __tablename__ = 'permiso'
