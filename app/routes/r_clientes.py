@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Cliente, HistorialFormula, Cita
+from app.Models.models import Cliente, HistorialFormula, Cita, Empleado
 from app.auth.decorators import permiso_requerido
 from datetime import datetime
 from app.routes import main_bp
@@ -10,8 +10,15 @@ EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 PHONE_REGEX = re.compile(r'^\d{7,15}$')
 
 # ============================================================
+# NOTA IMPORTANTE:
+# Los clientes son SOLO para la landing page.
+# NO tienen usuario en el sistema.
+# NO tienen rol.
+# NO acceden al panel administrativo.
+# ============================================================
+
+# ============================================================
 # RUTAS PÚBLICAS (Landing page) — SIN autenticación
-# Clientes se crean/actualizan desde la landing
 # ============================================================
 
 @main_bp.route('/clientes', methods=['GET'])
@@ -41,6 +48,9 @@ def create_cliente_publico():
         nombre = data['nombre'].strip()
         apellido = data['apellido'].strip()
         numero_documento = str(data['numero_documento']).strip()
+
+        if not nombre or not apellido:
+            return jsonify({"error": "Nombre y apellido son requeridos"}), 400
 
         # Validar documento único
         if Cliente.query.filter_by(numero_documento=numero_documento).first():
@@ -199,15 +209,6 @@ def delete_cliente_publico(id):
 
 
 # ============================================================
-# NOTA IMPORTANTE:
-# Los clientes NO tienen usuario del sistema.
-# Por lo tanto, NO existen rutas como /cliente/perfil, /cliente/citas, etc.
-# Si un cliente necesita acceso al sistema, debe convertirse
-# en Empleado y luego crearle un Usuario.
-# ============================================================
-
-
-# ============================================================
 # ADMINISTRACIÓN DE CLIENTES — requiere permiso 'clientes'
 # Solo el staff puede gestionar clientes desde el panel admin
 # ============================================================
@@ -317,7 +318,6 @@ def update_cliente(id):
 
         data = request.get_json()
 
-        # Actualizar campos
         if 'nombre' in data:
             cliente.nombre = data['nombre'].strip()
         if 'apellido' in data:
