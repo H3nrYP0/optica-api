@@ -11,6 +11,7 @@ PHONE_REGEX = re.compile(r'^\d{7,15}$')
 
 # ============================================================
 # MÓDULO: EMPLEADOS
+# Un empleado puede o no tener un usuario del sistema
 # ============================================================
 
 @main_bp.route('/empleados', methods=['GET'])
@@ -21,6 +22,34 @@ def get_empleados():
         return jsonify([e.to_dict() for e in empleados])
     except Exception as e:
         return jsonify({"error": "Error interno al obtener empleados", "detalle": str(e)}), 500
+
+
+@main_bp.route('/empleados/sin-usuario', methods=['GET'])
+@permiso_requerido("usuarios")
+def get_empleados_sin_usuario():
+    """Listar empleados que aún no tienen usuario asignado (útiles para crear usuarios)"""
+    try:
+        empleados = Empleado.query.filter(
+            Empleado.estado == True,
+            Empleado.usuario == None
+        ).order_by(Empleado.id.desc()).all()
+        return jsonify([e.to_dict() for e in empleados])
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+
+@main_bp.route('/empleados/con-usuario', methods=['GET'])
+@permiso_requerido("usuarios")
+def get_empleados_con_usuario():
+    """Listar empleados que ya tienen usuario asignado"""
+    try:
+        empleados = Empleado.query.filter(
+            Empleado.estado == True,
+            Empleado.usuario != None
+        ).order_by(Empleado.id.desc()).all()
+        return jsonify([e.to_dict() for e in empleados])
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
 
 
 @main_bp.route('/empleados/<int:id>', methods=['GET'])
@@ -54,6 +83,9 @@ def create_empleado():
         apellido = data['apellido'].strip()
         numero_documento = str(data['numero_documento']).strip()
 
+        if not nombre or not apellido:
+            return jsonify({"error": "Nombre y apellido son requeridos"}), 400
+
         # Documento único
         if Empleado.query.filter_by(numero_documento=numero_documento).first():
             return jsonify({
@@ -61,7 +93,7 @@ def create_empleado():
                 "codigo": "DOCUMENTO_DUPLICADO"
             }), 400
 
-        # Correo
+        # Correo (opcional pero único si se proporciona)
         correo = data.get('correo', '').strip() or None
         if correo:
             if not EMAIL_REGEX.match(correo):
@@ -69,7 +101,7 @@ def create_empleado():
             if Empleado.query.filter_by(correo=correo).first():
                 return jsonify({"error": f"El correo '{correo}' ya está registrado para otro empleado.", "codigo": "EMAIL_DUPLICADO"}), 400
 
-        # Teléfono
+        # Teléfono (opcional)
         telefono = data.get('telefono', '').strip() or None
         if telefono and not PHONE_REGEX.match(telefono):
             return jsonify({"error": "El teléfono debe contener solo números y tener entre 7 y 15 dígitos.", "codigo": "TELEFONO_INVALIDO"}), 400
@@ -173,8 +205,10 @@ def update_empleado(id):
 
         # Desactivación con restricciones
         if 'estado' in data and not data['estado']:
+            # Verificar citas pendientes
             if Cita.query.filter(Cita.empleado_id == id, Cita.estado_cita_id == 1).first():
                 return jsonify({"error": "No se puede desactivar: el empleado tiene citas pendientes.", "codigo": "EMPLEADO_CON_CITAS_PENDIENTES"}), 400
+            # Verificar horarios activos
             if Horario.query.filter_by(empleado_id=id, activo=True).first():
                 return jsonify({"error": "No se puede desactivar: el empleado tiene horarios activos.", "codigo": "EMPLEADO_CON_HORARIOS_ACTIVOS"}), 400
             empleado.estado = False
@@ -197,20 +231,28 @@ def delete_empleado(id):
         if not empleado:
             return jsonify({"error": f"No existe un empleado con ID {id}"}), 404
 
+        # No se puede eliminar si está activo
         if empleado.estado:
             return jsonify({"error": "Debes desactivar el empleado antes de eliminarlo.", "codigo": "EMPLEADO_ACTIVO"}), 400
 
+        # Verificar si tiene usuario vinculado
+        if empleado.usuario:
+            return jsonify({
+                "error": "No se puede eliminar: el empleado tiene un usuario del sistema vinculado. Elimine el usuario primero.",
+                "codigo": "EMPLEADO_CON_USUARIO"
+            }), 400
+
+        # Verificar citas
         if Cita.query.filter_by(empleado_id=id).first():
             return jsonify({"error": "No se puede eliminar: tiene citas registradas. Desactívelo.", "codigo": "EMPLEADO_CON_CITAS"}), 400
 
+        # Verificar horarios
         if Horario.query.filter_by(empleado_id=id).first():
             return jsonify({"error": "No se puede eliminar: tiene horarios registrados.", "codigo": "EMPLEADO_CON_HORARIOS"}), 400
 
+        # Verificar campañas de salud
         if empleado.campanas_salud and len(empleado.campanas_salud) > 0:
             return jsonify({"error": "No se puede eliminar: tiene campañas de salud asociadas.", "codigo": "EMPLEADO_CON_CAMPANAS"}), 400
-
-        if empleado.usuario:
-            return jsonify({"error": "No se puede eliminar: tiene un usuario del sistema vinculado. Elimine el usuario primero.", "codigo": "EMPLEADO_CON_USUARIO"}), 400
 
         db.session.delete(empleado)
         db.session.commit()

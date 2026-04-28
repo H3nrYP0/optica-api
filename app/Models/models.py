@@ -32,6 +32,7 @@ class Usuario(db.Model):
     contrasenia = db.Column(db.String(255), nullable=False)
     rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=False)
     estado = db.Column(db.Boolean, default=True)
+    # NULLABLE: un usuario SIEMPRE debe tener empleado, pero en BD es FK nullable
     empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=True)
     empleado = db.relationship('Empleado', backref=db.backref('usuario', uselist=False), lazy=True)
 
@@ -43,8 +44,8 @@ class Usuario(db.Model):
             'rol_nombre': self.rol.nombre if self.rol else None,
             'estado': self.estado,
             'empleado_id': self.empleado_id,
-            'nombre': self.empleado.nombre if self.empleado else None,
-            'apellido': self.empleado.apellido if self.empleado else None,
+            'empleado_nombre': self.empleado.nombre if self.empleado else None,
+            'empleado_apellido': self.empleado.apellido if self.empleado else None,
         }
 
 
