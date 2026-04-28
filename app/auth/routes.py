@@ -1,11 +1,10 @@
-# app/auth/routes.py
 """
 Blueprint de autenticación: /auth
 
 Rutas:
     POST /auth/login            → login con JWT
     POST /auth/register         → inicia registro, envía código por Brevo
-    POST /auth/verify-register  → verifica código y crea el usuario
+    POST /auth/verify-register  → verifica código y crea el cliente (SOLO CLIENTE)
     POST /auth/forgot-password  → envía código de recuperación por Brevo
     POST /auth/reset-password   → verifica código y actualiza contraseña
     POST /auth/logout           → cierra sesión (instrucción al frontend)
@@ -19,7 +18,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request
 
 from app.database import db
-from app.Models.models import Usuario, Cliente, Rol
+from app.Models.models import Usuario, Cliente, Empleado, Rol
 from app.services.email_service import enviar_codigo_verificacion, enviar_codigo_reset
 from .helpers import (
     verificar_contrasenia,
@@ -34,11 +33,7 @@ auth_bp = Blueprint('auth', __name__)
 
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Almacenamiento temporal de códigos en memoria RAM.
-#
-# TODO (producción): mover a tabla PostgreSQL 'codigos_temporales'
-# ─────────────────────────────────────────────────────────────────────────────
+# Almacenamiento temporal de códigos
 codigos_verificacion: dict = {}
 codigos_reset: dict = {}
 
@@ -81,37 +76,64 @@ def login():
             log_cuenta_inactiva(correo, ip_cliente)
             return jsonify({"success": False, "error": "Tu cuenta está inactiva. Contacta al administrador."}), 403
 
-        # Cambio temporal 
-        contrasenia_valida = True    #verificar_contrasenia(
-        #    contrasenia,
-        #    usuario.contrasenia,
-        #    usuario.id,
-        #    db
-        #)
+        # Verificar contraseña
+        contrasenia_valida = verificar_contrasenia(
+            contrasenia,
+            usuario.contrasenia,
+            usuario.id
+        )
         if not contrasenia_valida:
             log_login_fallido("contraseña incorrecta", correo, ip_cliente)
             return jsonify({"success": False, "error": "Correo o contraseña incorrectos"}), 401
 
+        # Obtener información según el tipo de usuario
         nombre_rol = "usuario"
         permisos = []
+        nombre_completo = ""
+        es_cliente = False
+        empleado_id = None
 
         if usuario.rol:
             nombre_rol = usuario.rol.nombre.lower().strip()
             permisos = [p.nombre for p in usuario.rol.permisos]
 
-        token = generar_token(usuario, permisos, nombre_rol)
+        # Determinar si es cliente o empleado
+        if usuario.empleado_id:
+            # Es un empleado con usuario
+            empleado = usuario.empleado
+            if empleado:
+                nombre_completo = f"{empleado.nombre} {empleado.apellido}"
+                empleado_id = empleado.id
+            es_cliente = False
+        else:
+            # Es un cliente (tiene cliente_id)
+            cliente = Cliente.query.get(usuario.cliente_id) if usuario.cliente_id else None
+            if cliente:
+                nombre_completo = f"{cliente.nombre} {cliente.apellido}"
+            es_cliente = True
+
+        token = generar_token(
+            usuario=usuario,
+            permisos=permisos,
+            nombre_rol=nombre_rol,
+            nombre_completo=nombre_completo,
+            es_cliente=es_cliente,
+            empleado_id=empleado_id
+        )
         log_login_exitoso(usuario.id, nombre_rol, ip_cliente)
 
         return jsonify({
             "success": True,
             "token": token,
             "usuario": {
-                "id":       usuario.id,
-                "nombre":   usuario.nombre,
-                "correo":   usuario.correo,
-                "rol":      nombre_rol,
-                "rol_id":   usuario.rol_id,
+                "id": usuario.id,
+                "nombre": nombre_completo,
+                "correo": usuario.correo,
+                "rol": nombre_rol,
+                "rol_id": usuario.rol_id,
                 "permisos": permisos,
+                "es_cliente": es_cliente,
+                "empleado_id": empleado_id
             }
         }), 200
 
@@ -120,7 +142,7 @@ def login():
 
 
 # =============================================
-# POST /auth/register
+# POST /auth/register - SOLO PARA CLIENTES
 # =============================================
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -129,12 +151,14 @@ def register():
         if not data:
             return jsonify({"success": False, "error": "Cuerpo de la petición inválido"}), 400
 
-        required_fields = ['nombre', 'correo', 'contrasenia', 'numeroDocumento', 'fechaNacimiento']
+        required_fields = ['nombre', 'apellido', 'correo', 'contrasenia', 'numeroDocumento', 'fechaNacimiento']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({"success": False, "error": f"El campo '{field}' es requerido"}), 400
 
         correo = data['correo'].strip().lower()
+        nombre = data['nombre'].strip()
+        apellido = data['apellido'].strip()
 
         if not EMAIL_REGEX.match(correo):
             return jsonify({"success": False, "error": "Formato de correo inválido"}), 400
@@ -148,13 +172,13 @@ def register():
         codigo = str(secrets.randbelow(900000) + 100000)
         codigos_verificacion[correo] = {
             "codigo": codigo,
-            "data":   data,
+            "data": data,
             "expira": datetime.utcnow() + timedelta(minutes=EXPIRACION_MINUTOS)
         }
 
         enviado = enviar_codigo_verificacion(
             correo=correo,
-            nombre=data['nombre'],
+            nombre=f"{nombre} {apellido}",
             codigo=codigo
         )
 
@@ -172,7 +196,7 @@ def register():
 
 
 # =============================================
-# POST /auth/verify-register
+# POST /auth/verify-register - CREA CLIENTE (NO EMPLEADO)
 # =============================================
 @auth_bp.route('/verify-register', methods=['POST'])
 def verify_register():
@@ -194,10 +218,7 @@ def verify_register():
 
         if _codigo_expirado(registro):
             del codigos_verificacion[correo]
-            return jsonify({
-                "success": False,
-                "error": "El código ha expirado. Solicita uno nuevo."
-            }), 400
+            return jsonify({"success": False, "error": "El código ha expirado. Solicita uno nuevo."}), 400
 
         if registro['codigo'] != codigo:
             return jsonify({"success": False, "error": "Código incorrecto"}), 400
@@ -208,16 +229,13 @@ def verify_register():
 
         contrasenia_hash = generate_password_hash(form_data['contrasenia'])
 
-        nombre_parts = form_data['nombre'].strip().split(' ', 1)
-        primer_nombre = nombre_parts[0]
-        apellido = nombre_parts[1] if len(nombre_parts) > 1 else ''
+        nombre = form_data['nombre'].strip()
+        apellido = form_data['apellido'].strip()
+        numero_documento = str(form_data['numeroDocumento']).strip()
 
-        # ──────────────────────────────────────────────────────────────
-        # 🔥 CAMBIO IMPORTANTE: Buscar el rol "Cliente" por nombre (ID 14)
-        # ──────────────────────────────────────────────────────────────
+        # Buscar o crear el rol CLIENTE
         rol_cliente = Rol.query.filter_by(nombre='Cliente').first()
         if not rol_cliente:
-            # Si por alguna razón no existe, lo creamos
             rol_cliente = Rol(
                 nombre='Cliente',
                 descripcion='Cliente registrado desde landing page',
@@ -226,27 +244,28 @@ def verify_register():
             db.session.add(rol_cliente)
             db.session.commit()
 
+        # Crear el cliente
         cliente = Cliente(
-            nombre=primer_nombre,
+            nombre=nombre,
             apellido=apellido,
             correo=correo,
-            numero_documento=form_data['numeroDocumento'],
+            numero_documento=numero_documento,
             tipo_documento=form_data.get('tipoDocumento', 'CC'),
             fecha_nacimiento=datetime.strptime(form_data['fechaNacimiento'], '%Y-%m-%d').date(),
-            telefono=form_data.get('telefono'),
+            telefono=form_data.get('telefono', ''),
             estado=True
         )
         db.session.add(cliente)
         db.session.flush()
 
-        # Usar el rol Cliente encontrado
+        # Crear el usuario (SIN empleado_id, SOLO cliente_id)
         usuario = Usuario(
-            nombre=form_data['nombre'],
             correo=correo,
             contrasenia=contrasenia_hash,
-            rol_id=rol_cliente.id,  # ← Ahora usa el ID del rol Cliente
+            rol_id=rol_cliente.id,
             estado=True,
-            cliente_id=cliente.id
+            cliente_id=cliente.id,  # Cliente vinculado
+            empleado_id=None         # Cliente NO tiene empleado
         )
         db.session.add(usuario)
         db.session.commit()
@@ -279,15 +298,25 @@ def forgot_password():
             return jsonify(RESPUESTA_GENERICA), 200
 
         codigo = str(secrets.randbelow(900000) + 100000)
+        
+        # Obtener nombre para el correo
+        nombre_usuario = ""
+        if usuario.empleado_id and usuario.empleado:
+            nombre_usuario = f"{usuario.empleado.nombre} {usuario.empleado.apellido}"
+        elif usuario.cliente_id:
+            cliente = Cliente.query.get(usuario.cliente_id)
+            if cliente:
+                nombre_usuario = f"{cliente.nombre} {cliente.apellido}"
+        
         codigos_reset[correo] = {
-            "codigo":      codigo,
-            "usuario_id":  usuario.id,
-            "expira":      datetime.utcnow() + timedelta(minutes=EXPIRACION_MINUTOS)
+            "codigo": codigo,
+            "usuario_id": usuario.id,
+            "expira": datetime.utcnow() + timedelta(minutes=EXPIRACION_MINUTOS)
         }
 
         enviado = enviar_codigo_reset(
             correo=correo,
-            nombre=usuario.nombre,
+            nombre=nombre_usuario,
             codigo=codigo
         )
 
@@ -354,7 +383,6 @@ def reset_password():
 # POST /auth/logout
 # =============================================
 @auth_bp.route('/logout', methods=['POST'])
-
 def logout():
     return jsonify({
         "success": True,
@@ -366,17 +394,18 @@ def logout():
 # GET /auth/me
 # =============================================
 @auth_bp.route('/me', methods=['GET'])
-
 def me():
     claims = get_usuario_actual()
     return jsonify({
         "success": True,
         "usuario": {
-            "id":       claims.get("id"),
-            "nombre":   claims.get("nombre"),
-            "correo":   claims.get("correo"),
-            "rol":      claims.get("rol"),
-            "rol_id":   claims.get("rol_id"),
+            "id": claims.get("id"),
+            "nombre": claims.get("nombre"),
+            "correo": claims.get("correo"),
+            "rol": claims.get("rol"),
+            "rol_id": claims.get("rol_id"),
             "permisos": claims.get("permisos", []),
+            "es_cliente": claims.get("es_cliente", False),
+            "empleado_id": claims.get("empleado_id")
         }
     }), 200
