@@ -20,6 +20,7 @@ def get_mi_perfil_usuario():
         usuario = Usuario.query.get(claims.get('id'))
         if not usuario:
             return jsonify({"error": "Usuario no encontrado"}), 404
+        
         return jsonify({
             "id": usuario.id,
             "correo": usuario.correo,
@@ -42,6 +43,7 @@ def cambiar_mi_contrasenia_usuario():
             return jsonify({"error": "Usuario no encontrado"}), 404
 
         data = request.get_json()
+        
         if not check_password_hash(usuario.contrasenia, data.get('contrasenia_actual', '')):
             return jsonify({"error": "Contraseña actual incorrecta"}), 401
 
@@ -76,15 +78,14 @@ def get_usuarios():
 def create_usuario():
     """
     Crea un usuario de acceso al sistema.
-    Campos requeridos: correo, contrasenia, rol_id
-    Campos opcionales: estado, empleado_id
-    Regla: si el rol NO es 'Cliente', empleado_id es obligatorio.
+    TODO usuario debe tener un empleado vinculado.
     """
     try:
         data = request.get_json()
 
-        # Campos mínimos obligatorios
-        for field in ['correo', 'contrasenia', 'rol_id']:
+        # Campos obligatorios
+        required_fields = ['correo', 'contrasenia', 'rol_id', 'empleado_id']
+        for field in required_fields:
             if not data.get(field):
                 return jsonify({"error": f"El campo '{field}' es requerido"}), 400
 
@@ -102,25 +103,18 @@ def create_usuario():
         if not rol:
             return jsonify({"error": "El rol especificado no existe"}), 400
 
-        # Si el rol no es Cliente, debe tener empleado vinculado
-        empleado_id = data.get('empleado_id')
-        es_cliente = rol.nombre.lower() == 'cliente'
+        # Validar que el empleado exista
+        empleado_id = data['empleado_id']
+        empleado = Empleado.query.get(empleado_id)
+        if not empleado:
+            return jsonify({"error": f"No existe un empleado con ID {empleado_id}"}), 400
 
-        if not es_cliente and not empleado_id:
+        # Validar que el empleado no tenga ya un usuario
+        if empleado.usuario:
             return jsonify({
-                "error": "Los usuarios administradores deben tener un empleado vinculado (empleado_id).",
-                "codigo": "EMPLEADO_REQUERIDO"
+                "error": f"El empleado '{empleado.nombre} {empleado.apellido}' ya tiene un usuario asignado.",
+                "codigo": "EMPLEADO_YA_TIENE_USUARIO"
             }), 400
-
-        if empleado_id:
-            empleado = Empleado.query.get(empleado_id)
-            if not empleado:
-                return jsonify({"error": f"No existe un empleado con ID {empleado_id}"}), 400
-            if empleado.usuario:
-                return jsonify({
-                    "error": f"El empleado '{empleado.nombre} {empleado.apellido}' ya tiene un usuario asignado.",
-                    "codigo": "EMPLEADO_YA_TIENE_USUARIO"
-                }), 400
 
         usuario = Usuario(
             correo=correo,
@@ -182,16 +176,25 @@ def update_usuario(id):
 
         if 'empleado_id' in data:
             nuevo_emp_id = data['empleado_id']
-            if nuevo_emp_id:
-                empleado = Empleado.query.get(nuevo_emp_id)
-                if not empleado:
-                    return jsonify({"error": f"No existe un empleado con ID {nuevo_emp_id}"}), 400
-                # Verificar que no esté ya asignado a otro usuario
-                if empleado.usuario and empleado.usuario.id != id:
-                    return jsonify({
-                        "error": f"El empleado '{empleado.nombre} {empleado.apellido}' ya tiene otro usuario asignado.",
-                        "codigo": "EMPLEADO_YA_TIENE_USUARIO"
-                    }), 400
+            
+            # TODO usuario debe tener un empleado
+            if not nuevo_emp_id:
+                return jsonify({
+                    "error": "El empleado_id es requerido. Todo usuario debe tener un empleado vinculado.",
+                    "codigo": "EMPLEADO_REQUERIDO"
+                }), 400
+            
+            empleado = Empleado.query.get(nuevo_emp_id)
+            if not empleado:
+                return jsonify({"error": f"No existe un empleado con ID {nuevo_emp_id}"}), 400
+            
+            # Verificar que no esté ya asignado a otro usuario
+            if empleado.usuario and empleado.usuario.id != id:
+                return jsonify({
+                    "error": f"El empleado '{empleado.nombre} {empleado.apellido}' ya tiene otro usuario asignado.",
+                    "codigo": "EMPLEADO_YA_TIENE_USUARIO"
+                }), 400
+            
             usuario.empleado_id = nuevo_emp_id
 
         if 'estado' in data:
