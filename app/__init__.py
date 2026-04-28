@@ -40,7 +40,7 @@ def create_app():
     # ============================================================
     from app.routes import main_bp
     from app.auth.routes import auth_bp
-    
+
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix='/auth')
 
@@ -82,7 +82,7 @@ def create_app():
             'main.get_imagenes_por_producto',
             'main.obtener_comprobante_pedido',
 
-            # Agendamiento desde landing
+            # Agendamiento desde landing (solo consulta)
             'main.get_estados_cita',
             'main.verificar_disponibilidad',
             'main.verificar_disponibilidad_multiple',
@@ -99,51 +99,65 @@ def create_app():
             return None
 
         # ========================================================
-        # RUTAS PROTEGIDAS - requieren JWT
+        # RUTAS PROTEGIDAS - requieren JWT (citas, perfil)
         # ========================================================
-        from flask_jwt_extended import verify_jwt_in_request
-        
+        RUTAS_PROTEGIDAS = {
+            'main.agendar_cita',
+            'main.get_mis_citas',
+            'main.cancelar_mi_cita',
+            'main.get_mi_perfil',
+            'main.update_mi_perfil',
+            'main.cambiar_mi_contrasenia',
+        }
+
+        from flask_jwt_extended import verify_jwt_in_request, get_jwt
+
+        if request.endpoint in RUTAS_PROTEGIDAS:
+            try:
+                verify_jwt_in_request()
+                return None
+            except Exception:
+                return jsonify({
+                    "success": False,
+                    "error": "Debes iniciar sesión",
+                    "message": "Debes iniciar sesión para realizar esta acción",
+                    "redirect": "/login"
+                }), 401
+
+        # ========================================================
+        # RUTAS ADMIN - Solo empleados con rol
+        # ========================================================
+        if request.path.startswith('/admin/') or (request.endpoint and 'admin' in request.endpoint):
+            try:
+                verify_jwt_in_request()
+                claims = get_jwt()
+                
+                # Cliente no puede acceder a rutas admin
+                if claims.get('es_cliente', True):
+                    return jsonify({
+                        "success": False,
+                        "error": "Acceso denegado",
+                        "message": "Los clientes no tienen acceso al panel administrativo"
+                    }), 403
+                return None
+            except Exception:
+                return jsonify({
+                    "success": False,
+                    "error": "Token inválido",
+                    "message": "Debes iniciar sesión para acceder a este recurso"
+                }), 401
+
+        # ========================================================
+        # POR DEFECTO - requiere token
+        # ========================================================
         try:
             verify_jwt_in_request()
         except Exception:
             return jsonify({
                 "success": False,
-                "error": "Token requerido",
+                "error": "Autenticación requerida",
                 "message": "Debes iniciar sesión para acceder a este recurso"
             }), 401
-
-        # ========================================================
-        # VERIFICACIÓN ADICIONAL: Clientes NO pueden acceder a rutas admin
-        # ========================================================
-        from flask_jwt_extended import get_jwt
-        
-        claims = get_jwt()
-        es_cliente = claims.get('es_cliente', False)
-        endpoint = request.endpoint or ''
-        
-        # Rutas que NO deben ser accesibles por clientes
-        RUTAS_ADMIN = [
-            'admin.crear_producto', 'admin.actualizar_producto', 'admin.eliminar_producto',
-            'admin.get_usuarios', 'admin.create_usuario', 'admin.update_usuario', 'admin.delete_usuario',
-            'admin.get_clientes', 'admin.create_cliente', 'admin.update_cliente', 'admin.delete_cliente',
-            'admin.get_historial_cliente', 'admin.create_historial_formula', 'admin.delete_historial_formula',
-            'empleados.get_empleados', 'empleados.create_empleado', 'empleados.update_empleado', 'empleados.delete_empleado',
-            'main.get_empleados_sin_usuario', 'main.get_empleados_con_usuario',
-            'main.get_horarios', 'main.create_horario', 'main.update_horario', 'main.delete_horario',
-            'main.get_novedades', 'main.create_novedad', 'main.update_novedad', 'main.delete_novedad',
-            'main.get_proveedores', 'main.create_proveedor', 'main.update_proveedor', 'main.delete_proveedor',
-            'main.get_compras', 'main.create_compra', 'main.update_compra', 'main.delete_compra',
-            'main.get_roles', 'main.create_rol', 'main.update_rol', 'main.delete_rol',
-            'main.get_permisos', 'main.get_permisos_por_rol', 'main.asignar_permiso_rol', 'main.remover_permiso_rol',
-        ]
-        
-        # Si es cliente y trata de acceder a ruta admin, denegar
-        if es_cliente and any(ruta in endpoint for ruta in RUTAS_ADMIN):
-            return jsonify({
-                "success": False,
-                "error": "Acceso denegado",
-                "message": "Notienes permiso para acceder a este recurso"
-            }), 403
 
     # ============================================================
     # 6. MANEJADORES DE ERRORES GLOBALES
@@ -179,42 +193,6 @@ def create_app():
         try:
             db.create_all()
             print("✅ Base de datos conectada y estructura verificada")
-            
-            # Crear roles por defecto si no existen
-            from app.Models.models import Rol, Permiso, PermisoPorRol
-            
-            # Roles del sistema
-            roles_default = [
-                {'nombre': 'Admin', 'descripcion': 'Administrador del sistema - Acceso total'},
-                {'nombre': 'Optometra', 'descripcion': 'Optómetra - Gestión de citas y pacientes'},
-                {'nombre': 'Asesor', 'descripcion': 'Asesor de ventas - Gestión de productos y ventas'},
-                {'nombre': 'Cliente', 'descripcion': 'Cliente registrado desde landing page'},
-            ]
-            
-            for rol_data in roles_default:
-                if not Rol.query.filter_by(nombre=rol_data['nombre']).first():
-                    rol = Rol(
-                        nombre=rol_data['nombre'],
-                        descripcion=rol_data['descripcion'],
-                        estado=True
-                    )
-                    db.session.add(rol)
-            
-            # Permisos del sistema
-            permisos_default = [
-                'dashboard', 'citas', 'servicios', 'clientes', 'empleados',
-                'pedidos', 'productos', 'proveedores', 'compras', 'ventas',
-                'usuarios', 'roles', 'configuracion'
-            ]
-            
-            for permiso_nombre in permisos_default:
-                if not Permiso.query.filter_by(nombre=permiso_nombre).first():
-                    permiso = Permiso(nombre=permiso_nombre)
-                    db.session.add(permiso)
-            
-            db.session.commit()
-            print("✅ Roles y permisos verificados")
-            
         except Exception as e:
             print(f"⚠️ Error al conectar con la base de datos: {e}")
 

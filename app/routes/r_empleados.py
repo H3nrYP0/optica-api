@@ -205,10 +205,8 @@ def update_empleado(id):
 
         # Desactivación con restricciones
         if 'estado' in data and not data['estado']:
-            # Verificar citas pendientes
             if Cita.query.filter(Cita.empleado_id == id, Cita.estado_cita_id == 1).first():
                 return jsonify({"error": "No se puede desactivar: el empleado tiene citas pendientes.", "codigo": "EMPLEADO_CON_CITAS_PENDIENTES"}), 400
-            # Verificar horarios activos
             if Horario.query.filter_by(empleado_id=id, activo=True).first():
                 return jsonify({"error": "No se puede desactivar: el empleado tiene horarios activos.", "codigo": "EMPLEADO_CON_HORARIOS_ACTIVOS"}), 400
             empleado.estado = False
@@ -231,26 +229,21 @@ def delete_empleado(id):
         if not empleado:
             return jsonify({"error": f"No existe un empleado con ID {id}"}), 404
 
-        # No se puede eliminar si está activo
         if empleado.estado:
             return jsonify({"error": "Debes desactivar el empleado antes de eliminarlo.", "codigo": "EMPLEADO_ACTIVO"}), 400
 
-        # Verificar si tiene usuario vinculado
         if empleado.usuario:
             return jsonify({
                 "error": "No se puede eliminar: el empleado tiene un usuario del sistema vinculado. Elimine el usuario primero.",
                 "codigo": "EMPLEADO_CON_USUARIO"
             }), 400
 
-        # Verificar citas
         if Cita.query.filter_by(empleado_id=id).first():
             return jsonify({"error": "No se puede eliminar: tiene citas registradas. Desactívelo.", "codigo": "EMPLEADO_CON_CITAS"}), 400
 
-        # Verificar horarios
         if Horario.query.filter_by(empleado_id=id).first():
             return jsonify({"error": "No se puede eliminar: tiene horarios registrados.", "codigo": "EMPLEADO_CON_HORARIOS"}), 400
 
-        # Verificar campañas de salud
         if empleado.campanas_salud and len(empleado.campanas_salud) > 0:
             return jsonify({"error": "No se puede eliminar: tiene campañas de salud asociadas.", "codigo": "EMPLEADO_CON_CAMPANAS"}), 400
 

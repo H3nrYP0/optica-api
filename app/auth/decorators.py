@@ -41,7 +41,7 @@ def rol_requerido(*roles_permitidos):
                     return jsonify({
                         "success": False,
                         "error": "Acceso denegado",
-                        "message": f"Se requiere uno de los roles: {', '.join(roles_permitidos)}"
+                        "message": f"No tienes el rol necesario para acceder a este recurso."
                     }), 403
 
             except Exception:
@@ -72,7 +72,7 @@ def permiso_requerido(permiso: str):
                     return jsonify({
                         "success": False,
                         "error": "Permiso insuficiente",
-                        "message": f"Se requiere el permiso: '{permiso}'"
+                        "message": f"No tienes el permiso necesario para acceder a este recurso."
                     }), 403
 
             except Exception:
