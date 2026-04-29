@@ -397,7 +397,7 @@ class Empleado(db.Model):
     tipo_documento = db.Column(db.String(20))
     numero_documento = db.Column(db.String(20), nullable=False, unique=True)
     nombre = db.Column(db.String(100), nullable=False)
-    apellido = db.Column(db.String(100), nullable=False)
+    apellido = db.Column(db.String(100), nullable=False)  # ← NUEVO CAMPO
     telefono = db.Column(db.String(15))
     direccion = db.Column(db.String(150))
     fecha_ingreso = db.Column(db.Date, nullable=False)
@@ -412,7 +412,8 @@ class Empleado(db.Model):
         return {
             'id': self.id,
             'nombre': self.nombre,
-            'apellido': self.apellido,
+            'apellido': self.apellido,  # ← AGREGAR
+            'nombre_completo': f"{self.nombre} {self.apellido}".strip(),  # ← UTILIDAD
             'tipo_documento': self.tipo_documento,
             'numero_documento': self.numero_documento,
             'telefono': self.telefono,

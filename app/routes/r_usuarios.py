@@ -66,7 +66,7 @@ def cambiar_mi_contrasenia_usuario():
 
 @main_bp.route('/admin/usuarios', methods=['GET'])
 @permiso_requerido("usuarios")
-def get_usuarios():
+def get_usuarios_admin():
     """Listar SOLO usuarios administrativos (con rol)"""
     try:
         # Solo usuarios que tienen rol (empleados admin)
