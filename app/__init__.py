@@ -51,7 +51,12 @@ def create_app():
     def verificar_autenticacion():
         # Permitir OPTIONS (preflight de CORS)
         if request.method == 'OPTIONS':
-            return None
+            response = jsonify({'status': 'ok'})
+            response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Cache-Control'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            return response, 200
 
         # ========================================================
         # RUTAS PÚBLICAS - accesibles SIN token
