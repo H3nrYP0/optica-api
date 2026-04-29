@@ -78,7 +78,7 @@ def get_usuarios_admin():
 
 @main_bp.route('/admin/usuarios', methods=['POST'])
 @permiso_requerido("usuarios")
-def create_usuario():
+def create_usuario_admin():
     """
     Crea un usuario administrativo.
     REQUIERE: empleado_id, rol_id, correo, contrasenia
@@ -149,7 +149,7 @@ def get_usuario(id):
 
 @main_bp.route('/admin/usuarios/<int:id>', methods=['PUT'])
 @permiso_requerido("usuarios")
-def update_usuario(id):
+def update_usuario_admin(id):
     try:
         usuario = Usuario.query.get(id)
         if not usuario:
@@ -201,7 +201,7 @@ def update_usuario(id):
 
 @main_bp.route('/admin/usuarios/<int:id>', methods=['DELETE'])
 @permiso_requerido("usuarios")
-def delete_usuario(id):
+def delete_usuario_admin(id):
     try:
         usuario = Usuario.query.get(id)
         if not usuario:
