@@ -416,7 +416,6 @@ class Empleado(db.Model):
             'fecha_ingreso': self.fecha_ingreso.isoformat() if self.fecha_ingreso else None,
             'cargo': self.cargo,
             'estado': self.estado,
-            'tiene_usuario': self.usuario is not None
         }
 
 

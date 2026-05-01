@@ -23,35 +23,6 @@ def get_empleados():
     except Exception as e:
         return jsonify({"error": "Error interno al obtener empleados", "detalle": str(e)}), 500
 
-
-@main_bp.route('/empleados/sin-usuario', methods=['GET'])
-@permiso_requerido("usuarios")
-def get_empleados_sin_usuario():
-    """Listar empleados que aún no tienen usuario asignado (útiles para crear usuarios)"""
-    try:
-        empleados = Empleado.query.filter(
-            Empleado.estado == True,
-            Empleado.usuario == None
-        ).order_by(Empleado.id.desc()).all()
-        return jsonify([e.to_dict() for e in empleados])
-    except Exception as e:
-        return jsonify({"error": f"Error: {str(e)}"}), 500
-
-
-@main_bp.route('/empleados/con-usuario', methods=['GET'])
-@permiso_requerido("usuarios")
-def get_empleados_con_usuario():
-    """Listar empleados que ya tienen usuario asignado"""
-    try:
-        empleados = Empleado.query.filter(
-            Empleado.estado == True,
-            Empleado.usuario != None
-        ).order_by(Empleado.id.desc()).all()
-        return jsonify([e.to_dict() for e in empleados])
-    except Exception as e:
-        return jsonify({"error": f"Error: {str(e)}"}), 500
-
-
 @main_bp.route('/empleados/<int:id>', methods=['GET'])
 @permiso_requerido("empleados")
 def get_empleado(id):
@@ -231,12 +202,6 @@ def delete_empleado(id):
 
         if empleado.estado:
             return jsonify({"error": "Debes desactivar el empleado antes de eliminarlo.", "codigo": "EMPLEADO_ACTIVO"}), 400
-
-        if empleado.usuario:
-            return jsonify({
-                "error": "No se puede eliminar: el empleado tiene un usuario del sistema vinculado. Elimine el usuario primero.",
-                "codigo": "EMPLEADO_CON_USUARIO"
-            }), 400
 
         if Cita.query.filter_by(empleado_id=id).first():
             return jsonify({"error": "No se puede eliminar: tiene citas registradas. Desactívelo.", "codigo": "EMPLEADO_CON_CITAS"}), 400
