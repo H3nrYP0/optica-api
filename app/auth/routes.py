@@ -4,8 +4,8 @@ Blueprint de autenticación: /auth
 Rutas:
     POST /auth/login            → login con JWT
     POST /auth/register         → inicia registro, envía código por Brevo
-    POST /auth/verify-register  → verifica código y crea el cliente + usuario
-    POST /auth/forgot-password  → envía código de recuperación por Brevo
+    POST /auth/verify-register  → verifica código y crea el cliente + usuario (con rol Cliente)
+    POST /auth/forgot-password  → envía código de recuperación por Brevo (solo para usuarios con rol)
     POST /auth/reset-password   → verifica código y actualiza contraseña
     POST /auth/logout           → cierra sesión (instrucción al frontend)
     GET  /auth/me               → retorna datos del usuario autenticado
@@ -42,6 +42,11 @@ EXPIRACION_MINUTOS = 15
 
 def _codigo_expirado(registro: dict) -> bool:
     return datetime.utcnow() > registro.get("expira", datetime.utcnow())
+
+
+def _obtener_rol_cliente():
+    """Retorna el objeto Rol correspondiente a 'Cliente' o None si no existe."""
+    return Rol.query.filter_by(nombre='Cliente').first()
 
 
 # =============================================
@@ -87,33 +92,29 @@ def login():
             return jsonify({"success": False, "error": "Correo o contraseña incorrectos"}), 401
 
         # ============================================================
-        # DETERMINAR TIPO DE USUARIO (CRÍTICO)
+        # NUEVA LÓGICA UNIFICADA (SIN empleado_id)
         # ============================================================
-        es_cliente = False
-        nombre_completo = ""
+        nombre_completo = f"{usuario.nombre or ''} {usuario.apellido or ''}".strip()
+        if not nombre_completo:
+            nombre_completo = usuario.correo
+
         permisos = []
         rol_nombre = None
-        empleado_id = None
-
-        if usuario.empleado_id and usuario.rol_id:
-            # Empleado administrativo
-            empleado = usuario.empleado
-            nombre_completo = f"{empleado.nombre} {empleado.apellido}"
-            permisos = [p.nombre for p in usuario.rol.permisos] if usuario.rol.permisos else []
+        if usuario.rol:
             rol_nombre = usuario.rol.nombre
-            empleado_id = empleado.id
-            es_cliente = False
-        elif usuario.cliente_id:
-            # Cliente registrado (sin rol)
-            cliente = usuario.cliente
-            nombre_completo = f"{cliente.nombre} {cliente.apellido}"
-            permisos = []
-            rol_nombre = None
-            es_cliente = True
-        else:
-            return jsonify({"success": False, "error": "Configuración de usuario inválida"}), 401
+            permisos = [p.nombre for p in usuario.rol.permisos] if usuario.rol.permisos else []
 
-        token = generar_token(usuario, permisos, rol_nombre, nombre_completo, es_cliente, empleado_id)
+        # Determinar si es cliente (por nombre de rol)
+        es_cliente = (rol_nombre == 'Cliente')
+
+        token = generar_token(
+            usuario=usuario,
+            permisos=permisos,
+            nombre_rol=rol_nombre,
+            nombre_completo=nombre_completo,
+            es_cliente=es_cliente,
+            empleado_id=None   # Ya no se usa, pero se mantiene por compatibilidad
+        )
         log_login_exitoso(usuario.id, rol_nombre or "cliente", ip_cliente)
 
         return jsonify({
@@ -126,12 +127,14 @@ def login():
                 "rol": rol_nombre,
                 "rol_id": usuario.rol_id,
                 "permisos": permisos,
-                "es_cliente": es_cliente,
-                "empleado_id": empleado_id
+                "es_cliente": es_cliente
+                # empleado_id omitido
             }
         }), 200
 
     except Exception as e:
+        # Para depuración, puedes imprimir el error real
+        # print(f"Error en login: {str(e)}")
         return jsonify({"success": False, "error": "Error interno del servidor"}), 500
 
 
@@ -190,7 +193,7 @@ def register():
 
 
 # =============================================
-# POST /auth/verify-register - CREA CLIENTE + USUARIO
+# POST /auth/verify-register - CREA CLIENTE + USUARIO (CON ROL CLIENTE)
 # =============================================
 @auth_bp.route('/verify-register', methods=['POST'])
 def verify_register():
@@ -246,16 +249,34 @@ def verify_register():
         db.session.flush()  # Para obtener el ID del cliente
 
         # ============================================================
-        # 2. CREAR USUARIO (SIN ROL - rol_id = NULL)
+        # 2. CREAR USUARIO CON ROL "Cliente"
         # ============================================================
+        rol_cliente = _obtener_rol_cliente()
+        if not rol_cliente:
+            # Si por algún motivo no existe el rol Cliente, se puede crear automáticamente
+            # o lanzar un error. Por seguridad, lo creamos.
+            rol_cliente = Rol(nombre='Cliente', descripcion='Rol para clientes registrados', estado=True)
+            db.session.add(rol_cliente)
+            db.session.flush()
+
         usuario = Usuario(
             correo=correo,
             contrasenia=generate_password_hash(form_data['contrasenia']),
-            rol_id=None,               # Cliente NO tiene rol
+            rol_id=rol_cliente.id,
             estado=True,
-            cliente_id=cliente.id,
-            empleado_id=None
+            cliente_id=cliente.id
         )
+        # Guardar datos personales directamente en usuario
+        usuario.nombre = form_data['nombre'].strip()
+        usuario.apellido = form_data['apellido'].strip()
+        usuario.telefono = form_data.get('telefono', '')
+        usuario.tipo_documento = form_data.get('tipoDocumento', 'CC')
+        usuario.numero_documento = str(form_data['numeroDocumento']).strip()
+        try:
+            usuario.fecha_nacimiento = datetime.strptime(form_data['fechaNacimiento'], '%Y-%m-%d').date()
+        except:
+            usuario.fecha_nacimiento = None
+
         db.session.add(usuario)
         db.session.commit()
 
@@ -268,8 +289,8 @@ def verify_register():
         nombre_completo = f"{cliente.nombre} {cliente.apellido}"
         token = generar_token(
             usuario=usuario,
-            permisos=[],
-            nombre_rol=None,
+            permisos=[],   # El rol Cliente no tiene permisos por defecto
+            nombre_rol='Cliente',
             nombre_completo=nombre_completo,
             es_cliente=True,
             empleado_id=None
@@ -283,6 +304,9 @@ def verify_register():
                 "id": usuario.id,
                 "nombre": nombre_completo,
                 "correo": usuario.correo,
+                "rol": "Cliente",
+                "rol_id": usuario.rol_id,
+                "permisos": [],
                 "es_cliente": True,
                 "cliente_id": cliente.id
             }
@@ -294,7 +318,7 @@ def verify_register():
 
 
 # =============================================
-# POST /auth/forgot-password
+# POST /auth/forgot-password (solo para usuarios con rol, no clientes)
 # =============================================
 @auth_bp.route('/forgot-password', methods=['POST'])
 def forgot_password():
@@ -311,20 +335,24 @@ def forgot_password():
         if not usuario:
             return jsonify(RESPUESTA_GENERICA), 200
 
-        # Solo empleados administrativos pueden recuperar contraseña
-        if not usuario.empleado_id:
+        # Solo permitir recuperación a usuarios que tienen rol (administrativos)
+        # Si quieres permitir también a clientes, cambia esta condición.
+        if usuario.rol_id is None:
             return jsonify(RESPUESTA_GENERICA), 200
 
-        empleado = usuario.empleado
+        # Generar código
         codigo = str(secrets.randbelow(900000) + 100000)
-
         codigos_reset[correo] = {
             "codigo": codigo,
             "usuario_id": usuario.id,
             "expira": datetime.utcnow() + timedelta(minutes=EXPIRACION_MINUTOS)
         }
 
-        nombre_completo = f"{empleado.nombre} {empleado.apellido}"
+        # Obtener nombre completo desde los campos directos
+        nombre_completo = f"{usuario.nombre or ''} {usuario.apellido or ''}".strip()
+        if not nombre_completo:
+            nombre_completo = usuario.correo
+
         enviado = enviar_codigo_reset(
             correo=correo,
             nombre=nombre_completo,
@@ -416,7 +444,7 @@ def me():
             "rol": claims.get("rol"),
             "rol_id": claims.get("rol_id"),
             "permisos": claims.get("permisos", []),
-            "es_cliente": claims.get("es_cliente", False),
-            "empleado_id": claims.get("empleado_id")
+            "es_cliente": claims.get("es_cliente", False)
+            # empleado_id ya no se incluye
         }
     }), 200

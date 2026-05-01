@@ -33,40 +33,34 @@ class Usuario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     correo = db.Column(db.String(100), nullable=False, unique=True)
     contrasenia = db.Column(db.String(255), nullable=False)
-    rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=True)  # NULL = cliente sin rol
+    rol_id = db.Column(db.Integer, db.ForeignKey('rol.id'), nullable=True)
     estado = db.Column(db.Boolean, default=True)
-    empleado_id = db.Column(db.Integer, db.ForeignKey('empleado.id'), nullable=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=True)
-    
-    empleado = db.relationship('Empleado', backref=db.backref('usuario', uselist=False), lazy=True)
+
+    nombre = db.Column(db.String(70))
+    apellido = db.Column(db.String(70))   # ← agregado
+    telefono = db.Column(db.String(20))
+    tipo_documento = db.Column(db.String(20))
+    numero_documento = db.Column(db.String(20))
+    fecha_nacimiento = db.Column(db.Date)
+
     cliente = db.relationship('Cliente', backref=db.backref('usuario', uselist=False), lazy=True)
 
     def to_dict(self):
-        # Determinar si es administrativo o cliente
-        if self.empleado_id and self.empleado:
-            nombre = self.empleado.nombre
-            apellido = self.empleado.apellido
-            es_admin = True
-        elif self.cliente_id and self.cliente:
-            nombre = self.cliente.nombre
-            apellido = self.cliente.apellido
-            es_admin = False
-        else:
-            nombre = None
-            apellido = None
-            es_admin = False
-            
         return {
             'id': self.id,
             'correo': self.correo,
             'rol_id': self.rol_id,
             'rol_nombre': self.rol.nombre if self.rol else None,
             'estado': self.estado,
-            'empleado_id': self.empleado_id,
             'cliente_id': self.cliente_id,
-            'nombre': nombre,
-            'apellido': apellido,
-            'es_admin': es_admin
+            'nombre': self.nombre,
+            'apellido': self.apellido,
+            'telefono': self.telefono,
+            'tipo_documento': self.tipo_documento,
+            'numero_documento': self.numero_documento,
+            'fecha_nacimiento': self.fecha_nacimiento.isoformat() if self.fecha_nacimiento else None,
+            'es_admin': (self.rol_id is not None and self.rol.nombre == 'Admin')
         }
 
 
