@@ -72,6 +72,14 @@ def login():
             return jsonify({"success": False, "error": "La contraseña debe tener al menos 6 caracteres"}), 400
 
         usuario = Usuario.query.filter_by(correo=correo).first()
+        # ========== LOGS DE DEPURACIÓN ==========
+        print(f"🔍 Login intento: correo={correo}")
+        if usuario:
+            print(f"   Usuario ID={usuario.id}, rol_id={usuario.rol_id}, estado={usuario.estado}")
+            print(f"   Hash de contraseña (primeros 20): {usuario.contrasenia[:20]}...")
+        else:
+            print("   Usuario NO encontrado")
+        # ========================================
 
         if not usuario:
             log_login_fallido("correo no existe", correo, ip_cliente)

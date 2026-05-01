@@ -7,17 +7,20 @@ security_logger = logging.getLogger('security')
 
 def verificar_contrasenia(contrasenia_plana: str, contrasenia_guardada: str, usuario_id: int) -> bool:
     """Verifica contraseña"""
+    print(f"🔐 Verificando contraseña para usuario_id={usuario_id}")
+    print(f"   Largo hash guardado: {len(contrasenia_guardada)}")
     try:
         resultado = check_password_hash(contrasenia_guardada, contrasenia_plana)
+        print(f"   ¿Coinciden? {resultado}")
         if resultado:
             security_logger.info(f"✅ Contraseña OK: usuario_id={usuario_id}")
         else:
             security_logger.warning(f"⚠️ Contraseña INCORRECTA: usuario_id={usuario_id}")
         return resultado
     except Exception as e:
+        print(f"   ❌ Error en check_password_hash: {e}")
         security_logger.error(f"❌ Error: {e}")
         return False
-
 
 def generar_token(usuario, permisos: list, nombre_rol: str, nombre_completo: str, es_cliente: bool, empleado_id: int = None) -> str:
     """Genera JWT con claims"""
