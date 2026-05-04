@@ -5,6 +5,7 @@ from app.auth.decorators import permiso_requerido
 from datetime import datetime
 from app.routes import main_bp
 import re
+from app.auth.decorators import jwt_requerido, get_usuario_actual
 
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 PHONE_REGEX = re.compile(r'^\d{7,15}$')
@@ -14,7 +15,6 @@ PHONE_REGEX = re.compile(r'^\d{7,15}$')
 # Los clientes se registran desde landing y obtienen un usuario
 # con rol_id = NULL (sin rol administrativo)
 # ============================================================
-
 
 # ============================================================
 # RUTAS PÚBLICAS (Landing page) — SIN autenticación
@@ -440,3 +440,21 @@ def delete_historial_formula(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar historial: {str(e)}"}), 500
+    
+@main_bp.route('/cliente/perfil', methods=['GET'])
+@jwt_requerido
+def get_cliente_perfil():
+    """Obtiene el perfil del cliente asociado al usuario autenticado."""
+    try:
+        from app.Models.models import Usuario
+        claims = get_usuario_actual()
+        usuario_id = claims.get('id')
+        usuario = Usuario.query.get(usuario_id)
+        if not usuario or not usuario.cliente_id:
+            return jsonify({"error": "No tienes un perfil de cliente asociado"}), 404
+        cliente = Cliente.query.get(usuario.cliente_id)
+        if not cliente:
+            return jsonify({"error": "Cliente no encontrado"}), 404
+        return jsonify(cliente.to_dict())
+    except Exception as e:
+        return jsonify({"error": f"Error al obtener perfil: {str(e)}"}), 500

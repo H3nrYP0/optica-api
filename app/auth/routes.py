@@ -617,6 +617,7 @@ def me():
             "rol": claims.get("rol"),
             "rol_id": claims.get("rol_id"),
             "permisos": claims.get("permisos", []),
-            "es_cliente": claims.get("es_cliente", False)
+            "es_cliente": claims.get("es_cliente", False),
+            "cliente_id": claims.get("cliente_id") 
         }
     }), 200

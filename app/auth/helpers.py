@@ -32,7 +32,8 @@ def generar_token(usuario, permisos: list, nombre_rol: str, nombre_completo: str
         "rol_id": usuario.rol_id,
         "permisos": permisos,
         "es_cliente": es_cliente,
-        "empleado_id": empleado_id
+        "empleado_id": empleado_id,
+        "cliente_id": usuario.cliente_id
     }
     return create_access_token(identity=str(usuario.id), additional_claims=claims)
 
