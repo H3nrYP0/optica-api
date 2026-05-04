@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Cliente, HistorialFormula, Cita
+from app.Models.models import Cliente, HistorialFormula, Cita, Usuario
 from app.auth.decorators import permiso_requerido
 from datetime import datetime
 from app.routes import main_bp
@@ -458,3 +458,80 @@ def get_cliente_perfil():
         return jsonify(cliente.to_dict())
     except Exception as e:
         return jsonify({"error": f"Error al obtener perfil: {str(e)}"}), 500
+    
+    # ============================================================
+# CLIENTE: VER SUS CITAS
+# ============================================================
+@main_bp.route('/cliente/citas', methods=['GET'])
+@jwt_requerido
+def get_mis_citas():
+    """Cliente obtiene TODAS sus citas (ordenadas por fecha descendente)"""
+    try:
+        claims = get_usuario_actual()
+        usuario_id = claims.get('id')
+        
+        usuario = Usuario.query.get(usuario_id)
+        if not usuario or not usuario.cliente_id:
+            return jsonify({"error": "No tienes un perfil de cliente asociado"}), 404
+        
+        citas = Cita.query.filter_by(cliente_id=usuario.cliente_id).order_by(Cita.fecha.desc(), Cita.hora.desc()).all()
+        return jsonify([cita.to_dict() for cita in citas])
+    except Exception as e:
+        return jsonify({"error": f"Error al obtener citas: {str(e)}"}), 500
+
+
+# ============================================================
+# CLIENTE: CANCELAR UNA CITA PROPIA
+# ============================================================
+@main_bp.route('/cliente/citas/<int:cita_id>', methods=['DELETE'])
+@jwt_requerido
+def cancelar_mi_cita(cita_id):
+    """Cliente cancela una de sus citas (solo si está Pendiente o Confirmada)"""
+    try:
+        claims = get_usuario_actual()
+        usuario_id = claims.get('id')
+        
+        usuario = Usuario.query.get(usuario_id)
+        if not usuario or not usuario.cliente_id:
+            return jsonify({"error": "No tienes un perfil de cliente asociado"}), 404
+        
+        cita = Cita.query.get(cita_id)
+        if not cita:
+            return jsonify({"error": "Cita no encontrada"}), 404
+        
+        if cita.cliente_id != usuario.cliente_id:
+            return jsonify({"error": "No puedes cancelar una cita que no te pertenece"}), 403
+        
+        # Estados permitidos para cancelar: 1 = Confirmada, 2 = Pendiente
+        if cita.estado_cita_id not in [1, 2]:
+            return jsonify({"error": "Solo se pueden cancelar citas pendientes o confirmadas"}), 400
+        
+        ahora = datetime.utcnow()
+        fecha_hora_cita = datetime.combine(cita.fecha, cita.hora)
+        if fecha_hora_cita < ahora:
+            return jsonify({"error": "No se puede cancelar una cita que ya pasó"}), 400
+        
+        # Cambiar estado a Cancelada (id=4). Verifica que exista este estado en tu BD.
+        cita.estado_cita_id = 4
+        db.session.commit()
+        
+        cliente_nombre = f"{usuario.cliente.nombre} {usuario.cliente.apellido}"
+        servicio_nombre = cita.servicio.nombre if cita.servicio else "servicio"
+        fecha_str = cita.fecha.strftime('%d/%m/%Y')
+        hora_str = cita.hora.strftime('%H:%M')
+        
+        return jsonify({
+            "success": True,
+            "message": "Cita cancelada correctamente",
+            "cita": {
+                "id": cita.id,
+                "servicio": servicio_nombre,
+                "fecha": fecha_str,
+                "hora": hora_str,
+                "cliente": cliente_nombre
+            }
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al cancelar cita: {str(e)}"}), 500
