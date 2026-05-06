@@ -528,7 +528,7 @@ def crear_mi_cita():
 
         # Validar disponibilidad (importa la función desde citas_routes o cópiala aquí)
         # Como está en otro archivo, la importaremos dinámicamente
-        from r_agenda import validar_disponibilidad_cita
+        from .r_agenda import validar_disponibilidad_cita
         validacion = validar_disponibilidad_cita(
             empleado_id=data['empleado_id'],
             fecha=fecha_date,
