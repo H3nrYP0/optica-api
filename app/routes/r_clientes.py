@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Cliente, HistorialFormula, Cita, Usuario
+from app.Models.models import Cliente, HistorialFormula, Cita, Usuario, Empleado, Servicio, EstadoCita
 from app.auth.decorators import permiso_requerido
 from datetime import datetime
 from app.routes import main_bp
@@ -479,6 +479,93 @@ def get_mis_citas():
     except Exception as e:
         return jsonify({"error": f"Error al obtener citas: {str(e)}"}), 500
 
+# ============================================================
+# CLIENTE: crear un cita
+# ============================================================
+
+@main_bp.route('/cliente/citas', methods=['POST'])
+@jwt_requerido
+def crear_mi_cita():
+    """Cliente crea una cita para sí mismo (usando su cliente_id del token)"""
+    try:
+        claims = get_usuario_actual()
+        usuario = Usuario.query.get(claims.get('id'))
+        if not usuario or not usuario.cliente_id:
+            return jsonify({"error": "No tienes un perfil de cliente asociado"}), 404
+
+        data = request.get_json()
+        required_fields = ['servicio_id', 'empleado_id', 'fecha', 'hora']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+
+        # Procesar fecha
+        try:
+            fecha_date = datetime.strptime(data['fecha'], '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({"error": "Fecha inválida. Use YYYY-MM-DD"}), 400
+
+        # Procesar hora
+        hora_str = data['hora']
+        try:
+            if ':' in hora_str:
+                hora_time = datetime.strptime(hora_str[:5], '%H:%M').time()
+            else:
+                hora_time = datetime.strptime(hora_str, '%H:%M:%S').time()
+        except ValueError:
+            return jsonify({"error": "Hora inválida. Use HH:MM"}), 400
+
+        # Validar que no sea en el pasado
+        ahora = datetime.utcnow()
+        if datetime.combine(fecha_date, hora_time) < ahora:
+            return jsonify({"error": "No se pueden programar citas en el pasado"}), 400
+
+        # Obtener servicio
+        servicio = Servicio.query.get(data['servicio_id'])
+        if not servicio or not servicio.estado:
+            return jsonify({"error": "Servicio no válido o inactivo"}), 400
+        duracion = servicio.duracion_min
+
+        # Validar disponibilidad (importa la función desde citas_routes o cópiala aquí)
+        # Como está en otro archivo, la importaremos dinámicamente
+        from r_agenda import validar_disponibilidad_cita
+        validacion = validar_disponibilidad_cita(
+            empleado_id=data['empleado_id'],
+            fecha=fecha_date,
+            hora=hora_time,
+            duracion=duracion,
+            exclude_cita_id=None
+        )
+        if not validacion["disponible"]:
+            return jsonify({"error": validacion["mensaje"]}), 400
+
+        # Validar empleado activo
+        empleado = Empleado.query.get(data['empleado_id'])
+        if not empleado or not empleado.estado:
+            return jsonify({"error": "El optómetra seleccionado no está activo"}), 400
+
+        # Estado por defecto: "Pendiente" (buscar id 2 o el que corresponda)
+        estado_pendiente = EstadoCita.query.filter_by(nombre='Pendiente').first()
+        if not estado_pendiente:
+            estado_pendiente = EstadoCita.query.first()
+
+        cita = Cita(
+            cliente_id=usuario.cliente_id,
+            servicio_id=servicio.id,
+            empleado_id=data['empleado_id'],
+            estado_cita_id=estado_pendiente.id,
+            metodo_pago=data.get('metodo_pago'),
+            hora=hora_time,
+            duracion=duracion,
+            fecha=fecha_date
+        )
+        db.session.add(cita)
+        db.session.commit()
+        return jsonify({"message": "Cita agendada exitosamente", "cita": cita.to_dict()}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al crear cita: {str(e)}"}), 500
 
 # ============================================================
 # CLIENTE: CANCELAR UNA CITA PROPIA
