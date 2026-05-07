@@ -174,40 +174,36 @@ def update_pedido(id):
         # Obtener nuevo estado_id (puede venir como ID o como nombre)
         nuevo_estado_id = data.get('estado_id')
         if not nuevo_estado_id and 'estado' in data:
-            # Compatibilidad: si envían el nombre, buscar el ID
             estado_nombre = data['estado']
             estado_obj = EstadoPedido.query.filter_by(nombre=estado_nombre).first()
             if not estado_obj:
                 return jsonify({"error": f"Estado '{estado_nombre}' no existe"}), 400
             nuevo_estado_id = estado_obj.id
         elif not nuevo_estado_id:
-            # No se envía cambio de estado
             nuevo_estado_id = estado_anterior_id
         
-        # Validar que el estado exista
         nuevo_estado_obj = EstadoPedido.query.get(nuevo_estado_id)
         if not nuevo_estado_obj:
             return jsonify({"error": "Estado inválido"}), 400
         
-        # Obtener nombres de estados para comparar
         estado_anterior_nombre = pedido.estado.nombre if pedido.estado else None
         nuevo_estado_nombre = nuevo_estado_obj.nombre
-        
-        # TRANSICIÓN A ENTREGADO (crear venta)
-        if nuevo_estado_nombre == 'entregado' and estado_anterior_nombre != 'entregado':
-            # Validar que el pedido no esté cancelado
-            if estado_anterior_nombre == 'cancelado':
-                return jsonify({"error": "No se puede entregar un pedido cancelado"}), 400
-            
-            # Validar que esté pagado al 100%
-            if pedido.abono_acumulado < pedido.total:
-                return jsonify({"error": f"No se puede entregar el pedido porque el saldo pendiente es {pedido.saldo_pendiente}. Debe estar pagado al 100%"}), 400
-            
-            # Validar que no tenga venta asociada
+
+        # ========== TRANSICIÓN A ANULADO ==========
+        if nuevo_estado_nombre == 'anulado' and estado_anterior_nombre != 'anulado':
+            if estado_anterior_nombre == 'pagado':
+                return jsonify({"error": "No se puede anular un pedido ya pagado"}), 400
+            for detalle in pedido.items:
+                producto = Producto.query.get(detalle.producto_id)
+                if producto:
+                    producto.stock += detalle.cantidad
+
+        # ========== TRANSICIÓN A PAGADO (crear venta) ==========
+        if nuevo_estado_nombre == 'pagado' and estado_anterior_nombre != 'pagado':
+            # Evitar doble venta
             if hasattr(pedido, 'venta') and pedido.venta:
                 return jsonify({"error": "Este pedido ya generó una venta anteriormente"}), 400
             
-            # Crear la venta (estado completada, asumiendo id=1 en EstadoVenta)
             from app.Models.models import EstadoVenta
             estado_completada = EstadoVenta.query.filter_by(nombre='completada').first()
             if not estado_completada:
@@ -226,7 +222,7 @@ def update_pedido(id):
                 estado_id=estado_completada.id
             )
             db.session.add(venta)
-            db.session.flush()
+            db.session.flush()  # Para obtener el id de la venta
             
             # Migrar detalles a DetalleVenta
             for detalle_pedido in pedido.items:
@@ -236,28 +232,17 @@ def update_pedido(id):
                     cantidad=detalle_pedido.cantidad,
                     precio_unitario=detalle_pedido.precio_unitario,
                     subtotal=detalle_pedido.subtotal,
-                    descuento=0  # si no hay descuento en pedido
+                    descuento=0
                 )
                 db.session.add(detalle_venta)
             
-            # Migrar abonos individuales del pedido a la venta
+            # Migrar abonos del pedido a la venta
             for abono in pedido.abonos:
                 abono.pedido_id = None
                 abono.venta_id = venta.id
-                # No cambiamos monto ni fecha
-            # Nota: No se crea un abono global; se conserva el historial de pagos parciales
         
-        # TRANSICIÓN A CANCELADO (revertir stock)
-        if nuevo_estado_nombre == 'cancelado' and estado_anterior_nombre != 'cancelado':
-            if estado_anterior_nombre == 'entregado':
-                return jsonify({"error": "No se puede cancelar un pedido que ya fue entregado"}), 400
-            
-            # Revertir stock de cada producto
-            for detalle in pedido.items:
-                producto = Producto.query.get(detalle.producto_id)
-                if producto:
-                    producto.stock += detalle.cantidad
-        
+        # =========================================
+
         # Actualizar el estado del pedido
         pedido.estado_id = nuevo_estado_id
         
@@ -284,7 +269,6 @@ def update_pedido(id):
                 return jsonify({"error": "Método de entrega inválido"}), 400
             pedido.metodo_entrega = data['metodo_entrega']
         
-        # Eliminamos la posibilidad de modificar el total manualmente
         if 'total' in data:
             return jsonify({"error": "No se puede modificar el total directamente. Se calcula automáticamente"}), 400
         
@@ -310,8 +294,8 @@ def delete_pedido(id):
             return jsonify({"error": "No se puede eliminar un pedido que ya generó una venta"}), 400
         
         # Validar que no esté entregado
-        if pedido.estado.nombre == 'entregado':
-            return jsonify({"error": "No se puede eliminar un pedido entregado"}), 400
+        if pedido.estado.nombre in ['pagado', 'anulado']:
+            return jsonify({"error": "No se puede eliminar un pedido pagado o anulado"}), 400
         
         # Revertir stock antes de eliminar
         for detalle in pedido.items:
@@ -389,8 +373,8 @@ def add_abono_pedido(id):
         if not pedido:
             return jsonify({"error": "Pedido no encontrado"}), 404
 
-        # No permitir abonos si ya está entregado o cancelado
-        if pedido.estado.nombre in ['entregado', 'cancelado']:
+    # No permitir abonos si el pedido ya está pagado o anulado
+        if pedido.estado.nombre in ['pagado', 'anulado']:
             return jsonify({"error": f"No se pueden registrar abonos en un pedido {pedido.estado.nombre}"}), 400
 
         data = request.get_json()
@@ -414,6 +398,12 @@ def add_abono_pedido(id):
 
         # Actualizar acumulado
         pedido.abono_acumulado = nuevo_acumulado
+
+                # Si el abono completa el pago, cambiar estado a "pagado" automáticamente
+        if nuevo_acumulado >= pedido.total:
+            estado_pagado = EstadoPedido.query.filter_by(nombre='pagado').first()
+            if estado_pagado:
+                pedido.estado_id = estado_pagado.id
 
         # NO se crea venta aquí, aunque se complete el pago. Solo se actualiza el acumulado.
         # La venta se creará únicamente cuando se cambie el estado a 'entregado' vía PUT /pedidos/<id>
@@ -469,8 +459,8 @@ def create_detalle_pedido():
             return jsonify({"error": "El pedido especificado no existe"}), 404
         
         # Solo permitir modificar pedidos en estado pendiente o confirmado
-        if pedido.estado.nombre not in ['pendiente', 'confirmado']:
-            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado.nombre}'. Solo se pueden modificar pedidos pendientes o confirmados"}), 400
+        if pedido.estado.nombre != 'pendiente':
+            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado.nombre}'. Solo se pueden modificar pedidos pendientes"}), 400
         
         producto = Producto.query.get(data['producto_id'])
         if not producto:
@@ -534,8 +524,8 @@ def update_detalle_pedido(id):
         if not pedido:
             return jsonify({"error": "El pedido asociado no existe"}), 404
         
-        if pedido.estado.nombre not in ['pendiente', 'confirmado']:
-            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado.nombre}'"}), 400
+        if pedido.estado.nombre != 'pendiente':
+            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado.nombre}'. Solo se pueden modificar pedidos pendientes"}), 400
         
         data = request.get_json()
         
@@ -602,8 +592,8 @@ def delete_detalle_pedido(id):
         if not pedido:
             return jsonify({"error": "El pedido asociado no existe"}), 404
         
-        if pedido.estado.nombre not in ['pendiente', 'confirmado']:
-            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado.nombre}'"}), 400
+        if pedido.estado.nombre != 'pendiente':
+            return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado.nombre}'. Solo se pueden modificar pedidos pendientes"}), 400
         
         producto = Producto.query.get(detalle.producto_id)
         if producto:
