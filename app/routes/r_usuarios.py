@@ -81,13 +81,57 @@ def get_usuarios_admin():
 def create_usuario_admin():
     """
     Crea un usuario administrativo.
-    REQUIERE: empleado_id, rol_id, correo, contrasenia
+    REQUIERE: nombre, correo, contrasenia, rol_id
+    """
+    try:
+        data = request.get_json()
+
+        required_fields = ['nombre', 'correo', 'contrasenia', 'rol_id']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({"error": f"El campo '{field}' es requerido"}), 400
+
+        correo = data['correo'].strip().lower()
+
+        if not EMAIL_REGEX.match(correo):
+            return jsonify({"error": "Formato de correo inválido"}), 400
+
+        if len(data['contrasenia']) < 6:
+            return jsonify({"error": "La contraseña debe tener al menos 6 caracteres"}), 400
+
+        if Usuario.query.filter_by(correo=correo).first():
+            return jsonify({"error": "El correo ya está registrado"}), 400
+
+        rol = Rol.query.get(data['rol_id'])
+        if not rol:
+            return jsonify({"error": "El rol especificado no existe"}), 400
+
+        usuario = Usuario(
+            nombre=data['nombre'].strip(),
+            correo=correo,
+            contrasenia=generate_password_hash(data['contrasenia']),
+            rol_id=rol.id,
+            cliente_id=None,
+            estado=data.get('estado', True)
+        )
+
+        db.session.add(usuario)
+        db.session.commit()
+
+        return jsonify({"success": True, "message": "Usuario creado", "usuario": usuario.to_dict()}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+    """
+    Crea un usuario administrativo.
+    REQUIERE: nombre, empleado_id, rol_id, correo, contrasenia
     """
     try:
         data = request.get_json()
 
         # Campos obligatorios para usuarios administrativos
-        required_fields = ['correo', 'contrasenia', 'rol_id', 'empleado_id']
+        required_fields = ['nombre', 'correo', 'contrasenia', 'rol_id', 'empleado_id']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({"error": f"El campo '{field}' es requerido"}), 400
@@ -117,6 +161,7 @@ def create_usuario_admin():
             }), 400
 
         usuario = Usuario(
+            nombre=data['nombre'],
             correo=correo,
             contrasenia=generate_password_hash(data['contrasenia']),
             rol_id=rol.id,
