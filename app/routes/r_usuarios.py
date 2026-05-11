@@ -1,12 +1,13 @@
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Usuario, Rol, Empleado
+from app.Models.models import Usuario, Rol
 from app.auth.decorators import permiso_requerido, get_usuario_actual
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.routes import main_bp
 import re
 
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+PASSWORD_REGEX = re.compile(r'^(?=.*[A-Z])(?=.*\d).{6,}$')
 
 
 # ============================================================
@@ -20,7 +21,7 @@ def get_mi_perfil_usuario():
         usuario = Usuario.query.get(claims.get('id'))
         if not usuario:
             return jsonify({"error": "Usuario no encontrado"}), 404
-        
+
         return jsonify({
             "id": usuario.id,
             "correo": usuario.correo,
@@ -28,7 +29,12 @@ def get_mi_perfil_usuario():
             "rol_nombre": usuario.rol.nombre if usuario.rol else None,
             "permisos": claims.get('permisos', []),
             "estado": usuario.estado,
-            "empleado": usuario.empleado.to_dict() if usuario.empleado else None,
+            "nombre": usuario.nombre,
+            "apellido": usuario.apellido,
+            "telefono": usuario.telefono,
+            "tipo_documento": usuario.tipo_documento,
+            "numero_documento": usuario.numero_documento,
+            "fecha_nacimiento": usuario.fecha_nacimiento.isoformat() if usuario.fecha_nacimiento else None,
             "cliente": usuario.cliente.to_dict() if usuario.cliente else None
         })
     except Exception as e:
@@ -44,13 +50,13 @@ def cambiar_mi_contrasenia_usuario():
             return jsonify({"error": "Usuario no encontrado"}), 404
 
         data = request.get_json()
-        
+
         if not check_password_hash(usuario.contrasenia, data.get('contrasenia_actual', '')):
             return jsonify({"error": "Contraseña actual incorrecta"}), 401
 
         nueva = data.get('nueva_contrasenia', '')
-        if len(nueva) < 6:
-            return jsonify({"error": "La nueva contraseña debe tener al menos 6 caracteres"}), 400
+        if not PASSWORD_REGEX.match(nueva):
+            return jsonify({"error": "La nueva contraseña debe tener al menos 6 caracteres, una mayúscula y un número"}), 400
 
         usuario.contrasenia = generate_password_hash(nueva)
         db.session.commit()
@@ -67,9 +73,8 @@ def cambiar_mi_contrasenia_usuario():
 @main_bp.route('/admin/usuarios', methods=['GET'])
 @permiso_requerido("usuarios")
 def get_usuarios_admin():
-    """Listar SOLO usuarios administrativos (con rol)"""
+    """Listar SOLO usuarios administrativos (con rol, excluyendo clientes)"""
     try:
-        # Solo usuarios que tienen rol (empleados admin)
         usuarios = Usuario.query.filter(Usuario.rol_id.isnot(None)).all()
         return jsonify([u.to_dict() for u in usuarios])
     except Exception as e:
@@ -81,24 +86,23 @@ def get_usuarios_admin():
 def create_usuario_admin():
     """
     Crea un usuario administrativo.
-    REQUIERE: empleado_id, rol_id, correo, contrasenia
+    REQUIERE: nombre, correo, contrasenia, rol_id
     """
     try:
         data = request.get_json()
 
-        # Campos obligatorios para usuarios administrativos
-        required_fields = ['correo', 'contrasenia', 'rol_id', 'empleado_id']
+        required_fields = ['nombre', 'correo', 'contrasenia', 'rol_id']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({"error": f"El campo '{field}' es requerido"}), 400
 
         correo = data['correo'].strip().lower()
-        
         if not EMAIL_REGEX.match(correo):
             return jsonify({"error": "Formato de correo inválido"}), 400
 
-        if len(data['contrasenia']) < 6:
-            return jsonify({"error": "La contraseña debe tener al menos 6 caracteres"}), 400
+        contrasenia = data['contrasenia']
+        if not PASSWORD_REGEX.match(contrasenia):
+            return jsonify({"error": "La contraseña debe tener al menos 6 caracteres, una mayúscula y un número"}), 400
 
         if Usuario.query.filter_by(correo=correo).first():
             return jsonify({"error": "El correo ya está registrado"}), 400
@@ -107,28 +111,19 @@ def create_usuario_admin():
         if not rol:
             return jsonify({"error": "El rol especificado no existe"}), 400
 
-        empleado = Empleado.query.get(data['empleado_id'])
-        if not empleado:
-            return jsonify({"error": f"No existe un empleado con ID {data['empleado_id']}"}), 400
-
-        if empleado.usuario:
-            return jsonify({
-                "error": f"El empleado '{empleado.nombre} {empleado.apellido}' ya tiene un usuario asignado."
-            }), 400
-
         usuario = Usuario(
+            nombre=data['nombre'].strip(),
             correo=correo,
-            contrasenia=generate_password_hash(data['contrasenia']),
+            contrasenia=generate_password_hash(contrasenia),
             rol_id=rol.id,
-            empleado_id=empleado.id,
             cliente_id=None,
             estado=data.get('estado', True)
         )
 
         db.session.add(usuario)
         db.session.commit()
-        
-        return jsonify({"success": True, "message": "Usuario administrativo creado", "usuario": usuario.to_dict()}), 201
+
+        return jsonify({"success": True, "message": "Usuario creado", "usuario": usuario.to_dict()}), 201
 
     except Exception as e:
         db.session.rollback()
@@ -157,6 +152,11 @@ def update_usuario_admin(id):
 
         data = request.get_json()
 
+        # Actualizar nombre
+        if 'nombre' in data:
+            usuario.nombre = data['nombre'].strip()
+
+        # Actualizar correo
         if 'correo' in data:
             correo = data['correo'].strip().lower()
             if not EMAIL_REGEX.match(correo):
@@ -166,28 +166,20 @@ def update_usuario_admin(id):
                 return jsonify({"error": "El correo ya está registrado"}), 400
             usuario.correo = correo
 
+        # Actualizar contraseña (solo si se envía y no está vacía)
         if 'contrasenia' in data and data['contrasenia']:
-            if len(data['contrasenia']) < 6:
-                return jsonify({"error": "La contraseña debe tener al menos 6 caracteres"}), 400
+            if not PASSWORD_REGEX.match(data['contrasenia']):
+                return jsonify({"error": "La contraseña debe tener al menos 6 caracteres, una mayúscula y un número"}), 400
             usuario.contrasenia = generate_password_hash(data['contrasenia'])
 
+        # Actualizar rol
         if 'rol_id' in data:
-            if not Rol.query.get(data['rol_id']):
+            rol = Rol.query.get(data['rol_id'])
+            if not rol:
                 return jsonify({"error": "El rol especificado no existe"}), 400
             usuario.rol_id = data['rol_id']
 
-        if 'empleado_id' in data:
-            nuevo_emp_id = data['empleado_id']
-            if nuevo_emp_id:
-                empleado = Empleado.query.get(nuevo_emp_id)
-                if not empleado:
-                    return jsonify({"error": f"No existe un empleado con ID {nuevo_emp_id}"}), 400
-                if empleado.usuario and empleado.usuario.id != id:
-                    return jsonify({
-                        "error": f"El empleado '{empleado.nombre} {empleado.apellido}' ya tiene otro usuario asignado."
-                    }), 400
-            usuario.empleado_id = nuevo_emp_id
-
+        # Actualizar estado
         if 'estado' in data:
             usuario.estado = data['estado']
 
