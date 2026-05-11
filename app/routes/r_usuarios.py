@@ -75,6 +75,7 @@ def cambiar_mi_contrasenia_usuario():
 def get_usuarios_admin():
     """Listar SOLO usuarios administrativos (con rol, excluyendo clientes)"""
     try:
+        db.session.expire_all()
         usuarios = Usuario.query.filter(Usuario.rol_id.isnot(None)).all()
         return jsonify([u.to_dict() for u in usuarios])
     except Exception as e:
@@ -134,6 +135,7 @@ def create_usuario_admin():
 @permiso_requerido("usuarios")
 def get_usuario(id):
     try:
+        db.session.expire_all()
         usuario = Usuario.query.get(id)
         if not usuario:
             return jsonify({"error": "Usuario no encontrado"}), 404
