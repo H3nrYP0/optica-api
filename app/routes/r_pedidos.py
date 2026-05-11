@@ -373,7 +373,7 @@ def add_abono_pedido(id):
         if not pedido:
             return jsonify({"error": "Pedido no encontrado"}), 404
 
-    # No permitir abonos si el pedido ya está pagado o anulado
+        # No permitir abonos si el pedido ya está pagado o anulado
         if pedido.estado.nombre in ['pagado', 'anulado']:
             return jsonify({"error": f"No se pueden registrar abonos en un pedido {pedido.estado.nombre}"}), 400
 
@@ -399,14 +399,8 @@ def add_abono_pedido(id):
         # Actualizar acumulado
         pedido.abono_acumulado = nuevo_acumulado
 
-                # Si el abono completa el pago, cambiar estado a "pagado" automáticamente
-        if nuevo_acumulado >= pedido.total:
-            estado_pagado = EstadoPedido.query.filter_by(nombre='pagado').first()
-            if estado_pagado:
-                pedido.estado_id = estado_pagado.id
-
-        # NO se crea venta aquí, aunque se complete el pago. Solo se actualiza el acumulado.
-        # La venta se creará únicamente cuando se cambie el estado a 'entregado' vía PUT /pedidos/<id>
+        # ❌ ELIMINADO: ya no se cambia el estado a pagado automáticamente
+        # El frontend deberá hacer un PUT a /pedidos/<id> con {"estado": "pagado"} cuando el saldo_pendiente llegue a 0
 
         db.session.commit()
 
@@ -415,11 +409,10 @@ def add_abono_pedido(id):
             "abono_acumulado": pedido.abono_acumulado,
             "saldo_pendiente": pedido.total - pedido.abono_acumulado
         }), 201
-        
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al registrar abono: {str(e)}"}), 500
-
 
 # ============================================================
 # MÓDULO: DETALLES DE PEDIDO (con prohibición de cambio de producto)
