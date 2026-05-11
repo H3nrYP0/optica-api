@@ -1,6 +1,6 @@
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Venta, DetalleVenta, Abono, Producto, Cliente, EstadoVenta
+from app.Models.models import Venta, DetalleVenta, Abono, Producto, Servicio, Cliente, EstadoVenta
 from datetime import datetime
 from app.routes import main_bp
 from app.auth.decorators import permiso_requerido
@@ -23,10 +23,102 @@ def get_ventas():
 @main_bp.route('/ventas', methods=['POST'])
 @permiso_requerido("ventas")
 def create_venta():
-    # Ya no se permiten ventas directas. Solo desde pedidos.
-    return jsonify({
-        "error": "No se permite crear ventas directamente. Las ventas se generan automáticamente al marcar un pedido como 'entregado' estando pagado al 100%."
-    }), 400
+    try:
+        data = request.get_json()
+        required_fields = ['cliente_id', 'metodo_pago', 'items']
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({"error": f"El campo '{field}' es requerido"}), 400
+
+        cliente = Cliente.query.get(data['cliente_id'])
+        if not cliente or not cliente.estado:
+            return jsonify({"error": "Cliente no válido o inactivo"}), 400
+
+        metodo_pago = data['metodo_pago']
+        if metodo_pago not in ['efectivo', 'transferencia', 'tarjeta']:
+            return jsonify({"error": "Método de pago inválido"}), 400
+
+        metodo_entrega = data.get('metodo_entrega', 'tienda')
+        if metodo_entrega not in ['tienda', 'domicilio']:
+            return jsonify({"error": "Método de entrega inválido"}), 400
+
+        if metodo_entrega == 'domicilio' and not data.get('direccion_entrega'):
+            return jsonify({"error": "Para domicilio se requiere dirección de entrega"}), 400
+
+        items = data['items']
+        if not isinstance(items, list) or len(items) == 0:
+            return jsonify({"error": "La venta debe tener al menos un ítem"}), 400
+
+        estado_completada = EstadoVenta.query.filter_by(nombre='completada').first()
+        if not estado_completada:
+            return jsonify({"error": "Estado 'completada' no encontrado"}), 500
+
+        total_calculado = 0
+
+        venta = Venta(
+            cliente_id=data['cliente_id'],
+            metodo_pago=metodo_pago,
+            metodo_entrega=metodo_entrega,
+            direccion_entrega=data.get('direccion_entrega', '').strip(),
+            transferencia_comprobante=data.get('transferencia_comprobante'),
+            fecha_venta=datetime.utcnow(),
+            total=0,
+            estado_id=estado_completada.id,
+            pedido_id=None,
+            cita_id=None,
+        )
+        db.session.add(venta)
+        db.session.flush()
+
+        for idx, item_data in enumerate(items):
+            tiene_producto = item_data.get('producto_id')
+            tiene_servicio = item_data.get('servicio_id')
+            if not tiene_producto and not tiene_servicio:
+                db.session.rollback()
+                return jsonify({"error": f"El item {idx+1} debe tener producto_id o servicio_id"}), 400
+
+            try:
+                cantidad = int(item_data['cantidad'])
+                precio = float(item_data['precio_unitario'])
+            except (ValueError, TypeError, KeyError):
+                db.session.rollback()
+                return jsonify({"error": f"El item {idx+1} tiene cantidad o precio inválido"}), 400
+
+            if cantidad <= 0 or precio <= 0:
+                db.session.rollback()
+                return jsonify({"error": f"Cantidad y precio deben ser mayores a 0 en item {idx+1}"}), 400
+
+            if tiene_producto:
+                producto = Producto.query.get(tiene_producto)
+                if not producto or not producto.estado:
+                    db.session.rollback()
+                    return jsonify({"error": f"Producto ID {tiene_producto} no existe o está inactivo"}), 400
+                if producto.stock < cantidad:
+                    db.session.rollback()
+                    return jsonify({"error": f"Stock insuficiente para '{producto.nombre}'"}), 400
+                producto.stock -= cantidad
+
+            subtotal = cantidad * precio - float(item_data.get('descuento', 0))
+            total_calculado += subtotal
+
+            detalle = DetalleVenta(
+                venta_id=venta.id,
+                producto_id=tiene_producto or None,
+                servicio_id=tiene_servicio or None,
+                cantidad=cantidad,
+                precio_unitario=precio,
+                descuento=float(item_data.get('descuento', 0)),
+                subtotal=subtotal,
+            )
+            db.session.add(detalle)
+
+        venta.total = total_calculado
+        db.session.commit()
+        return jsonify({"message": "Venta creada exitosamente", "venta": venta.to_dict()}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al crear venta: {str(e)}"}), 500
 
 
 @main_bp.route('/ventas/<int:id>', methods=['GET'])

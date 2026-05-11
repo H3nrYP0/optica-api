@@ -557,7 +557,8 @@ class Venta(db.Model):
             'estado_id': self.estado_id,
             'estado_nombre': self.estado_venta.nombre if self.estado_venta else None,
             'saldo_pendiente': self.saldo_pendiente,
-            'cliente_nombre': self.cliente.nombre if self.cliente else None,
+            # Cambio aquí: ahora incluye nombre completo
+            'cliente_nombre': f"{self.cliente.nombre} {self.cliente.apellido}".strip() if self.cliente else None,
             'cita_fecha': self.cita.fecha.isoformat() if self.cita else None,
             'cita_servicio': self.cita.servicio.nombre if self.cita else None,
             'detalles': [item.to_dict() for item in self.detalles] if self.detalles else [],
