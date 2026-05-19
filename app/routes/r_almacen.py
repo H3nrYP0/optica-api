@@ -17,6 +17,41 @@ def get_marcas():
     except Exception as e:
         return jsonify({"error": "Error al obtener marcas"}), 500
 
+# ============================================================
+# VERIFICACIÓN DE EXISTENCIA (ligera)
+# ============================================================
+@main_bp.route('/marcas/verificar-existencia', methods=['GET'])
+def verificar_existencia_marca():
+    try:
+        nombre = request.args.get('nombre', '').strip()
+        exclude_id = request.args.get('exclude_id', type=int)
+
+        if not nombre or len(nombre) < 2:
+            return jsonify({'exists': False})
+
+        query = Marca.query.filter(Marca.nombre.ilike(nombre))
+        if exclude_id is not None:
+            query = query.filter(Marca.id != exclude_id)
+
+        exists = db.session.query(query.exists()).scalar()
+        return jsonify({'exists': exists})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============================================================
+# PRODUCTOS ASOCIADOS (count)
+# ============================================================
+@main_bp.route('/marcas/<int:id>/productos-asociados', methods=['GET'])
+def marca_productos_asociados(id):
+    try:
+        marca = Marca.query.get(id)
+        if not marca:
+            return jsonify({'error': 'Marca no encontrada'}), 404
+
+        count = Producto.query.filter_by(marca_id=id).count()
+        return jsonify({'hasProductos': count > 0, 'count': count})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @main_bp.route('/marcas', methods=['POST'])
 @permiso_requerido("productos")
