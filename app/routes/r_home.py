@@ -1,3 +1,9 @@
+"""
+Módulo de utilidades públicas: home, listado de endpoints, consulta genérica.
+Ninguno de estos endpoints requiere autenticación ni permisos especiales.
+Son de libre acceso para documentación y pruebas.
+"""
+
 from flask import jsonify, request
 from app.routes import main_bp
 from app.Models.models import (
@@ -10,11 +16,11 @@ from app.Models.models import (
 @main_bp.route('/')
 def home():
     return jsonify({
-        "message": "API Óptica - Sistema Completo", 
+        "message": "API Óptica - Sistema Completo",
         "version": "3.0",
         "modulos_principales": {
             "clientes": "GET/POST /clientes",
-            "empleados": "GET/POST /empleados", 
+            "empleados": "GET/POST /empleados",
             "proveedores": "GET/POST /proveedores",
             "ventas": "GET/POST /ventas",
             "citas": "GET/POST /citas",
@@ -38,21 +44,21 @@ def home():
         },
         "relaciones": {
             "detalles_venta": "GET /ventas/{id}/detalles",
-            "detalles_compra": "GET /compras/{id}/detalles", 
+            "detalles_compra": "GET /compras/{id}/detalles",
             "historial_cliente": "GET /clientes/{id}/historial",
             "horarios_empleado": "GET /empleados/{id}/horarios"
         },
         "utilidades": {
-            "dashboard": "GET /dashboard/estadisticas",
             "elemento_especifico": "GET /{tabla}/{id}",
-            "todos_endpoints": "GET /endpoints"
+            "todos_endpoints": "GET /endpoints",
+            "verificar_disponibilidad": "GET /verificar-disponibilidad"
         },
         "documentacion_completa": "GET /endpoints para ver todos los endpoints disponibles"
     })
 
 @main_bp.route('/endpoints', methods=['GET'])
 def get_all_endpoints():
-    """Documentación ACTUALIZADA de endpoints REALES"""
+    """Documentación de todos los endpoints reales del sistema."""
     return jsonify({
         "modulos_principales": {
             "clientes": "GET/POST /clientes, PUT/DELETE /clientes/{id}",
@@ -100,42 +106,26 @@ def get_all_endpoints():
 
 @main_bp.route('/<tabla>/<int:id>', methods=['GET'])
 def get_elemento(tabla, id):
+    """Consulta genérica para obtener un registro por ID de cualquier tabla."""
     try:
         modelos = {
-            'productos': Producto,
-            'clientes': Cliente,
-            'empleados': Empleado,
-            'proveedores': Proveedor,
-            'ventas': Venta,
-            'citas': Cita,
-            'servicios': Servicio,
-            'usuarios': Usuario,
-            'marcas': Marca,
-            'categorias': CategoriaProducto,
-            'compras': Compra,
-            'estado-cita': EstadoCita,
-            'estado-venta': EstadoVenta,
-            'roles': Rol,
-            'detalle-venta': DetalleVenta,
-            'detalle-compra': DetalleCompra,
-            'horario': Horario,
-            'historial-formula': HistorialFormula,
-            'abono': Abono,
-            'permiso': Permiso,
-            'permiso-rol': PermisoPorRol,
-            'pedidos': Pedido,
-            'detalle-pedido': DetallePedido,
-            'imagenes': Imagen,
-            'campanas-salud': CampanaSalud
+            'productos': Producto, 'clientes': Cliente, 'empleados': Empleado,
+            'proveedores': Proveedor, 'ventas': Venta, 'citas': Cita,
+            'servicios': Servicio, 'usuarios': Usuario, 'marcas': Marca,
+            'categorias': CategoriaProducto, 'compras': Compra,
+            'estado-cita': EstadoCita, 'estado-venta': EstadoVenta,
+            'roles': Rol, 'detalle-venta': DetalleVenta,
+            'detalle-compra': DetalleCompra, 'horario': Horario,
+            'historial-formula': HistorialFormula, 'abono': Abono,
+            'permiso': Permiso, 'permiso-rol': PermisoPorRol,
+            'pedidos': Pedido, 'detalle-pedido': DetallePedido,
+            'imagenes': Imagen, 'campanas-salud': CampanaSalud
         }
-        
         if tabla not in modelos:
             return jsonify({"error": "Tabla no encontrada"}), 404
-            
         elemento = modelos[tabla].query.get(id)
         if not elemento:
             return jsonify({"error": f"{tabla[:-1]} no encontrado"}), 404
-            
         return jsonify(elemento.to_dict())
     except Exception as e:
         return jsonify({"error": "Error al obtener elemento"}), 500
