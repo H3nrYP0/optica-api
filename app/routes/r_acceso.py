@@ -1,3 +1,10 @@
+"""
+Módulo de administración de usuarios, roles y permisos.
+- Usuarios: CRUD con permisos ver_usuarios, crear_usuarios, editar_usuarios, eliminar_usuarios.
+- Roles: CRUD con permiso gestionar_configuracion.
+- Permisos y asignaciones: CRUD con permiso gestionar_configuracion.
+"""
+
 from flask import jsonify, request
 from app.database import db
 from app.Models.models import Usuario, Rol, Permiso, PermisoPorRol
@@ -12,7 +19,7 @@ ROLES_CRITICOS = ['admin', 'superadmin']
 
 # ===== USUARIOS =====
 @main_bp.route('/usuarios', methods=['GET'])
-@permiso_requerido('usuarios')
+@permiso_requerido('ver_usuarios')
 def get_usuarios():
     try:
         print("🔍 Intentando obtener usuarios...")
@@ -34,7 +41,7 @@ def get_usuarios():
         return jsonify({"error": f"Error al obtener usuarios: {str(e)}"}), 500
 
 @main_bp.route('/usuarios', methods=['POST'])
-@permiso_requerido('usuarios')
+@permiso_requerido('crear_usuarios')
 def create_usuario():
     try:
         data = request.get_json()
@@ -94,7 +101,7 @@ def create_usuario():
         return jsonify({"success": False, "error": f"Error al crear usuario: {str(e)}"}), 500
 
 @main_bp.route('/usuarios/<int:id>', methods=['PUT'])
-@permiso_requerido('usuarios')
+@permiso_requerido('editar_usuarios')
 def update_usuario(id):
     try:
         usuario = Usuario.query.get(id)
@@ -131,7 +138,7 @@ def update_usuario(id):
         return jsonify({"error": "Error al actualizar usuario"}), 500
 
 @main_bp.route('/usuarios/<int:id>', methods=['DELETE'])
-@permiso_requerido('usuarios')
+@permiso_requerido('eliminar_usuarios')
 def delete_usuario(id):
     try:
         usuario = Usuario.query.get(id)
@@ -146,9 +153,9 @@ def delete_usuario(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar usuario"}), 500
 
-# ===== ROLES =====
+# ===== ROLES (usar gestionar_configuracion) =====
 @main_bp.route('/roles', methods=['GET'])
-@permiso_requerido('roles')
+@permiso_requerido('gestionar_configuracion')
 def get_roles():
     try:
         roles = Rol.query.all()
@@ -157,7 +164,7 @@ def get_roles():
         return jsonify({"error": "Error al obtener roles"}), 500
 
 @main_bp.route('/roles', methods=['POST'])
-@permiso_requerido('roles')
+@permiso_requerido('gestionar_configuracion')
 def create_rol():
     try:
         data = request.get_json()
@@ -191,7 +198,7 @@ def create_rol():
         return jsonify({"error": "Error al crear rol"}), 500
 
 @main_bp.route('/roles/<int:id>', methods=['PUT'])
-@permiso_requerido('roles')
+@permiso_requerido('gestionar_configuracion')
 def update_rol(id):
     try:
         rol = Rol.query.get(id)
@@ -236,7 +243,7 @@ def update_rol(id):
         return jsonify({"error": "Error al actualizar rol"}), 500
 
 @main_bp.route('/roles/<int:id>', methods=['DELETE'])
-@permiso_requerido('roles')
+@permiso_requerido('gestionar_configuracion')
 def delete_rol(id):
     try:
         rol = Rol.query.get(id)
@@ -256,9 +263,9 @@ def delete_rol(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar rol"}), 500
 
-# ===== PERMISOS =====
+# ===== PERMISOS (gestionar_configuracion) =====
 @main_bp.route('/permiso', methods=['GET'])
-@permiso_requerido('configuracion')
+@permiso_requerido('gestionar_configuracion')
 def get_permisos():
     try:
         permisos = Permiso.query.all()
@@ -267,7 +274,7 @@ def get_permisos():
         return jsonify({"error": "Error al obtener permisos"}), 500
 
 @main_bp.route('/permiso', methods=['POST'])
-@permiso_requerido('configuracion')
+@permiso_requerido('gestionar_configuracion')
 def create_permiso():
     try:
         data = request.get_json()
@@ -282,7 +289,7 @@ def create_permiso():
         return jsonify({"error": "Error al crear permiso"}), 500
 
 @main_bp.route('/permiso/<int:id>', methods=['PUT'])
-@permiso_requerido('configuracion')
+@permiso_requerido('gestionar_configuracion')
 def update_permiso(id):
     try:
         permiso = Permiso.query.get(id)
@@ -298,7 +305,7 @@ def update_permiso(id):
         return jsonify({"error": "Error al actualizar permiso"}), 500
 
 @main_bp.route('/permiso/<int:id>', methods=['DELETE'])
-@permiso_requerido('configuracion')
+@permiso_requerido('gestionar_configuracion')
 def delete_permiso(id):
     try:
         permiso = Permiso.query.get(id)
@@ -312,7 +319,7 @@ def delete_permiso(id):
         return jsonify({"error": "Error al eliminar permiso"}), 500
 
 @main_bp.route('/permiso-rol', methods=['GET'])
-@permiso_requerido('configuracion')
+@permiso_requerido('gestionar_configuracion')
 def get_permisos_rol():
     try:
         permisos_rol = PermisoPorRol.query.all()
@@ -321,7 +328,7 @@ def get_permisos_rol():
         return jsonify({"error": "Error al obtener permisos por rol"}), 500
 
 @main_bp.route('/permiso-rol', methods=['POST'])
-@permiso_requerido('configuracion')
+@permiso_requerido('gestionar_configuracion')
 def create_permiso_rol():
     try:
         data = request.get_json()
@@ -338,7 +345,7 @@ def create_permiso_rol():
         return jsonify({"error": "Error al crear permiso por rol"}), 500
 
 @main_bp.route('/permiso-rol/<int:id>', methods=['PUT'])
-@permiso_requerido('configuracion')
+@permiso_requerido('gestionar_configuracion')
 def update_permiso_rol(id):
     try:
         permiso_rol = PermisoPorRol.query.get(id)
@@ -356,7 +363,7 @@ def update_permiso_rol(id):
         return jsonify({"error": "Error al actualizar permiso por rol"}), 500
 
 @main_bp.route('/permiso-rol/<int:id>', methods=['DELETE'])
-@permiso_requerido('configuracion')
+@permiso_requerido('gestionar_configuracion')
 def delete_permiso_rol(id):
     try:
         permiso_rol = PermisoPorRol.query.get(id)
