@@ -85,6 +85,18 @@ def create_usuario():
             db.session.add(cliente)
             db.session.flush()
             cliente_id = cliente.id
+
+            # ========== VALIDACIÓN PARA CLIENTES: asignar solo permiso básico ==========
+            permiso_basico = Permiso.query.filter_by(nombre='cliente_acceso_basico').first()
+            if not permiso_basico:
+                permiso_basico = Permiso(nombre='cliente_acceso_basico')
+                db.session.add(permiso_basico)
+                db.session.flush()
+            # Asignar ese permiso al rol de cliente (id=2) si no existe
+            existe = PermisoPorRol.query.filter_by(rol_id=data['rol_id'], permiso_id=permiso_basico.id).first()
+            if not existe:
+                db.session.add(PermisoPorRol(rol_id=data['rol_id'], permiso_id=permiso_basico.id))
+
         usuario = Usuario(
             nombre=data['nombre'],
             correo=data['correo'].strip().lower(),
@@ -108,6 +120,13 @@ def update_usuario(id):
         if not usuario:
             return jsonify({"error": "Usuario no encontrado"}), 404
         data = request.get_json()
+
+        # ========== VALIDACIÓN PARA CLIENTES: solo pueden tener permiso básico ==========
+        if usuario.es_cliente and 'permisos' in data:
+            permisos_permitidos = ['cliente_acceso_basico']
+            if not all(p in permisos_permitidos for p in data['permisos']):
+                return jsonify({"error": "Los clientes solo pueden tener el permiso 'cliente_acceso_basico'"}), 403
+
         if 'correo' in data:
             correo = data['correo'].strip().lower()
             if not EMAIL_REGEX.match(correo):
