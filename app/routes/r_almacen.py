@@ -1,7 +1,10 @@
 """
 Módulo de almacén: marcas, categorías, productos, imágenes y multimedia.
 Permisos granulares:
-- Para marcas, categorías, productos, imágenes, multimedia: ver_productos, crear_productos, editar_productos, eliminar_productos
+- Productos: ver_productos, crear_productos, editar_productos, eliminar_productos
+- Marcas: ver_marcas, crear_marcas, editar_marcas, eliminar_marcas
+- Categorías: ver_categorias, crear_categorias, editar_categorias, eliminar_categorias
+- Imágenes y multimedia: usar permisos de productos (por simplicidad)
 """
 
 from flask import jsonify, request
@@ -49,7 +52,7 @@ def marca_productos_asociados(id):
         return jsonify({'error': str(e)}), 500
 
 @main_bp.route('/marcas', methods=['POST'])
-@permiso_requerido("crear_productos")
+@permiso_requerido("crear_marcas")
 def create_marca():
     try:
         data = request.get_json()
@@ -69,7 +72,7 @@ def create_marca():
         return jsonify({"error": f"Error al crear marca: {str(e)}"}), 500
 
 @main_bp.route('/marcas/<int:id>', methods=['PUT'])
-@permiso_requerido("editar_productos")
+@permiso_requerido("editar_marcas")
 def update_marca(id):
     try:
         marca = Marca.query.get(id)
@@ -90,7 +93,7 @@ def update_marca(id):
         return jsonify({"error": f"Error al actualizar marca: {str(e)}"}), 500
 
 @main_bp.route('/marcas/<int:id>', methods=['DELETE'])
-@permiso_requerido("eliminar_productos")
+@permiso_requerido("eliminar_marcas")
 def delete_marca(id):
     try:
         marca = Marca.query.get(id)
@@ -118,7 +121,7 @@ def get_categorias():
         return jsonify({"error": "Error al obtener categorías"}), 500
 
 @main_bp.route('/categorias', methods=['POST'])
-@permiso_requerido("crear_productos")
+@permiso_requerido("crear_categorias")
 def create_categoria():
     try:
         data = request.get_json()
@@ -142,7 +145,7 @@ def create_categoria():
         return jsonify({"error": f"Error al crear categoría: {str(e)}"}), 500
 
 @main_bp.route('/categorias/<int:id>', methods=['PUT'])
-@permiso_requerido("editar_productos")
+@permiso_requerido("editar_categorias")
 def update_categoria(id):
     try:
         categoria = CategoriaProducto.query.get(id)
@@ -166,7 +169,7 @@ def update_categoria(id):
         return jsonify({"error": f"Error al actualizar categoría: {str(e)}"}), 500
 
 @main_bp.route('/categorias/<int:id>', methods=['DELETE'])
-@permiso_requerido("eliminar_productos")
+@permiso_requerido("eliminar_categorias")
 def delete_categoria(id):
     try:
         categoria = CategoriaProducto.query.get(id)

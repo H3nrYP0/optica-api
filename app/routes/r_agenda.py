@@ -2,7 +2,7 @@
 Módulo de agenda: citas, servicios, horarios, novedades y disponibilidad.
 Permisos granulares:
 - Citas: ver_citas, crear_citas, editar_citas, eliminar_citas
-- Servicios: usar mismos permisos de citas (por simplicidad)
+- Servicios: ver_servicios, crear_servicios, editar_servicios, eliminar_servicios
 - Horarios y novedades: ver_empleados, crear_empleados, editar_empleados, eliminar_empleados
 - Estados de cita: ver_citas, crear_citas, editar_citas, eliminar_citas
 """
@@ -294,7 +294,7 @@ def delete_cita(id):
         return jsonify({"error": f"Error al eliminar cita: {str(e)}"}), 500
 
 # ============================================================
-# MÓDULO: SERVICIOS (público GET, resto con permisos citas)
+# MÓDULO: SERVICIOS (público GET, resto con permisos propios)
 # ============================================================
 
 @main_bp.route('/servicios', methods=['GET'])
@@ -306,7 +306,7 @@ def get_servicios():
         return jsonify({"error": "Error al obtener servicios"}), 500
 
 @main_bp.route('/servicios', methods=['POST'])
-@permiso_requerido("crear_citas")
+@permiso_requerido("crear_servicios")
 def create_servicio():
     try:
         data = request.get_json()
@@ -336,7 +336,7 @@ def create_servicio():
         return jsonify({"error": f"Error al crear servicio: {str(e)}"}), 500
 
 @main_bp.route('/servicios/<int:id>', methods=['PUT'])
-@permiso_requerido("editar_citas")
+@permiso_requerido("editar_servicios")
 def update_servicio(id):
     try:
         servicio = Servicio.query.get(id)
@@ -374,7 +374,7 @@ def update_servicio(id):
         return jsonify({"error": f"Error al actualizar servicio: {str(e)}"}), 500
 
 @main_bp.route('/servicios/<int:id>', methods=['DELETE'])
-@permiso_requerido("eliminar_citas")
+@permiso_requerido("eliminar_servicios")
 def delete_servicio(id):
     try:
         servicio = Servicio.query.get(id)

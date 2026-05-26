@@ -1,7 +1,7 @@
 """
 Módulo de campañas de salud.
-Permisos granulares: usar permisos de citas (ver_citas, crear_citas, editar_citas, eliminar_citas)
-porque las campañas son similares a citas.
+Permisos granulares:
+- Campañas: ver_campanas, crear_campanas, editar_campanas, eliminar_campanas
 """
 
 from flask import jsonify, request
@@ -56,11 +56,11 @@ def validar_disponibilidad_empleado(empleado_id, fecha, hora, duracion=60, exclu
     return {"disponible": True, "mensaje": "Disponible"}
 
 # ============================================================
-# MÓDULO: CAMPAÑAS DE SALUD (permisos de citas)
+# MÓDULO: CAMPAÑAS DE SALUD (permisos propios)
 # ============================================================
 
 @main_bp.route('/campanas-salud', methods=['GET'])
-@permiso_requerido("ver_citas")
+@permiso_requerido("ver_campanas")
 def get_campanas_salud():
     try:
         campanas = CampanaSalud.query.order_by(CampanaSalud.fecha.desc(), CampanaSalud.hora.desc()).all()
@@ -69,7 +69,7 @@ def get_campanas_salud():
         return jsonify({"error": f"Error al obtener campañas: {str(e)}"}), 500
 
 @main_bp.route('/campanas-salud/<int:id>', methods=['GET'])
-@permiso_requerido("ver_citas")
+@permiso_requerido("ver_campanas")
 def get_campana_salud(id):
     try:
         campana = CampanaSalud.query.get(id)
@@ -80,7 +80,7 @@ def get_campana_salud(id):
         return jsonify({"error": f"Error al obtener campaña: {str(e)}"}), 500
 
 @main_bp.route('/campanas-salud', methods=['POST'])
-@permiso_requerido("crear_citas")
+@permiso_requerido("crear_campanas")
 def create_campana_salud():
     try:
         data = request.get_json()
@@ -131,7 +131,7 @@ def create_campana_salud():
         return jsonify({"error": f"Error al crear campaña: {str(e)}"}), 500
 
 @main_bp.route('/campanas-salud/<int:id>', methods=['PUT'])
-@permiso_requerido("editar_citas")
+@permiso_requerido("editar_campanas")
 def update_campana_salud(id):
     try:
         campana = CampanaSalud.query.get(id)
@@ -193,7 +193,7 @@ def update_campana_salud(id):
         return jsonify({"error": f"Error al actualizar campaña: {str(e)}"}), 500
 
 @main_bp.route('/campanas-salud/<int:id>', methods=['DELETE'])
-@permiso_requerido("eliminar_citas")
+@permiso_requerido("eliminar_campanas")
 def delete_campana_salud(id):
     try:
         campana = CampanaSalud.query.get(id)
@@ -211,7 +211,7 @@ def delete_campana_salud(id):
         return jsonify({"error": f"Error al eliminar campaña: {str(e)}"}), 500
 
 @main_bp.route('/empleados/<int:empleado_id>/campanas', methods=['GET'])
-@permiso_requerido("ver_citas")
+@permiso_requerido("ver_campanas")
 def get_campanas_por_empleado(empleado_id):
     try:
         empleado = Empleado.query.get(empleado_id)

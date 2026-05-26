@@ -1,7 +1,8 @@
 """
 Script completo para inicializar la base de datos con:
 - Roles (Admin, Cliente, Optometra)
-- Permisos granulares (solo los que tienen endpoints reales)
+- Permisos granulares (CRUD + especiales con endpoints reales)
+- Permiso especial 'cliente_acceso_basico' para el rol Cliente
 - Datos de prueba (mínimo 2 registros por tabla principal)
 - Usuarios: admin, cliente, optómetra
 
@@ -22,7 +23,7 @@ from app.Models.models import (
     Proveedor, Compra, DetalleCompra,
     Servicio, Empleado, Horario, EstadoCita, Cita,
     EstadoPedido, Pedido, DetallePedido, Abono,
-    EstadoVenta, Venta, DetalleVenta,
+    EstadoVenta, Venta, DetalleVenta, CampanaSalud
 )
 from werkzeug.security import generate_password_hash
 
@@ -32,7 +33,8 @@ from werkzeug.security import generate_password_hash
 
 ENTIDADES_CRUD = [
     'usuarios', 'clientes', 'productos', 'ventas', 'citas',
-    'empleados', 'proveedores', 'compras', 'pedidos'
+    'empleados', 'proveedores', 'compras', 'pedidos',
+    'marcas', 'categorias', 'servicios', 'campanas'
 ]
 ACCIONES_CRUD = ['ver', 'crear', 'editar', 'eliminar']
 
@@ -46,14 +48,8 @@ PERMISOS_ESPECIALES = [
     'eliminar_imagenes',        # DELETE /imagenes/<id>
     'gestionar_configuracion',  # CRUD de roles y permisos
     'ver_dashboard',            # Para el frontend
+    'cliente_acceso_basico',    # Permiso mínimo para clientes (requerido por la lógica de negocio)
 ]
-
-# NOTA: Los siguientes permisos NO tienen endpoints actualmente:
-# - generar_reporte_ventas, generar_reporte_citas, generar_reporte_inventario
-# - descargar_comprobante_pedido, ver_reportes
-# - crear_abono, ver_abonos, cancelar_abono
-# - cancelar_citas (se maneja con editar_citas)
-# Se omiten hasta que se implementen los endpoints.
 
 def crear_permisos():
     """Crea todos los permisos granulares (CRUD + especiales con endpoints)."""
@@ -108,7 +104,8 @@ def asignar_permisos_optometra():
     permisos_optometra = [
         'ver_citas', 'crear_citas', 'editar_citas', 'eliminar_citas',
         'cambiar_estado_cita',
-        'ver_empleados', 'crear_empleados', 'editar_empleados', 'eliminar_empleados',  # para gestionar su agenda
+        'ver_empleados', 'crear_empleados', 'editar_empleados', 'eliminar_empleados',
+        'ver_servicios',  # Para ver servicios al agendar
     ]
     asignados = 0
     for perm_nombre in permisos_optometra:
@@ -118,6 +115,23 @@ def asignar_permisos_optometra():
             asignados += 1
     db.session.commit()
     print(f"✅ Asignados {asignados} permisos al rol Optometra")
+
+def asignar_permisos_cliente():
+    """Asigna el permiso 'cliente_acceso_basico' al rol Cliente."""
+    rol_cliente = Rol.query.filter_by(nombre='Cliente').first()
+    if not rol_cliente:
+        print("⚠️ Rol Cliente no encontrado")
+        return
+    permiso_basico = Permiso.query.filter_by(nombre='cliente_acceso_basico').first()
+    if not permiso_basico:
+        print("⚠️ Permiso 'cliente_acceso_basico' no encontrado, créelo primero")
+        return
+    if not PermisoPorRol.query.filter_by(rol_id=rol_cliente.id, permiso_id=permiso_basico.id).first():
+        db.session.add(PermisoPorRol(rol_id=rol_cliente.id, permiso_id=permiso_basico.id))
+        db.session.commit()
+        print("✅ Asignado 'cliente_acceso_basico' al rol Cliente")
+    else:
+        print("ℹ️ El rol Cliente ya tiene el permiso básico")
 
 def crear_usuarios():
     """Crea usuarios: Admin (con cliente), Cliente estándar, Optómetra."""
@@ -180,7 +194,6 @@ def crear_usuarios():
     opt_email = "optometra@visualoutlet.com"
     opt_pass = "Optometra123"
     if not Usuario.query.filter_by(correo=opt_email).first():
-        # Crear empleado asociado
         empleado_opt = Empleado.query.filter_by(correo=opt_email).first()
         if not empleado_opt:
             empleado_opt = Empleado(
@@ -408,6 +421,22 @@ def poblar_datos_prueba():
         db.session.commit()
         print("✅ Venta de ejemplo creada")
 
+    # ----- Campañas de Salud (ejemplo) -----
+    campana_data = [
+        ("OptiSalud", "900123456", "Carlos López", date.today() + timedelta(days=5), "09:00", "Centro Comercial", "Jornada de salud visual", "descripción"),
+        ("Visión para Todos", "900987654", "Ana María", date.today() + timedelta(days=10), "14:00", "Parque Principal", "Exámenes gratuitos", "sin observaciones")
+    ]
+    for emp, nit, cont, fecha, hora, dir, desc, obs in campana_data:
+        if not CampanaSalud.query.filter_by(empresa=emp).first():
+            camp = CampanaSalud(
+                empresa=emp, nit_empresa=nit, contacto=cont, fecha=fecha,
+                hora=datetime.strptime(hora, "%H:%M").time(), direccion=dir,
+                descripcion=desc, observaciones=obs, estado_cita_id=1, empleado_id=empleado_opt.id
+            )
+            db.session.add(camp)
+    db.session.commit()
+    print("✅ Campañas de ejemplo creadas")
+
     print("✅ Datos de prueba poblados")
 
 # ============================================================
@@ -421,6 +450,7 @@ def main():
         crear_permisos()
         asignar_permisos_a_admin()
         asignar_permisos_optometra()
+        asignar_permisos_cliente()
         crear_usuarios()
         poblar_datos_prueba()
         print("\n🎉 Seed completado. Datos de prueba creados.")
