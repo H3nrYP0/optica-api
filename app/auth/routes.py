@@ -3,9 +3,9 @@ Blueprint de autenticación: /auth
 
 Rutas:
     POST /auth/login            → login con JWT
-    POST /auth/register         → inicia registro, envía código por Brevo
+    POST /auth/register         → inicia registro, envía código por Mailtrap
     POST /auth/verify-register  → verifica código y crea el cliente + usuario (con rol Cliente)
-    POST /auth/forgot-password  → envía código de recuperación por Brevo (solo para usuarios con rol)
+    POST /auth/forgot-password  → envía código de recuperación por Mailtrap (solo para usuarios con rol)
     POST /auth/reset-password   → verifica código y actualiza contraseña
     POST /auth/logout           → cierra sesión (instrucción al frontend)
     GET  /auth/me               → retorna datos del usuario autenticado

@@ -1,16 +1,23 @@
+"""
+Fábrica de la aplicación Flask.
+- Configura CORS
+- Inicializa BD
+- Inicializa autenticación (JWT callbacks)
+- Registra blueprints
+- Middleware before_request: solo carga usuario desde token
+- Manejadores de errores globales
+"""
+
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify
 from flask_cors import CORS
 from config import Config
-
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # ============================================================
-    # 1. CONFIGURACIÓN CORS
-    # ============================================================
+    # CORS
     CORS(app,
         origins=[
             "http://localhost:5173",
@@ -23,150 +30,29 @@ def create_app():
         supports_credentials=True
     )
 
-    # ============================================================
-    # 2. BASE DE DATOS
-    # ============================================================
+    # Base de datos
     from app.database import init_db, db
     init_db(app)
 
-    # ============================================================
-    # 3. AUTENTICACIÓN (JWT)
-    # ============================================================
+    # Autenticación (JWT callbacks)
     from app.auth import init_auth
     init_auth(app)
 
-    # ============================================================
-    # 4. REGISTRO DE BLUEPRINTS
-    # ============================================================
+    # Blueprints
     from app.routes import main_bp
     from app.auth.routes import auth_bp
-
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix='/auth')
 
-    # ============================================================
-    # 5. MIDDLEWARE GLOBAL DE AUTENTICACIÓN
-    # ============================================================
+    # Middleware: solo carga de usuario
+    from app.middleware import cargar_usuario_desde_token
+
     @app.before_request
-    def verificar_autenticacion():
-        # Permitir OPTIONS (preflight de CORS)
-        if request.method == 'OPTIONS':
-            response = jsonify({'status': 'ok'})
-            response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Cache-Control'
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
-            return response, 200
+    def before_request():
+        cargar_usuario_desde_token()
+        # No hay más lógica de autorización aquí. Eso se hace en decoradores.
 
-        # ========================================================
-        # RUTAS PÚBLICAS - accesibles SIN token
-        # ========================================================
-        RUTAS_PUBLICAS = {
-            # Auth
-            'auth.login',
-            'auth.register',
-            'auth.verify_register',
-            'auth.forgot_password',
-            'auth.reset_password',
-
-            # Clientes desde landing (público)
-            'main.get_clientes_publico',
-            'main.create_cliente_publico',
-            'main.update_cliente_publico',
-            'main.delete_cliente_publico',
-
-            # Catálogo landing
-            'main.get_productos',
-            'main.get_categorias',
-            'main.get_marcas',
-            'main.get_servicios',
-
-            # Imágenes y multimedia públicas
-            'main.get_imagenes',
-            'main.get_imagen',
-            'main.get_imagenes_por_producto',
-            'main.obtener_comprobante_pedido',
-
-            # Agendamiento desde landing (solo consulta)
-            'main.get_estados_cita',
-            'main.verificar_disponibilidad',
-            'main.verificar_disponibilidad_multiple',
-
-            # Utilidades
-            'static',
-            'main.home',
-            'main.get_all_endpoints',
-            'main.get_elemento',
-        }
-
-        # Si es ruta pública, permitir acceso
-        if not request.endpoint or request.endpoint in RUTAS_PUBLICAS:
-            return None
-
-        # ========================================================
-        # RUTAS PROTEGIDAS - requieren JWT (citas, perfil)
-        # ========================================================
-        RUTAS_PROTEGIDAS = {
-            'main.agendar_cita',
-            'main.get_mis_citas',
-            'main.cancelar_mi_cita',
-            'main.get_mi_perfil',
-            'main.update_mi_perfil',
-            'main.cambiar_mi_contrasenia',
-        }
-
-        from flask_jwt_extended import verify_jwt_in_request, get_jwt
-
-        if request.endpoint in RUTAS_PROTEGIDAS:
-            try:
-                verify_jwt_in_request()
-                return None
-            except Exception:
-                return jsonify({
-                    "success": False,
-                    "error": "Debes iniciar sesión",
-                    "message": "Debes iniciar sesión para realizar esta acción",
-                    "redirect": "/login"
-                }), 401
-
-        # ========================================================
-        # RUTAS ADMIN - Solo empleados con rol
-        # ========================================================
-        if request.path.startswith('/admin/') or (request.endpoint and 'admin' in request.endpoint):
-            try:
-                verify_jwt_in_request()
-                claims = get_jwt()
-                
-                # Cliente no puede acceder a rutas admin
-                if claims.get('es_cliente', True):
-                    return jsonify({
-                        "success": False,
-                        "error": "Acceso denegado",
-                        "message": "Los clientes no tienen acceso al panel administrativo"
-                    }), 403
-                return None
-            except Exception:
-                return jsonify({
-                    "success": False,
-                    "error": "Token inválido",
-                    "message": "Debes iniciar sesión para acceder a este recurso"
-                }), 401
-
-        # ========================================================
-        # POR DEFECTO - requiere token
-        # ========================================================
-        try:
-            verify_jwt_in_request()
-        except Exception:
-            return jsonify({
-                "success": False,
-                "error": "Autenticación requerida",
-                "message": "Debes iniciar sesión para acceder a este recurso"
-            }), 401
-
-    # ============================================================
-    # 6. MANEJADORES DE ERRORES GLOBALES
-    # ============================================================
+    # Manejadores de error
     @app.errorhandler(404)
     def not_found(error):
         return jsonify({
@@ -191,9 +77,6 @@ def create_app():
             "message": "Ocurrió un error inesperado. Intenta de nuevo más tarde"
         }), 500
 
-    # ============================================================
-    # 7. VERIFICACIÓN DE BASE DE DATOS AL INICIAR
-    # ============================================================
     with app.app_context():
         try:
             db.create_all()
