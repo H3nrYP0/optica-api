@@ -5,10 +5,11 @@ Los endpoints administrativos usan permisos CRUD granulares.
 
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Usuario, Rol
+from app.Models.models import Usuario, Rol, Cliente
 from app.auth.decorators import jwt_requerido, permiso_requerido, get_usuario_actual
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.routes import main_bp
+from datetime import datetime
 import re
 
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
@@ -194,3 +195,101 @@ def delete_usuario_admin(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error: {str(e)}"}), 500
+ 
+# ============================================================
+# PERFIL UNIFICADO (usuario + cliente)
+# ============================================================
+
+@main_bp.route('/mi-perfil', methods=['GET'])
+@jwt_requerido
+def get_mi_perfil():
+    """Obtiene los datos del usuario autenticado y su cliente asociado (si existe)."""
+    try:
+        claims = get_usuario_actual()
+        usuario = Usuario.query.get(claims['id'])
+        if not usuario:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+
+        cliente = None
+        if usuario.cliente_id:
+            cliente = Cliente.query.get(usuario.cliente_id)
+
+        return jsonify({
+            "usuario": usuario.to_dict(),
+            "cliente": cliente.to_dict() if cliente else None
+        })
+    except Exception as e:
+        return jsonify({"error": f"Error al obtener perfil: {str(e)}"}), 500
+
+
+@main_bp.route('/mi-perfil', methods=['PUT'])
+@jwt_requerido
+def update_mi_perfil():
+    """Actualiza los datos del usuario y/o cliente asociado."""
+    try:
+        claims = get_usuario_actual()
+        usuario = Usuario.query.get(claims['id'])
+        if not usuario:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+
+        data = request.get_json()
+        usuario_data = data.get('usuario', {})
+        cliente_data = data.get('cliente')  # puede ser None
+
+        # ========== 1. Actualizar campos de Usuario ==========
+        for field in ['nombre', 'apellido', 'tipo_documento', 'numero_documento', 'telefono', 'foto_url']:
+            if field in usuario_data:
+                value = usuario_data[field]
+                setattr(usuario, field, value.strip() if value else None)
+
+        if 'fecha_nacimiento' in usuario_data:
+            fecha_str = usuario_data['fecha_nacimiento']
+            if fecha_str:
+                try:
+                    usuario.fecha_nacimiento = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+                except ValueError:
+                    return jsonify({"error": "Formato de fecha inválido. Use YYYY-MM-DD"}), 400
+            else:
+                usuario.fecha_nacimiento = None
+
+        # ========== 2. Manejar Cliente (si se envió la sección 'cliente') ==========
+        if cliente_data is not None:
+            # Si no tiene cliente_id, crear un nuevo cliente con los datos actuales del usuario
+            if not usuario.cliente_id:
+                nuevo_cliente = Cliente(
+                    tipo_documento=usuario.tipo_documento,
+                    numero_documento=usuario.numero_documento,
+                    nombre=usuario.nombre,
+                    apellido=usuario.apellido,
+                    telefono=usuario.telefono,
+                    correo=usuario.correo,
+                    fecha_nacimiento=usuario.fecha_nacimiento,
+                    estado=True
+                )
+                db.session.add(nuevo_cliente)
+                db.session.flush()
+                usuario.cliente_id = nuevo_cliente.id
+                cliente = nuevo_cliente
+            else:
+                cliente = Cliente.query.get(usuario.cliente_id)
+
+            # Actualizar campos específicos del cliente (los que no están en Usuario)
+            for field in ['municipio', 'direccion', 'barrio', 'codigo_postal',
+                          'ocupacion', 'telefono_emergencia', 'departamento']:
+                if field in cliente_data:
+                    value = cliente_data[field]
+                    setattr(cliente, field, value.strip() if value else None)
+
+        db.session.commit()
+
+        # Retornar perfil actualizado
+        cliente_actualizado = Cliente.query.get(usuario.cliente_id) if usuario.cliente_id else None
+        return jsonify({
+            "success": True,
+            "message": "Perfil actualizado correctamente",
+            "usuario": usuario.to_dict(),
+            "cliente": cliente_actualizado.to_dict() if cliente_actualizado else None
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al actualizar perfil: {str(e)}"}), 500

@@ -38,11 +38,12 @@ class Usuario(db.Model):
     cliente_id = db.Column(db.Integer, db.ForeignKey('cliente.id'), nullable=True)
 
     nombre = db.Column(db.String(70))
-    apellido = db.Column(db.String(70))   # ← agregado
+    apellido = db.Column(db.String(70))
     telefono = db.Column(db.String(20))
     tipo_documento = db.Column(db.String(20))
     numero_documento = db.Column(db.String(20))
     fecha_nacimiento = db.Column(db.Date)
+    foto_url = db.Column(db.String(500), nullable=True)
 
     cliente = db.relationship('Cliente', backref=db.backref('usuario', uselist=False), lazy=True)
 
@@ -60,7 +61,8 @@ class Usuario(db.Model):
             'tipo_documento': self.tipo_documento,
             'numero_documento': self.numero_documento,
             'fecha_nacimiento': self.fecha_nacimiento.isoformat() if self.fecha_nacimiento else None,
-            'es_admin': (self.rol_id is not None and self.rol.nombre == 'Admin')
+            'es_admin': (self.rol_id is not None and self.rol.nombre == 'Admin'),
+            'foto_url': self.foto_url,
         }
 
 
