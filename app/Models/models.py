@@ -231,11 +231,13 @@ class DetallePedido(db.Model):
     __tablename__ = 'detalle_pedido'
     id = db.Column(db.Integer, primary_key=True)
     pedido_id = db.Column(db.Integer, db.ForeignKey('pedido.id'), nullable=False)
-    producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=False)
+    producto_id = db.Column(db.Integer, db.ForeignKey('producto.id'), nullable=True)   # ← cambia a True
+    servicio_id = db.Column(db.Integer, db.ForeignKey('servicio.id'), nullable=True)   # ← nuevo
     cantidad = db.Column(db.Integer, nullable=False, default=1)
     precio_unitario = db.Column(db.Float, nullable=False)
     subtotal = db.Column(db.Float, nullable=False)
     producto = db.relationship('Producto', backref='detalle_pedidos')
+    servicio = db.relationship('Servicio', backref='detalle_pedidos')   # ← nueva relación
 
     def to_dict(self):
         return {
@@ -243,6 +245,8 @@ class DetallePedido(db.Model):
             'pedido_id': self.pedido_id,
             'producto_id': self.producto_id,
             'producto_nombre': self.producto.nombre if self.producto else None,
+            'servicio_id': self.servicio_id,
+            'servicio_nombre': self.servicio.nombre if self.servicio else None,
             'cantidad': self.cantidad,
             'precio_unitario': self.precio_unitario,
             'subtotal': self.subtotal
