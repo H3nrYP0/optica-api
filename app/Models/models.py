@@ -194,6 +194,7 @@ class Pedido(db.Model):
     codigo_postal_entrega = db.Column(db.String(10))
     transferencia_comprobante = db.Column(db.String(255))
     abono_acumulado = db.Column(db.Float, default=0.0)
+    costo_envio = db.Column(db.Float, default=0.0, nullable=False)   # ← NUEVO CAMPO
     estado_id = db.Column(db.Integer, db.ForeignKey('estado_pedido.id'), nullable=False)
     estado = db.relationship('EstadoPedido', backref='pedidos')
     cliente = db.relationship('Cliente', backref='pedidos')
@@ -219,6 +220,7 @@ class Pedido(db.Model):
             'codigo_postal_entrega': self.codigo_postal_entrega,
             'transferencia_comprobante': self.transferencia_comprobante,
             'abono_acumulado': self.abono_acumulado,
+            'costo_envio': self.costo_envio,   # ← NUEVO
             'saldo_pendiente': self.saldo_pendiente,
             'estado_id': self.estado_id,
             'estado_nombre': self.estado.nombre if self.estado else None,

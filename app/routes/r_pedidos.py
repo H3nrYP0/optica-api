@@ -59,23 +59,9 @@ def create_pedido():
         if not estado_pendiente:
             return jsonify({"error": "Estado 'pendiente' no encontrado en la base de datos"}), 500
 
-        pedido = Pedido(
-            cliente_id=data['cliente_id'],
-            metodo_pago=metodo_pago,
-            metodo_entrega=metodo_entrega,
-            direccion_entrega=data.get('direccion_entrega', '').strip(),
-            departamento_entrega=data.get('departamento_entrega', '').strip(),
-            municipio_entrega=data.get('municipio_entrega', '').strip(),
-            barrio_entrega=data.get('barrio_entrega', '').strip(),
-            codigo_postal_entrega=data.get('codigo_postal_entrega', '').strip(),
-            estado_id=estado_pendiente.id,
-            transferencia_comprobante=data.get('transferencia_comprobante'),
-            total=0,
-            abono_acumulado=0
-        )
-        db.session.add(pedido)
-        db.session.flush()
-
+        # ==========================================================
+        # 1. Calcular subtotal de los items
+        # ==========================================================
         total_calculado = 0
         productos_procesados = []  # para descontar stock al final si todo es exitoso
 
@@ -113,7 +99,6 @@ def create_pedido():
                 if precio_unitario <= 0:
                     db.session.rollback()
                     return jsonify({"error": f"Item {idx+1}: precio unitario inválido"}), 400
-                # No descontamos stock aquí, lo hacemos al final si todo OK
                 productos_procesados.append((producto, cantidad))
             else:  # servicio
                 servicio = Servicio.query.get(servicio_id)
@@ -124,32 +109,75 @@ def create_pedido():
                 if precio_unitario <= 0:
                     db.session.rollback()
                     return jsonify({"error": f"Item {idx+1}: precio unitario inválido"}), 400
-                # Los servicios no afectan stock
 
             subtotal = cantidad * precio_unitario
             total_calculado += subtotal
 
             detalle = DetallePedido(
-                pedido_id=pedido.id,
+                pedido_id=None,  # se asignará después de crear el pedido
                 producto_id=producto_id,
                 servicio_id=servicio_id,
                 cantidad=cantidad,
                 precio_unitario=precio_unitario,
                 subtotal=subtotal
             )
+            # Guardamos los detalles temporalmente en una lista para añadirlos después
+            if not hasattr(pedido, '_detalles_temp'):
+                pedido._detalles_temp = []
+            pedido._detalles_temp.append(detalle)
+
+        # ==========================================================
+        # 2. Calcular costo de envío y total final
+        # ==========================================================
+        costo_envio = 0.0
+        if metodo_entrega == 'domicilio':
+            costo_envio = 20000.0   # Valor fijo
+
+        total_con_envio = total_calculado + costo_envio
+
+        # ==========================================================
+        # 3. Crear el pedido
+        # ==========================================================
+        pedido = Pedido(
+            cliente_id=data['cliente_id'],
+            metodo_pago=metodo_pago,
+            metodo_entrega=metodo_entrega,
+            direccion_entrega=data.get('direccion_entrega', '').strip(),
+            departamento_entrega=data.get('departamento_entrega', '').strip(),
+            municipio_entrega=data.get('municipio_entrega', '').strip(),
+            barrio_entrega=data.get('barrio_entrega', '').strip(),
+            codigo_postal_entrega=data.get('codigo_postal_entrega', '').strip(),
+            estado_id=estado_pendiente.id,
+            transferencia_comprobante=data.get('transferencia_comprobante'),
+            total=total_con_envio,
+            costo_envio=costo_envio,        # ← NUEVO: almacenar el costo de envío
+            abono_acumulado=0
+        )
+
+        db.session.add(pedido)
+        db.session.flush()  # para obtener pedido.id
+
+        # Asignar el pedido_id a los detalles temporales y agregarlos
+        for detalle in pedido._detalles_temp:
+            detalle.pedido_id = pedido.id
             db.session.add(detalle)
 
         # Descontar stock de productos
         for producto, cantidad in productos_procesados:
             producto.stock -= cantidad
 
-        pedido.total = total_calculado
         db.session.commit()
+
         return jsonify({"message": "Pedido creado exitosamente", "pedido": pedido.to_dict()}), 201
 
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear pedido: {str(e)}"}), 500
+
+
+# -------------------------------------------------------------------
+# Las demás funciones (GET, PUT, DELETE, etc.) permanecen igual.
+# -------------------------------------------------------------------
 
 @main_bp.route('/pedidos/<int:id>', methods=['GET'])
 @permiso_requerido("ver_pedidos")
