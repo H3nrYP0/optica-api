@@ -59,18 +59,15 @@ def create_pedido():
         if not estado_pendiente:
             return jsonify({"error": "Estado 'pendiente' no encontrado en la base de datos"}), 500
 
-        # ==========================================================
-        # 1. Calcular subtotal de los items
-        # ==========================================================
-        total_calculado = 0
-        productos_procesados = []  # para descontar stock al final si todo es exitoso
+        total_calculado = 0.0
+        detalles_temp = []
+        productos_procesados = []
 
         for idx, item_data in enumerate(items):
             producto_id = item_data.get('producto_id')
             servicio_id = item_data.get('servicio_id')
             cantidad = item_data.get('cantidad', 1)
 
-            # Validar que tenga exactamente uno de los dos
             if not producto_id and not servicio_id:
                 db.session.rollback()
                 return jsonify({"error": f"Item {idx+1}: debe tener 'producto_id' o 'servicio_id'"}), 400
@@ -100,7 +97,7 @@ def create_pedido():
                     db.session.rollback()
                     return jsonify({"error": f"Item {idx+1}: precio unitario inválido"}), 400
                 productos_procesados.append((producto, cantidad))
-            else:  # servicio
+            else:
                 servicio = Servicio.query.get(servicio_id)
                 if not servicio or not servicio.estado:
                     db.session.rollback()
@@ -113,31 +110,20 @@ def create_pedido():
             subtotal = cantidad * precio_unitario
             total_calculado += subtotal
 
-            detalle = DetallePedido(
-                pedido_id=None,  # se asignará después de crear el pedido
-                producto_id=producto_id,
-                servicio_id=servicio_id,
-                cantidad=cantidad,
-                precio_unitario=precio_unitario,
-                subtotal=subtotal
-            )
-            # Guardamos los detalles temporalmente en una lista para añadirlos después
-            if not hasattr(pedido, '_detalles_temp'):
-                pedido._detalles_temp = []
-            pedido._detalles_temp.append(detalle)
+            detalles_temp.append({
+                'producto_id': producto_id,
+                'servicio_id': servicio_id,
+                'cantidad': cantidad,
+                'precio_unitario': precio_unitario,
+                'subtotal': subtotal
+            })
 
-        # ==========================================================
-        # 2. Calcular costo de envío y total final
-        # ==========================================================
         costo_envio = 0.0
         if metodo_entrega == 'domicilio':
-            costo_envio = 20000.0   # Valor fijo
+            costo_envio = 20000.0
 
         total_con_envio = total_calculado + costo_envio
 
-        # ==========================================================
-        # 3. Crear el pedido
-        # ==========================================================
         pedido = Pedido(
             cliente_id=data['cliente_id'],
             metodo_pago=metodo_pago,
@@ -150,30 +136,32 @@ def create_pedido():
             estado_id=estado_pendiente.id,
             transferencia_comprobante=data.get('transferencia_comprobante'),
             total=total_con_envio,
-            costo_envio=costo_envio,        # ← NUEVO: almacenar el costo de envío
+            costo_envio=costo_envio,
             abono_acumulado=0
         )
-
         db.session.add(pedido)
-        db.session.flush()  # para obtener pedido.id
+        db.session.flush()
 
-        # Asignar el pedido_id a los detalles temporales y agregarlos
-        for detalle in pedido._detalles_temp:
-            detalle.pedido_id = pedido.id
+        for detalle_data in detalles_temp:
+            detalle = DetallePedido(
+                pedido_id=pedido.id,
+                producto_id=detalle_data['producto_id'],
+                servicio_id=detalle_data['servicio_id'],
+                cantidad=detalle_data['cantidad'],
+                precio_unitario=detalle_data['precio_unitario'],
+                subtotal=detalle_data['subtotal']
+            )
             db.session.add(detalle)
 
-        # Descontar stock de productos
         for producto, cantidad in productos_procesados:
             producto.stock -= cantidad
 
         db.session.commit()
-
         return jsonify({"message": "Pedido creado exitosamente", "pedido": pedido.to_dict()}), 201
 
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear pedido: {str(e)}"}), 500
-
 
 # -------------------------------------------------------------------
 # Las demás funciones (GET, PUT, DELETE, etc.) permanecen igual.
