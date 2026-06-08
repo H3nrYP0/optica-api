@@ -15,6 +15,7 @@ import re
 
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 PHONE_REGEX = re.compile(r'^\d{7,15}$')
+MAX_PER_PAGE = 10
 
 # ============================================================
 # MÓDULO: EMPLEADOS (CRUD)
@@ -23,11 +24,51 @@ PHONE_REGEX = re.compile(r'^\d{7,15}$')
 @main_bp.route('/empleados', methods=['GET'])
 @permiso_requerido("ver_empleados")
 def get_empleados():
+    """
+    Listar empleados con paginación, búsqueda y filtros.
+    Query params: page, per_page, search, estado
+    """
     try:
-        empleados = Empleado.query.order_by(Empleado.id.desc()).all()
-        return jsonify([e.to_dict() for e in empleados])
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        search = request.args.get('search', '', type=str).strip()
+        estado = request.args.get('estado', '', type=str).strip().lower()
+
+        query = Empleado.query
+        if search:
+            like = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Empleado.nombre.ilike(like),
+                    Empleado.apellido.ilike(like),
+                    Empleado.correo.ilike(like),
+                    Empleado.numero_documento.ilike(like)
+                )
+            )
+        if estado != '':
+            estado_bool = estado == 'true'
+            query = query.filter(Empleado.estado == estado_bool)
+        query = query.order_by(Empleado.id.desc())
+
+        if 'page' not in request.args and 'per_page' not in request.args and not search and estado == '':
+            empleados = query.all()
+            return jsonify([e.to_dict() for e in empleados])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        return jsonify({
+            'data': [e.to_dict() for e in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page': per_page,
+                'total': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": "Error interno al obtener empleados", "detalle": str(e)}), 500
+
 
 @main_bp.route('/empleados/<int:id>', methods=['GET'])
 @permiso_requerido("ver_empleados")
@@ -39,6 +80,7 @@ def get_empleado(id):
         return jsonify(empleado.to_dict())
     except Exception as e:
         return jsonify({"error": "Error interno al obtener empleado", "detalle": str(e)}), 500
+
 
 @main_bp.route('/empleados', methods=['POST'])
 @permiso_requerido("crear_empleados")
@@ -87,6 +129,7 @@ def create_empleado():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error interno al crear empleado", "detalle": str(e)}), 500
+
 
 @main_bp.route('/empleados/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_empleados")
@@ -156,6 +199,7 @@ def update_empleado(id):
         db.session.rollback()
         return jsonify({"error": "Error interno al actualizar empleado", "detalle": str(e)}), 500
 
+
 @main_bp.route('/empleados/<int:id>', methods=['DELETE'])
 @permiso_requerido("eliminar_empleados")
 def delete_empleado(id):
@@ -177,8 +221,3 @@ def delete_empleado(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error interno al eliminar empleado", "detalle": str(e)}), 500
-
-# ============================================================
-# NOTA: Los endpoints de Horarios y Novedades ya están en r_agenda.py
-# con los permisos de empleados (ver_empleados, crear_empleados, etc.)
-# ============================================================
