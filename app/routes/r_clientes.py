@@ -16,6 +16,7 @@ import re
 
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 PHONE_REGEX = re.compile(r'^\d{7,15}$')
+MAX_PER_PAGE = 10
 
 # ============================================================
 # RUTAS PÚBLICAS (Landing page) — SIN autenticación
@@ -23,11 +24,51 @@ PHONE_REGEX = re.compile(r'^\d{7,15}$')
 
 @main_bp.route('/clientes', methods=['GET'])
 def get_clientes_publico():
+    """
+    Listar clientes (público) con paginación, búsqueda y filtro de estado.
+    Query params: page, per_page, search, estado
+    """
     try:
-        clientes = Cliente.query.all()
-        return jsonify([cliente.to_dict() for cliente in clientes])
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        search = request.args.get('search', '', type=str).strip()
+        estado = request.args.get('estado', '', type=str).strip().lower()
+
+        query = Cliente.query
+        if search:
+            like = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Cliente.nombre.ilike(like),
+                    Cliente.apellido.ilike(like),
+                    Cliente.correo.ilike(like),
+                    Cliente.numero_documento.ilike(like)
+                )
+            )
+        if estado != '':
+            estado_bool = estado == 'true'
+            query = query.filter(Cliente.estado == estado_bool)
+        query = query.order_by(Cliente.nombre.asc())
+
+        if 'page' not in request.args and 'per_page' not in request.args and not search and estado == '':
+            clientes = query.all()
+            return jsonify([c.to_dict() for c in clientes])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        return jsonify({
+            'data': [c.to_dict() for c in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page': per_page,
+                'total': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": f"Error al obtener clientes: {str(e)}"}), 500
+
 
 @main_bp.route('/clientes', methods=['POST'])
 def create_cliente_publico():
@@ -78,6 +119,7 @@ def create_cliente_publico():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear cliente: {str(e)}"}), 500
+
 
 @main_bp.route('/clientes/<int:id>', methods=['PUT'])
 def update_cliente_publico(id):
@@ -135,6 +177,7 @@ def update_cliente_publico(id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+
 @main_bp.route('/clientes/<int:id>', methods=['DELETE'])
 def delete_cliente_publico(id):
     try:
@@ -154,6 +197,7 @@ def delete_cliente_publico(id):
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar cliente: {str(e)}"}), 500
 
+
 # ============================================================
 # ADMINISTRACIÓN DE CLIENTES (permisos granulares)
 # ============================================================
@@ -161,11 +205,51 @@ def delete_cliente_publico(id):
 @main_bp.route('/admin/clientes', methods=['GET'])
 @permiso_requerido('ver_clientes')
 def get_clientes():
+    """
+    Listar clientes (admin) con paginación, búsqueda y filtro de estado.
+    Query params: page, per_page, search, estado
+    """
     try:
-        clientes = Cliente.query.all()
-        return jsonify([cliente.to_dict() for cliente in clientes])
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        search = request.args.get('search', '', type=str).strip()
+        estado = request.args.get('estado', '', type=str).strip().lower()
+
+        query = Cliente.query
+        if search:
+            like = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Cliente.nombre.ilike(like),
+                    Cliente.apellido.ilike(like),
+                    Cliente.correo.ilike(like),
+                    Cliente.numero_documento.ilike(like)
+                )
+            )
+        if estado != '':
+            estado_bool = estado == 'true'
+            query = query.filter(Cliente.estado == estado_bool)
+        query = query.order_by(Cliente.nombre.asc())
+
+        if 'page' not in request.args and 'per_page' not in request.args and not search and estado == '':
+            clientes = query.all()
+            return jsonify([c.to_dict() for c in clientes])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        return jsonify({
+            'data': [c.to_dict() for c in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page': per_page,
+                'total': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": f"Error al obtener clientes: {str(e)}"}), 500
+
 
 @main_bp.route('/admin/clientes', methods=['POST'])
 @permiso_requerido('crear_clientes')
@@ -218,6 +302,7 @@ def create_cliente():
         db.session.rollback()
         return jsonify({"error": f"Error al crear cliente: {str(e)}"}), 500
 
+
 @main_bp.route('/admin/clientes/<int:id>', methods=['GET'])
 @permiso_requerido('ver_clientes')
 def get_cliente(id):
@@ -228,6 +313,7 @@ def get_cliente(id):
         return jsonify(cliente.to_dict())
     except Exception as e:
         return jsonify({"error": f"Error al obtener cliente: {str(e)}"}), 500
+
 
 @main_bp.route('/admin/clientes/<int:id>', methods=['PUT'])
 @permiso_requerido('editar_clientes')
@@ -288,6 +374,7 @@ def update_cliente(id):
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar cliente: {str(e)}"}), 500
 
+
 @main_bp.route('/admin/clientes/<int:id>', methods=['DELETE'])
 @permiso_requerido('eliminar_clientes')
 def delete_cliente(id):
@@ -310,6 +397,7 @@ def delete_cliente(id):
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar cliente: {str(e)}"}), 500
 
+
 # ============================================================
 # HISTORIAL DE FÓRMULAS (permiso clientes)
 # ============================================================
@@ -325,6 +413,7 @@ def get_historial_cliente(cliente_id):
         return jsonify([historial.to_dict() for historial in historiales])
     except Exception as e:
         return jsonify({"error": f"Error al obtener historial: {str(e)}"}), 500
+
 
 @main_bp.route('/admin/historial-formula', methods=['POST'])
 @permiso_requerido('editar_clientes')
@@ -349,6 +438,7 @@ def create_historial_formula():
         db.session.rollback()
         return jsonify({"error": f"Error al crear historial: {str(e)}"}), 500
 
+
 @main_bp.route('/admin/historial-formula/<int:id>', methods=['DELETE'])
 @permiso_requerido('eliminar_clientes')
 def delete_historial_formula(id):
@@ -363,8 +453,9 @@ def delete_historial_formula(id):
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar historial: {str(e)}"}), 500
 
+
 # ============================================================
-# RUTAS PARA CLIENTES AUTENTICADOS (jwt_requerido, sin permiso adicional)
+# RUTAS PARA CLIENTES AUTENTICADOS (jwt_requerido)
 # ============================================================
 
 @main_bp.route('/cliente/perfil', methods=['GET'])
@@ -383,6 +474,7 @@ def get_cliente_perfil():
     except Exception as e:
         return jsonify({"error": f"Error al obtener perfil: {str(e)}"}), 500
 
+
 @main_bp.route('/cliente/citas', methods=['GET'])
 @jwt_requerido
 def get_mis_citas():
@@ -396,6 +488,7 @@ def get_mis_citas():
         return jsonify([cita.to_dict() for cita in citas])
     except Exception as e:
         return jsonify({"error": f"Error al obtener citas: {str(e)}"}), 500
+
 
 @main_bp.route('/cliente/citas', methods=['POST'])
 @jwt_requerido
@@ -461,6 +554,7 @@ def crear_mi_cita():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear cita: {str(e)}"}), 500
+
 
 @main_bp.route('/cliente/citas/<int:cita_id>', methods=['DELETE'])
 @jwt_requerido

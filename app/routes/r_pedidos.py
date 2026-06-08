@@ -14,6 +14,8 @@ from datetime import datetime
 from app.routes import main_bp
 from app.auth.decorators import permiso_requerido
 
+MAX_PER_PAGE = 10
+
 # ============================================================
 # MÓDULO: PEDIDOS (CRUD)
 # ============================================================
@@ -21,11 +23,85 @@ from app.auth.decorators import permiso_requerido
 @main_bp.route('/pedidos', methods=['GET'])
 @permiso_requerido("ver_pedidos")
 def get_pedidos():
+    """
+    Listar pedidos con paginación, búsqueda y filtros.
+    Query params:
+        page          (int)
+        per_page      (int) máx 10
+        search        (str) busca en cliente (nombre/apellido)
+        cliente_id    (int)
+        estado_id     (int)
+        metodo_pago   (str)
+        metodo_entrega(str)
+        fecha_desde   (str) YYYY-MM-DD
+        fecha_hasta   (str)
+    """
     try:
-        pedidos = Pedido.query.order_by(Pedido.fecha.desc()).all()
-        return jsonify([pedido.to_dict() for pedido in pedidos])
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        search = request.args.get('search', '', type=str).strip()
+        cliente_id = request.args.get('cliente_id', type=int)
+        estado_id = request.args.get('estado_id', type=int)
+        metodo_pago = request.args.get('metodo_pago', '', type=str).strip().lower()
+        metodo_entrega = request.args.get('metodo_entrega', '', type=str).strip().lower()
+        fecha_desde = request.args.get('fecha_desde', '', type=str).strip()
+        fecha_hasta = request.args.get('fecha_hasta', '', type=str).strip()
+
+        query = Pedido.query.join(Cliente, Pedido.cliente_id == Cliente.id)
+
+        if cliente_id:
+            query = query.filter(Pedido.cliente_id == cliente_id)
+        if estado_id:
+            query = query.filter(Pedido.estado_id == estado_id)
+        if metodo_pago:
+            query = query.filter(Pedido.metodo_pago == metodo_pago)
+        if metodo_entrega:
+            query = query.filter(Pedido.metodo_entrega == metodo_entrega)
+        if fecha_desde:
+            try:
+                fd = datetime.strptime(fecha_desde, '%Y-%m-%d')
+                query = query.filter(Pedido.fecha >= fd)
+            except ValueError:
+                return jsonify({"error": "Formato fecha_desde inválido"}), 400
+        if fecha_hasta:
+            try:
+                fh = datetime.strptime(fecha_hasta, '%Y-%m-%d')
+                query = query.filter(Pedido.fecha <= fh)
+            except ValueError:
+                return jsonify({"error": "Formato fecha_hasta inválido"}), 400
+        if search:
+            like = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Cliente.nombre.ilike(like),
+                    Cliente.apellido.ilike(like),
+                    Cliente.correo.ilike(like),
+                    Cliente.numero_documento.ilike(like)
+                )
+            )
+        query = query.order_by(Pedido.fecha.desc())
+
+        has_pagination = 'page' in request.args or 'per_page' in request.args
+        has_filters = cliente_id or estado_id or metodo_pago or metodo_entrega or fecha_desde or fecha_hasta or search
+        if not has_pagination and not has_filters:
+            pedidos = query.all()
+            return jsonify([pedido.to_dict() for pedido in pedidos])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        return jsonify({
+            'data': [pedido.to_dict() for pedido in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page': per_page,
+                'total': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": f"Error al obtener pedidos: {str(e)}"}), 500
+
 
 @main_bp.route('/pedidos', methods=['POST'])
 @permiso_requerido("crear_pedidos")
@@ -163,10 +239,6 @@ def create_pedido():
         db.session.rollback()
         return jsonify({"error": f"Error al crear pedido: {str(e)}"}), 500
 
-# -------------------------------------------------------------------
-# Las demás funciones (GET, PUT, DELETE, etc.) permanecen igual.
-# -------------------------------------------------------------------
-
 @main_bp.route('/pedidos/<int:id>', methods=['GET'])
 @permiso_requerido("ver_pedidos")
 def get_pedido(id):
@@ -177,6 +249,7 @@ def get_pedido(id):
         return jsonify(pedido.to_dict())
     except Exception as e:
         return jsonify({"error": f"Error al obtener pedido: {str(e)}"}), 500
+
 
 @main_bp.route('/pedidos/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_pedidos")
@@ -205,7 +278,6 @@ def update_pedido(id):
         estado_anterior_nombre = pedido.estado.nombre if pedido.estado else None
         nuevo_estado_nombre = nuevo_estado_obj.nombre
 
-        # Si se anula un pedido, restaurar stock solo de productos
         if nuevo_estado_nombre == 'anulado' and estado_anterior_nombre != 'anulado':
             if estado_anterior_nombre == 'pagado':
                 return jsonify({"error": "No se puede anular un pedido ya pagado"}), 400
@@ -215,7 +287,6 @@ def update_pedido(id):
                     if producto:
                         producto.stock += detalle.cantidad
 
-        # Si se marca como pagado, crear la venta asociada
         if nuevo_estado_nombre == 'pagado' and estado_anterior_nombre != 'pagado':
             if hasattr(pedido, 'venta') and pedido.venta:
                 return jsonify({"error": "Este pedido ya generó una venta anteriormente"}), 400
@@ -240,7 +311,6 @@ def update_pedido(id):
             db.session.add(venta)
             db.session.flush()
 
-            # Crear detalles de venta a partir de los detalles del pedido
             for detalle_pedido in pedido.items:
                 detalle_venta = DetalleVenta(
                     venta_id=venta.id,
@@ -253,12 +323,10 @@ def update_pedido(id):
                 )
                 db.session.add(detalle_venta)
 
-            # Reasignar abonos del pedido a la venta
             for abono in pedido.abonos:
                 abono.pedido_id = None
                 abono.venta_id = venta.id
 
-        # Actualizar campos simples del pedido
         pedido.estado_id = nuevo_estado_id
         if 'transferencia_comprobante' in data:
             pedido.transferencia_comprobante = data['transferencia_comprobante']
@@ -290,6 +358,7 @@ def update_pedido(id):
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar pedido: {str(e)}"}), 500
 
+
 @main_bp.route('/pedidos/<int:id>', methods=['DELETE'])
 @permiso_requerido("eliminar_pedidos")
 def delete_pedido(id):
@@ -305,14 +374,12 @@ def delete_pedido(id):
         if pedido.estado.nombre in ['pagado', 'anulado']:
             return jsonify({"error": "No se puede eliminar un pedido pagado o anulado"}), 400
 
-        # Restaurar stock solo de productos
         for detalle in pedido.items:
             if detalle.producto_id:
                 producto = Producto.query.get(detalle.producto_id)
                 if producto:
                     producto.stock += detalle.cantidad
 
-        # Eliminar dependencias
         Abono.query.filter_by(pedido_id=id).delete()
         DetallePedido.query.filter_by(pedido_id=id).delete()
         db.session.delete(pedido)
@@ -322,6 +389,7 @@ def delete_pedido(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar pedido: {str(e)}"}), 500
+
 
 @main_bp.route('/pedidos/cliente/<int:cliente_id>', methods=['GET'])
 @permiso_requerido("ver_pedidos")
@@ -335,6 +403,7 @@ def get_pedidos_cliente(cliente_id):
     except Exception as e:
         return jsonify({"error": f"Error al obtener pedidos del cliente: {str(e)}"}), 500
 
+
 @main_bp.route('/pedidos/<int:pedido_id>/detalles', methods=['GET'])
 @permiso_requerido("ver_pedidos")
 def get_detalles_de_pedido(pedido_id):
@@ -346,6 +415,7 @@ def get_detalles_de_pedido(pedido_id):
         return jsonify([detalle.to_dict() for detalle in detalles])
     except Exception as e:
         return jsonify({"error": f"Error al obtener detalles del pedido: {str(e)}"}), 500
+
 
 # ============================================================
 # MÓDULO: ABONOS DE PEDIDOS
@@ -362,6 +432,7 @@ def get_abonos_pedido(id):
         return jsonify(abonos)
     except Exception as e:
         return jsonify({"error": f"Error al obtener abonos: {str(e)}"}), 500
+
 
 @main_bp.route('/pedidos/<int:id>/abonos', methods=['POST'])
 @permiso_requerido("editar_pedidos")
@@ -401,6 +472,7 @@ def add_abono_pedido(id):
         db.session.rollback()
         return jsonify({"error": f"Error al registrar abono: {str(e)}"}), 500
 
+
 # ============================================================
 # MÓDULO: DETALLES DE PEDIDO (CRUD independiente)
 # ============================================================
@@ -408,18 +480,41 @@ def add_abono_pedido(id):
 @main_bp.route('/detalle-pedido', methods=['GET'])
 @permiso_requerido("ver_pedidos")
 def get_detalles_pedido():
+    """
+    Listar detalles de pedido con paginación y filtros.
+    Query params: page, per_page, pedido_id
+    """
     try:
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
         pedido_id = request.args.get('pedido_id', type=int)
+
         if pedido_id:
-            pedido = Pedido.query.get(pedido_id)
-            if not pedido:
-                return jsonify({"error": "Pedido no encontrado"}), 404
-            detalles = DetallePedido.query.filter_by(pedido_id=pedido_id).all()
+            query = DetallePedido.query.filter_by(pedido_id=pedido_id)
         else:
-            detalles = DetallePedido.query.all()
-        return jsonify([detalle.to_dict() for detalle in detalles])
+            query = DetallePedido.query
+
+        query = query.order_by(DetallePedido.id.desc())
+
+        if 'page' not in request.args and 'per_page' not in request.args and not pedido_id:
+            detalles = query.all()
+            return jsonify([detalle.to_dict() for detalle in detalles])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        return jsonify({
+            'data': [detalle.to_dict() for detalle in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page': per_page,
+                'total': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": f"Error al obtener detalles de pedido: {str(e)}"}), 500
+
 
 @main_bp.route('/detalle-pedido', methods=['POST'])
 @permiso_requerido("editar_pedidos")
@@ -431,7 +526,6 @@ def create_detalle_pedido():
             if field not in data:
                 return jsonify({"error": f"El campo '{field}' es requerido"}), 400
 
-        # Validar que tenga producto_id o servicio_id
         producto_id = data.get('producto_id')
         servicio_id = data.get('servicio_id')
         if not producto_id and not servicio_id:
@@ -453,7 +547,6 @@ def create_detalle_pedido():
         if precio <= 0:
             return jsonify({"error": "El precio unitario debe ser mayor a 0"}), 400
 
-        # Procesar según tipo
         if producto_id:
             producto = Producto.query.get(producto_id)
             if not producto or not producto.estado:
@@ -468,7 +561,7 @@ def create_detalle_pedido():
                 precio_unitario=precio,
                 subtotal=cantidad * precio
             )
-        else:  # servicio
+        else:
             servicio = Servicio.query.get(servicio_id)
             if not servicio or not servicio.estado:
                 return jsonify({"error": "Servicio no existe o está inactivo"}), 404
@@ -490,6 +583,7 @@ def create_detalle_pedido():
         db.session.rollback()
         return jsonify({"error": f"Error al crear detalle de pedido: {str(e)}"}), 500
 
+
 @main_bp.route('/detalle-pedido/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_pedidos")
 def update_detalle_pedido(id):
@@ -505,7 +599,6 @@ def update_detalle_pedido(id):
             return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado.nombre}'. Solo se pueden modificar pedidos pendientes"}), 400
 
         data = request.get_json()
-        # No se permite cambiar el tipo (producto<->servicio)
         if 'producto_id' in data or 'servicio_id' in data:
             return jsonify({"error": "No se puede cambiar el producto o servicio de un detalle existente. Elimine y cree uno nuevo."}), 400
 
@@ -520,13 +613,10 @@ def update_detalle_pedido(id):
             if detalle.producto_id:
                 producto = Producto.query.get(detalle.producto_id)
                 if producto:
-                    # Restaurar stock anterior
                     producto.stock += old_cantidad
                     if producto.stock < nueva_cantidad:
                         return jsonify({"error": f"Stock insuficiente para '{producto.nombre}'"}), 400
                     producto.stock -= nueva_cantidad
-            # Si es servicio, no hay stock que ajustar
-
             detalle.cantidad = nueva_cantidad
 
         if 'precio_unitario' in data:
@@ -545,6 +635,7 @@ def update_detalle_pedido(id):
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar detalle de pedido: {str(e)}"}), 500
 
+
 @main_bp.route('/detalle-pedido/<int:id>', methods=['DELETE'])
 @permiso_requerido("editar_pedidos")
 def delete_detalle_pedido(id):
@@ -559,7 +650,6 @@ def delete_detalle_pedido(id):
         if pedido.estado.nombre != 'pendiente':
             return jsonify({"error": f"No se puede modificar un pedido en estado '{pedido.estado.nombre}'. Solo se pueden modificar pedidos pendientes"}), 400
 
-        # Restaurar stock si es producto
         if detalle.producto_id:
             producto = Producto.query.get(detalle.producto_id)
             if producto:
@@ -575,6 +665,7 @@ def delete_detalle_pedido(id):
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar detalle de pedido: {str(e)}"}), 500
 
+
 # ============================================================
 # MÓDULO: ESTADOS DE PEDIDO (opcional, con gestionar_configuracion)
 # ============================================================
@@ -582,11 +673,39 @@ def delete_detalle_pedido(id):
 @main_bp.route('/estado-pedido', methods=['GET'])
 @permiso_requerido("gestionar_configuracion")
 def get_estados_pedido():
+    """
+    Listar estados de pedido con paginación y búsqueda.
+    Query params: page, per_page, search
+    """
     try:
-        estados = EstadoPedido.query.all()
-        return jsonify([estado.to_dict() for estado in estados])
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        search = request.args.get('search', '', type=str).strip()
+
+        query = EstadoPedido.query
+        if search:
+            query = query.filter(EstadoPedido.nombre.ilike(f"%{search}%"))
+        query = query.order_by(EstadoPedido.nombre.asc())
+
+        if 'page' not in request.args and 'per_page' not in request.args and not search:
+            estados = query.all()
+            return jsonify([estado.to_dict() for estado in estados])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        return jsonify({
+            'data': [estado.to_dict() for estado in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page': per_page,
+                'total': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": "Error al obtener estados de pedido"}), 500
+
 
 @main_bp.route('/estado-pedido', methods=['POST'])
 @permiso_requerido("gestionar_configuracion")
@@ -603,6 +722,7 @@ def create_estado_pedido():
         db.session.rollback()
         return jsonify({"error": "Error al crear estado de pedido"}), 500
 
+
 @main_bp.route('/estado-pedido/<int:id>', methods=['PUT'])
 @permiso_requerido("gestionar_configuracion")
 def update_estado_pedido(id):
@@ -618,6 +738,7 @@ def update_estado_pedido(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al actualizar estado de pedido"}), 500
+
 
 @main_bp.route('/estado-pedido/<int:id>', methods=['DELETE'])
 @permiso_requerido("gestionar_configuracion")

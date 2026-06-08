@@ -12,6 +12,9 @@ from app.Models.models import Venta, DetalleVenta, Abono, Producto, Servicio, Cl
 from datetime import datetime
 from app.routes import main_bp
 from app.auth.decorators import permiso_requerido
+import re
+
+MAX_PER_PAGE = 10
 
 # ============================================================
 # MÓDULO: VENTAS
@@ -20,11 +23,97 @@ from app.auth.decorators import permiso_requerido
 @main_bp.route('/ventas', methods=['GET'])
 @permiso_requerido("ver_ventas")
 def get_ventas():
+    """
+    Listar ventas con paginación y filtros opcionales.
+    Query params:
+        page          (int) – página actual, default 1
+        per_page      (int) – registros por página, máx 10
+        search        (str) – busca en nombre/apellido/correo/documento del cliente
+        cliente_id    (int) – filtrar por cliente
+        estado_id     (int) – filtrar por estado de venta
+        metodo_pago   (str) – efectivo, transferencia, tarjeta
+        metodo_entrega(str) – tienda, domicilio
+        fecha_desde   (str) – YYYY-MM-DD
+        fecha_hasta   (str) – YYYY-MM-DD
+    """
     try:
-        ventas = Venta.query.order_by(Venta.fecha_venta.desc()).all()
-        return jsonify([venta.to_dict() for venta in ventas])
+        # Parámetros de paginación
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        search = request.args.get('search', '', type=str).strip()
+        cliente_id = request.args.get('cliente_id', type=int)
+        estado_id = request.args.get('estado_id', type=int)
+        metodo_pago = request.args.get('metodo_pago', '', type=str).strip().lower()
+        metodo_entrega = request.args.get('metodo_entrega', '', type=str).strip().lower()
+        fecha_desde = request.args.get('fecha_desde', '', type=str).strip()
+        fecha_hasta = request.args.get('fecha_hasta', '', type=str).strip()
+
+        # Query base con joins para búsqueda eficiente
+        query = Venta.query.join(Cliente, Venta.cliente_id == Cliente.id)
+
+        # Filtros
+        if cliente_id:
+            query = query.filter(Venta.cliente_id == cliente_id)
+        if estado_id:
+            query = query.filter(Venta.estado_id == estado_id)
+        if metodo_pago:
+            query = query.filter(Venta.metodo_pago == metodo_pago)
+        if metodo_entrega:
+            query = query.filter(Venta.metodo_entrega == metodo_entrega)
+
+        # Filtro de fechas
+        if fecha_desde:
+            try:
+                fecha_desde_dt = datetime.strptime(fecha_desde, '%Y-%m-%d')
+                query = query.filter(Venta.fecha_venta >= fecha_desde_dt)
+            except ValueError:
+                return jsonify({"error": "Formato de fecha_desde inválido. Use YYYY-MM-DD"}), 400
+        if fecha_hasta:
+            try:
+                fecha_hasta_dt = datetime.strptime(fecha_hasta, '%Y-%m-%d')
+                query = query.filter(Venta.fecha_venta <= fecha_hasta_dt)
+            except ValueError:
+                return jsonify({"error": "Formato de fecha_hasta inválido. Use YYYY-MM-DD"}), 400
+
+        # Búsqueda textual en cliente
+        if search:
+            like_pattern = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Cliente.nombre.ilike(like_pattern),
+                    Cliente.apellido.ilike(like_pattern),
+                    Cliente.correo.ilike(like_pattern),
+                    Cliente.numero_documento.ilike(like_pattern)
+                )
+            )
+
+        query = query.order_by(Venta.fecha_venta.desc())
+
+        # Compatibilidad hacia atrás: si no hay parámetros de paginación ni filtros, devolver todo
+        has_pagination_params = 'page' in request.args or 'per_page' in request.args
+        has_filters = cliente_id or estado_id or metodo_pago or metodo_entrega or fecha_desde or fecha_hasta or search
+
+        if not has_pagination_params and not has_filters:
+            ventas = query.all()
+            return jsonify([venta.to_dict() for venta in ventas])
+
+        # Paginación
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        return jsonify({
+            'data': [venta.to_dict() for venta in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page': per_page,
+                'total': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": f"Error al obtener ventas: {str(e)}"}), 500
+
 
 @main_bp.route('/ventas', methods=['POST'])
 @permiso_requerido("crear_ventas")
@@ -110,6 +199,7 @@ def create_venta():
         db.session.rollback()
         return jsonify({"error": f"Error al crear venta: {str(e)}"}), 500
 
+
 @main_bp.route('/ventas/<int:id>', methods=['GET'])
 @permiso_requerido("ver_ventas")
 def get_venta(id):
@@ -120,6 +210,7 @@ def get_venta(id):
         return jsonify(venta.to_dict())
     except Exception as e:
         return jsonify({"error": f"Error al obtener venta: {str(e)}"}), 500
+
 
 @main_bp.route('/ventas/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_ventas")
@@ -159,6 +250,7 @@ def update_venta(id):
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar venta: {str(e)}"}), 500
 
+
 @main_bp.route('/ventas/<int:id>', methods=['DELETE'])
 @permiso_requerido("eliminar_ventas")
 def delete_venta(id):
@@ -181,6 +273,7 @@ def delete_venta(id):
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar venta: {str(e)}"}), 500
 
+
 @main_bp.route('/ventas/<int:venta_id>/detalles', methods=['GET'])
 @permiso_requerido("ver_ventas")
 def get_detalles_venta_especifica(venta_id):
@@ -193,6 +286,7 @@ def get_detalles_venta_especifica(venta_id):
     except Exception as e:
         return jsonify({"error": f"Error al obtener detalles de la venta: {str(e)}"}), 500
 
+
 # ============================================================
 # MÓDULO: ESTADOS DE VENTA (gestionar_configuracion)
 # ============================================================
@@ -200,11 +294,46 @@ def get_detalles_venta_especifica(venta_id):
 @main_bp.route('/estado-venta', methods=['GET'])
 @permiso_requerido("gestionar_configuracion")
 def get_estados_venta():
+    """
+    Listar estados de venta con paginación y búsqueda.
+    Query params:
+        page     (int) – página actual, default 1
+        per_page (int) – registros por página, máx 10
+        search   (str) – busca en el nombre del estado
+    """
     try:
-        estados = EstadoVenta.query.all()
-        return jsonify([estado.to_dict() for estado in estados])
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        search = request.args.get('search', '', type=str).strip()
+
+        query = EstadoVenta.query
+
+        if search:
+            query = query.filter(EstadoVenta.nombre.ilike(f"%{search}%"))
+
+        query = query.order_by(EstadoVenta.nombre.asc())
+
+        # Compatibilidad hacia atrás
+        if 'page' not in request.args and 'per_page' not in request.args and not search:
+            estados = query.all()
+            return jsonify([estado.to_dict() for estado in estados])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        return jsonify({
+            'data': [estado.to_dict() for estado in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page': per_page,
+                'total': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": "Error al obtener estados de venta"}), 500
+
 
 @main_bp.route('/estado-venta', methods=['POST'])
 @permiso_requerido("gestionar_configuracion")
@@ -220,6 +349,7 @@ def create_estado_venta():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Error al crear estado de venta"}), 500
+
 
 @main_bp.route('/estado-venta/<int:id>', methods=['PUT'])
 @permiso_requerido("gestionar_configuracion")
@@ -237,6 +367,7 @@ def update_estado_venta(id):
         db.session.rollback()
         return jsonify({"error": "Error al actualizar estado de venta"}), 500
 
+
 @main_bp.route('/estado-venta/<int:id>', methods=['DELETE'])
 @permiso_requerido("gestionar_configuracion")
 def delete_estado_venta(id):
@@ -253,6 +384,7 @@ def delete_estado_venta(id):
         db.session.rollback()
         return jsonify({"error": "Error al eliminar estado de venta"}), 500
 
+
 # ============================================================
 # MÓDULO: ABONOS DE VENTAS (deshabilitado, usar pedidos)
 # ============================================================
@@ -262,10 +394,12 @@ def delete_estado_venta(id):
 def add_abono(venta_id):
     return jsonify({"error": "No se permiten abonos directos sobre ventas. Registre abonos en el pedido correspondiente."}), 400
 
+
 @main_bp.route('/ventas/<int:venta_id>/abonos', methods=['GET'])
 @permiso_requerido("ver_ventas")
 def get_abonos(venta_id):
     return jsonify({"error": "Los abonos de una venta se pueden consultar a través del endpoint GET /ventas/<id>"}), 400
+
 
 @main_bp.route('/abonos/<int:id>', methods=['DELETE'])
 @permiso_requerido("eliminar_ventas")
@@ -285,6 +419,7 @@ def delete_abono(id):
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar abono: {str(e)}"}), 500
 
+
 # ============================================================
 # MÓDULO: DETALLES DE VENTA
 # ============================================================
@@ -292,16 +427,63 @@ def delete_abono(id):
 @main_bp.route('/detalle-venta', methods=['GET'])
 @permiso_requerido("ver_ventas")
 def get_detalles_venta():
+    """
+    Listar detalles de venta con paginación y filtros.
+    Query params:
+        page        (int) – página actual, default 1
+        per_page    (int) – registros por página, máx 10
+        venta_id    (int) – filtrar por venta
+        producto_id (int) – filtrar por producto
+        servicio_id (int) – filtrar por servicio
+    """
     try:
-        detalles = DetalleVenta.query.all()
-        return jsonify([detalle.to_dict() for detalle in detalles])
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        venta_id = request.args.get('venta_id', type=int)
+        producto_id = request.args.get('producto_id', type=int)
+        servicio_id = request.args.get('servicio_id', type=int)
+
+        query = DetalleVenta.query
+
+        if venta_id:
+            query = query.filter(DetalleVenta.venta_id == venta_id)
+        if producto_id:
+            query = query.filter(DetalleVenta.producto_id == producto_id)
+        if servicio_id:
+            query = query.filter(DetalleVenta.servicio_id == servicio_id)
+
+        query = query.order_by(DetalleVenta.id.asc())
+
+        # Compatibilidad hacia atrás
+        has_params = 'page' in request.args or 'per_page' in request.args
+        has_filters = venta_id or producto_id or servicio_id
+
+        if not has_params and not has_filters:
+            detalles = query.all()
+            return jsonify([detalle.to_dict() for detalle in detalles])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        return jsonify({
+            'data': [detalle.to_dict() for detalle in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page': per_page,
+                'total': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": f"Error al obtener detalles de venta: {str(e)}"}), 500
+
 
 @main_bp.route('/detalle-venta', methods=['POST'])
 @permiso_requerido("crear_ventas")
 def create_detalle_venta():
     return jsonify({"error": "No se pueden crear detalles de venta manualmente. Se crean automáticamente desde el pedido."}), 400
+
 
 @main_bp.route('/detalle-venta/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_ventas")
@@ -357,6 +539,7 @@ def update_detalle_venta(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar detalle de venta: {str(e)}"}), 500
+
 
 @main_bp.route('/detalle-venta/<int:id>', methods=['DELETE'])
 @permiso_requerido("eliminar_ventas")

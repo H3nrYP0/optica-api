@@ -15,6 +15,8 @@ import re
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 PASSWORD_REGEX = re.compile(r'^(?=.*[A-Z])(?=.*\d).{6,}$')
 
+MAX_PER_PAGE = 10
+
 # ============================================================
 # PERFIL PROPIO (cualquier usuario autenticado)
 # ============================================================
@@ -46,6 +48,7 @@ def get_mi_perfil_usuario():
         })
     except Exception as e:
         return jsonify({"error": f"Error: {str(e)}"}), 500
+
 
 @main_bp.route('/usuario/cambiar-contrasenia', methods=['POST'])
 @jwt_requerido
@@ -79,13 +82,83 @@ def cambiar_mi_contrasenia_usuario():
 @main_bp.route('/admin/usuarios', methods=['GET'])
 @permiso_requerido("ver_usuarios")
 def get_usuarios_admin():
-    """Listar usuarios administrativos (con rol, excluyendo clientes)."""
+    """
+    Listar usuarios administrativos con paginación y filtros opcionales.
+
+    Query params opcionales:
+        page      (int)  – página actual, default 1
+        per_page  (int)  – registros por página, máx 10
+        search    (str)  – busca en nombre, apellido y correo
+        rol_id    (int)  – filtra por rol
+        estado    (str)  – 'true' | 'false'
+    """
     try:
         db.session.expire_all()
-        usuarios = Usuario.query.filter(Usuario.rol_id.isnot(None)).all()
-        return jsonify([u.to_dict() for u in usuarios])
+
+        page     = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        search   = request.args.get('search', '', type=str).strip()
+        rol_id   = request.args.get('rol_id', type=int)
+        estado   = request.args.get('estado', '', type=str)
+
+        query = Usuario.query.options(
+            db.joinedload(Usuario.rol)
+        ).filter(Usuario.rol_id.isnot(None))
+
+        if rol_id:
+            query = query.filter(Usuario.rol_id == rol_id)
+
+        if estado != '':
+            estado_bool = estado.lower() == 'true'
+            query = query.filter(Usuario.estado == estado_bool)
+
+        if search:
+            t = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Usuario.nombre.ilike(t),
+                    Usuario.apellido.ilike(t),
+                    Usuario.correo.ilike(t),
+                )
+            )
+
+        query = query.order_by(Usuario.nombre.asc())
+
+        # Si no viene 'page' en la URL se devuelve todo (compatible con código anterior)
+        if 'page' not in request.args and 'per_page' not in request.args \
+                and not search and not rol_id and estado == '':
+            usuarios = query.all()
+            return jsonify([u.to_dict() for u in usuarios])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        result = []
+        for u in pagination.items:
+            result.append({
+                'id':        u.id,
+                'nombre':    u.nombre,
+                'apellido':  u.apellido,
+                'correo':    u.correo,
+                'telefono':  u.telefono,
+                'estado':    u.estado,
+                'rol_id':    u.rol_id,
+                'rol_nombre': u.rol.nombre if u.rol else None,
+            })
+
+        return jsonify({
+            'data': result,
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page':     per_page,
+                'total':        pagination.total,
+                'total_pages':  pagination.pages,
+                'has_next':     pagination.has_next,
+                'has_prev':     pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": f"Error: {str(e)}"}), 500
+
 
 @main_bp.route('/admin/usuarios', methods=['POST'])
 @permiso_requerido("crear_usuarios")
@@ -128,6 +201,7 @@ def create_usuario_admin():
         db.session.rollback()
         return jsonify({"error": f"Error: {str(e)}"}), 500
 
+
 @main_bp.route('/admin/usuarios/<int:id>', methods=['GET'])
 @permiso_requerido("ver_usuarios")
 def get_usuario(id):
@@ -140,6 +214,7 @@ def get_usuario(id):
         return jsonify(usuario.to_dict())
     except Exception as e:
         return jsonify({"error": f"Error: {str(e)}"}), 500
+
 
 @main_bp.route('/admin/usuarios/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_usuarios")
@@ -179,6 +254,7 @@ def update_usuario_admin(id):
         db.session.rollback()
         return jsonify({"error": f"Error: {str(e)}"}), 500
 
+
 @main_bp.route('/admin/usuarios/<int:id>', methods=['DELETE'])
 @permiso_requerido("eliminar_usuarios")
 def delete_usuario_admin(id):
@@ -195,7 +271,134 @@ def delete_usuario_admin(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error: {str(e)}"}), 500
- 
+
+# ============================================================
+# ROLES (paginación y filtros consolidados)
+# ============================================================
+
+@main_bp.route('/roles', methods=['GET'])
+@permiso_requerido("ver_roles")
+def get_roles_admin():
+    """
+    Listar roles con paginación y filtros opcionales.
+
+    Query params opcionales:
+        page      (int)  – página actual, default 1
+        per_page  (int)  – registros por página, máx 10
+        search    (str)  – busca en nombre
+        estado    (str)  – 'true' | 'false'
+    """
+    try:
+        page     = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        search   = request.args.get('search', '', type=str).strip()
+        estado   = request.args.get('estado', '', type=str)
+
+        query = Rol.query
+
+        if estado != '' and hasattr(Rol, 'estado'):
+            estado_bool = estado.lower() == 'true'
+            query = query.filter(Rol.estado == estado_bool)
+
+        if search:
+            query = query.filter(Rol.nombre.ilike(f"%{search}%"))
+
+        query = query.order_by(Rol.nombre.asc())
+
+        # Sin parámetros → compatible con código anterior
+        if 'page' not in request.args and 'per_page' not in request.args \
+                and not search and estado == '':
+            roles = query.all()
+            return jsonify([r.to_dict() for r in roles])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        result = []
+        for r in pagination.items:
+            result.append({
+                'id':          r.id,
+                'nombre':      r.nombre,
+                'descripcion': r.descripcion if hasattr(r, 'descripcion') else None,
+                'estado':      r.estado if hasattr(r, 'estado') else None,
+            })
+
+        return jsonify({
+            'data': result,
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page':     per_page,
+                'total':        pagination.total,
+                'total_pages':  pagination.pages,
+                'has_next':     pagination.has_next,
+                'has_prev':     pagination.has_prev,
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
+# ============================================================
+# CLIENTES (paginación y filtros consolidados)
+# ============================================================
+
+@main_bp.route('/clientes', methods=['GET'])
+@permiso_requerido("ver_clientes")
+def get_clientes_admin():
+    """
+    Listar clientes con paginación y filtros opcionales.
+
+    Query params opcionales:
+        page      (int)  – página actual, default 1
+        per_page  (int)  – registros por página, máx 10
+        search    (str)  – busca en nombre, apellido, correo y número de documento
+        estado    (str)  – 'true' | 'false'
+    """
+    try:
+        page     = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        search   = request.args.get('search', '', type=str).strip()
+        estado   = request.args.get('estado', '', type=str)
+
+        query = Cliente.query
+
+        if estado != '':
+            estado_bool = estado.lower() == 'true'
+            query = query.filter(Cliente.estado == estado_bool)
+
+        if search:
+            t = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Cliente.nombre.ilike(t),
+                    Cliente.apellido.ilike(t),
+                    Cliente.correo.ilike(t),
+                    Cliente.numero_documento.ilike(t),
+                )
+            )
+
+        query = query.order_by(Cliente.nombre.asc())
+
+        # Sin parámetros → compatible con código anterior
+        if 'page' not in request.args and 'per_page' not in request.args \
+                and not search and estado == '':
+            clientes = query.all()
+            return jsonify([c.to_dict() for c in clientes])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        return jsonify({
+            'data': [c.to_dict() for c in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page':     per_page,
+                'total':        pagination.total,
+                'total_pages':  pagination.pages,
+                'has_next':     pagination.has_next,
+                'has_prev':     pagination.has_prev,
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": f"Error: {str(e)}"}), 500
+
 # ============================================================
 # PERFIL UNIFICADO (usuario + cliente)
 # ============================================================
@@ -254,7 +457,6 @@ def update_mi_perfil():
 
         # ========== 2. Manejar Cliente (si se envió la sección 'cliente') ==========
         if cliente_data is not None:
-            # Si no tiene cliente_id, crear un nuevo cliente con los datos actuales del usuario
             if not usuario.cliente_id:
                 nuevo_cliente = Cliente(
                     tipo_documento=usuario.tipo_documento,
@@ -273,7 +475,6 @@ def update_mi_perfil():
             else:
                 cliente = Cliente.query.get(usuario.cliente_id)
 
-            # Actualizar campos específicos del cliente (los que no están en Usuario)
             for field in ['municipio', 'direccion', 'barrio', 'codigo_postal',
                           'ocupacion', 'telefono_emergencia', 'departamento']:
                 if field in cliente_data:
@@ -282,7 +483,6 @@ def update_mi_perfil():
 
         db.session.commit()
 
-        # Retornar perfil actualizado
         cliente_actualizado = Cliente.query.get(usuario.cliente_id) if usuario.cliente_id else None
         return jsonify({
             "success": True,

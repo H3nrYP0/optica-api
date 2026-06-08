@@ -13,6 +13,7 @@ import re
 
 EMAIL_REGEX = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 PHONE_REGEX = re.compile(r'^\d{7,15}$')
+MAX_PER_PAGE = 10
 
 # ============================================================
 # MÓDULO: PROVEEDORES (CRUD)
@@ -21,11 +22,63 @@ PHONE_REGEX = re.compile(r'^\d{7,15}$')
 @main_bp.route('/proveedores', methods=['GET'])
 @permiso_requerido("ver_proveedores")
 def get_proveedores():
+    """
+    Listar proveedores con paginación, búsqueda y filtros.
+    Query params:
+        page            (int) – página actual
+        per_page        (int) – registros por página (máx 10)
+        search          (str) – busca en razón social, documento, contacto, correo
+        tipo_proveedor  (str) – 'Persona Natural' o 'Persona Jurídica'
+        estado          (str) – 'true' o 'false'
+    """
     try:
-        proveedores = Proveedor.query.order_by(Proveedor.razon_social_o_nombre.asc()).all()
-        return jsonify([proveedor.to_dict() for proveedor in proveedores])
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        search = request.args.get('search', '', type=str).strip()
+        tipo_proveedor = request.args.get('tipo_proveedor', '', type=str).strip()
+        estado = request.args.get('estado', '', type=str).strip().lower()
+
+        query = Proveedor.query
+
+        if tipo_proveedor:
+            query = query.filter(Proveedor.tipo_proveedor == tipo_proveedor)
+        if estado != '':
+            estado_bool = estado == 'true'
+            query = query.filter(Proveedor.estado == estado_bool)
+        if search:
+            like = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Proveedor.razon_social_o_nombre.ilike(like),
+                    Proveedor.documento.ilike(like),
+                    Proveedor.contacto.ilike(like),
+                    Proveedor.correo.ilike(like)
+                )
+            )
+        query = query.order_by(Proveedor.razon_social_o_nombre.asc())
+
+        # Compatibilidad hacia atrás: si no hay parámetros de paginación ni filtros, devolver todo
+        has_pagination = 'page' in request.args or 'per_page' in request.args
+        has_filters = search or tipo_proveedor or estado != ''
+        if not has_pagination and not has_filters:
+            proveedores = query.all()
+            return jsonify([proveedor.to_dict() for proveedor in proveedores])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        return jsonify({
+            'data': [proveedor.to_dict() for proveedor in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page': per_page,
+                'total': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": f"Error al obtener proveedores: {str(e)}"}), 500
+
 
 @main_bp.route('/proveedores', methods=['POST'])
 @permiso_requerido("crear_proveedores")
@@ -78,6 +131,7 @@ def create_proveedor():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear proveedor: {str(e)}"}), 500
+
 
 @main_bp.route('/proveedores/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_proveedores")
@@ -145,6 +199,7 @@ def update_proveedor(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar proveedor: {str(e)}"}), 500
+
 
 @main_bp.route('/proveedores/<int:id>', methods=['DELETE'])
 @permiso_requerido("eliminar_proveedores")

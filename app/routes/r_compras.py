@@ -13,6 +13,8 @@ from datetime import datetime
 from app.routes import main_bp
 from app.auth.decorators import permiso_requerido
 
+MAX_PER_PAGE = 10
+
 # ============================================================
 # MÓDULO: COMPRAS
 # ============================================================
@@ -20,11 +22,72 @@ from app.auth.decorators import permiso_requerido
 @main_bp.route('/compras', methods=['GET'])
 @permiso_requerido("ver_compras")
 def get_compras():
+    """
+    Listar compras con paginación, búsqueda y filtros.
+    Query params:
+        page          (int)
+        per_page      (int) máx 10
+        search        (str) busca en proveedor (razón social)
+        proveedor_id  (int)
+        fecha_desde   (str) YYYY-MM-DD
+        fecha_hasta   (str)
+        estado_compra (bool) True/False
+    """
     try:
-        compras = Compra.query.order_by(Compra.fecha.desc()).all()
-        return jsonify([compra.to_dict() for compra in compras])
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        search = request.args.get('search', '', type=str).strip()
+        proveedor_id = request.args.get('proveedor_id', type=int)
+        fecha_desde = request.args.get('fecha_desde', '', type=str).strip()
+        fecha_hasta = request.args.get('fecha_hasta', '', type=str).strip()
+        estado_compra_param = request.args.get('estado_compra', '', type=str).strip().lower()
+
+        query = Compra.query.join(Proveedor, Compra.proveedor_id == Proveedor.id)
+
+        if proveedor_id:
+            query = query.filter(Compra.proveedor_id == proveedor_id)
+        if fecha_desde:
+            try:
+                fd = datetime.strptime(fecha_desde, '%Y-%m-%d')
+                query = query.filter(Compra.fecha >= fd)
+            except ValueError:
+                return jsonify({"error": "Formato fecha_desde inválido"}), 400
+        if fecha_hasta:
+            try:
+                fh = datetime.strptime(fecha_hasta, '%Y-%m-%d')
+                query = query.filter(Compra.fecha <= fh)
+            except ValueError:
+                return jsonify({"error": "Formato fecha_hasta inválido"}), 400
+        if estado_compra_param != '':
+            estado_bool = estado_compra_param == 'true'
+            query = query.filter(Compra.estado_compra == estado_bool)
+        if search:
+            like = f"%{search}%"
+            query = query.filter(Proveedor.razon_social_o_nombre.ilike(like))
+
+        query = query.order_by(Compra.fecha.desc())
+
+        has_pagination = 'page' in request.args or 'per_page' in request.args
+        has_filters = proveedor_id or fecha_desde or fecha_hasta or estado_compra_param != '' or search
+        if not has_pagination and not has_filters:
+            compras = query.all()
+            return jsonify([compra.to_dict() for compra in compras])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        return jsonify({
+            'data': [compra.to_dict() for compra in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page': per_page,
+                'total': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": f"Error al obtener compras: {str(e)}"}), 500
+
 
 @main_bp.route('/compras', methods=['POST'])
 @permiso_requerido("crear_compras")
@@ -95,6 +158,7 @@ def create_compra():
         db.session.rollback()
         return jsonify({"error": f"Error al crear compra: {str(e)}"}), 500
 
+
 @main_bp.route('/compras/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_compras")
 def update_compra(id):
@@ -123,6 +187,7 @@ def update_compra(id):
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar compra: {str(e)}"}), 500
 
+
 @main_bp.route('/compras/<int:id>', methods=['DELETE'])
 @permiso_requerido("eliminar_compras")
 def delete_compra(id):
@@ -145,6 +210,7 @@ def delete_compra(id):
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar compra: {str(e)}"}), 500
 
+
 @main_bp.route('/compras/<int:compra_id>/detalles', methods=['GET'])
 @permiso_requerido("ver_compras")
 def get_detalles_compra_especifica(compra_id):
@@ -157,6 +223,7 @@ def get_detalles_compra_especifica(compra_id):
     except Exception as e:
         return jsonify({"error": f"Error al obtener detalles de la compra: {str(e)}"}), 500
 
+
 # ============================================================
 # MÓDULO: DETALLES DE COMPRA
 # ============================================================
@@ -164,11 +231,42 @@ def get_detalles_compra_especifica(compra_id):
 @main_bp.route('/detalle-compra', methods=['GET'])
 @permiso_requerido("ver_compras")
 def get_detalles_compra():
+    """
+    Listar detalles de compra con paginación y filtros.
+    Query params: page, per_page, compra_id, producto_id
+    """
     try:
-        detalles = DetalleCompra.query.all()
-        return jsonify([detalle.to_dict() for detalle in detalles])
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
+        compra_id = request.args.get('compra_id', type=int)
+        producto_id = request.args.get('producto_id', type=int)
+
+        query = DetalleCompra.query
+        if compra_id:
+            query = query.filter(DetalleCompra.compra_id == compra_id)
+        if producto_id:
+            query = query.filter(DetalleCompra.producto_id == producto_id)
+        query = query.order_by(DetalleCompra.id.desc())
+
+        if 'page' not in request.args and 'per_page' not in request.args and not compra_id and not producto_id:
+            detalles = query.all()
+            return jsonify([detalle.to_dict() for detalle in detalles])
+
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        return jsonify({
+            'data': [detalle.to_dict() for detalle in pagination.items],
+            'pagination': {
+                'current_page': pagination.page,
+                'per_page': per_page,
+                'total': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        })
     except Exception as e:
         return jsonify({"error": "Error al obtener detalles de compra"}), 500
+
 
 @main_bp.route('/detalle-compra', methods=['POST'])
 @permiso_requerido("crear_compras")
@@ -210,6 +308,7 @@ def create_detalle_compra():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear detalle de compra: {str(e)}"}), 500
+
 
 @main_bp.route('/detalle-compra/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_compras")
@@ -264,6 +363,7 @@ def update_detalle_compra(id):
         db.session.rollback()
         return jsonify({"error": f"Error al actualizar detalle de compra: {str(e)}"}), 500
 
+
 @main_bp.route('/detalle-compra/<int:id>', methods=['DELETE'])
 @permiso_requerido("eliminar_compras")
 def delete_detalle_compra(id):
@@ -287,8 +387,3 @@ def delete_detalle_compra(id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al eliminar detalle de compra: {str(e)}"}), 500
-
-# ============================================================
-# MÓDULO: ESTADO DE COMPRA (si existe tabla)
-# ============================================================
-# Nota: No hay tabla EstadoCompra en models.py; si existe, aplicar mismo patrón
