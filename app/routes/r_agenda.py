@@ -28,7 +28,7 @@ def validar_disponibilidad_cita(empleado_id, fecha, hora, duracion, exclude_cita
         Novedad.empleado_id == empleado_id,
         Novedad.fecha_inicio <= fecha,
         Novedad.fecha_fin >= fecha,
-        Novedad.activo == True
+        Novedad.activo == 'true'
     ).first()
     if novedad:
         empleado_nombre = Empleado.query.get(empleado_id).nombre
@@ -44,7 +44,7 @@ def validar_disponibilidad_cita(empleado_id, fecha, hora, duracion, exclude_cita
                 return {"disponible": False, "mensaje": f"El empleado {empleado_nombre} no está disponible el {fecha_inicio_str} de {hora_inicio_str} a {hora_fin_str} por {novedad.tipo}{motivo_str}."}
     # 2. Verificar horario laboral
     dia_semana = fecha.weekday()
-    horario = Horario.query.filter_by(empleado_id=empleado_id, dia=dia_semana, activo=True).first()
+    horario = Horario.query.filter_by(empleado_id=empleado_id, dia=dia_semana, activo='true').first()
     if not horario:
         return {"disponible": False, "mensaje": "El empleado no tiene horario asignado para este día"}
     if not (horario.hora_inicio <= hora <= horario.hora_final):
