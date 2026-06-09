@@ -22,17 +22,6 @@ MAX_PER_PAGE = 10
 @main_bp.route('/compras', methods=['GET'])
 @permiso_requerido("ver_compras")
 def get_compras():
-    """
-    Listar compras con paginación, búsqueda y filtros.
-    Query params:
-        page          (int)
-        per_page      (int) máx 10
-        search        (str) busca en proveedor (razón social)
-        proveedor_id  (int)
-        fecha_desde   (str) YYYY-MM-DD
-        fecha_hasta   (str)
-        estado_compra (bool) True/False
-    """
     try:
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
@@ -58,20 +47,16 @@ def get_compras():
                 query = query.filter(Compra.fecha <= fh)
             except ValueError:
                 return jsonify({"error": "Formato fecha_hasta inválido"}), 400
+
         if estado_compra_param != '':
-            estado_bool = estado_compra_param == 'true'
-            query = query.filter(Compra.estado_compra == estado_bool)
+            estado_val = 'true' if estado_compra_param == 'true' else 'false'
+            query = query.filter(Compra.estado_compra == estado_val)
+
         if search:
             like = f"%{search}%"
             query = query.filter(Proveedor.razon_social_o_nombre.ilike(like))
 
         query = query.order_by(Compra.fecha.desc())
-
-        has_pagination = 'page' in request.args or 'per_page' in request.args
-        has_filters = proveedor_id or fecha_desde or fecha_hasta or estado_compra_param != '' or search
-        if not has_pagination and not has_filters:
-            compras = query.all()
-            return jsonify([compra.to_dict() for compra in compras])
 
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         return jsonify({
