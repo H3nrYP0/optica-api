@@ -37,7 +37,11 @@ class Config:
 
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=8)
 
-    # Brevo (Email Service)
-    BREVO_API_KEY = os.environ.get('BREVO_API_KEY')
-    #BREVO_SENDER_EMAIL = os.environ.get('BREVO_SENDER_EMAIL', 'noreply@visualoutlet.com')
-    BREVO_SENDER_NAME = os.environ.get('BREVO_SENDER_NAME', 'Visual Outlet')
+    # ================= RESEND  =================
+    RESEND_API_KEY = os.environ.get('RESEND_API_KEY')
+    RESEND_MODE = os.environ.get('RESEND_MODE', 'REAL')      # 'REAL' o 'TEST_EVENTS'
+    RESEND_FROM_EMAIL = os.environ.get('RESEND_FROM_EMAIL', 'onboarding@resend.dev')
+
+    # Opcional: validar que la API key existe en producción
+    # if not RESEND_API_KEY and RESEND_MODE == 'REAL':
+    #     raise ValueError("❌ RESEND_API_KEY no está definida para modo REAL")
