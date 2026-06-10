@@ -333,7 +333,6 @@ def get_productos():
 
 @main_bp.route('/productos/lista-completa', methods=['GET'])
 def get_productos_lista_completa():
-    # Este endpoint ya tenía paginación, se mantiene igual pero con MAX_PER_PAGE consistente
     try:
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', 50, type=int), 50)
@@ -377,7 +376,6 @@ def get_productos_lista_completa():
 
 @main_bp.route('/productos/buscar-avanzado', methods=['GET'])
 def buscar_productos_avanzado():
-    # Este endpoint ya tenía paginación, se mantiene igual pero con MAX_PER_PAGE
     try:
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', 20, type=int), 20)
@@ -510,22 +508,122 @@ def get_producto_asociaciones(id):
 @main_bp.route('/productos', methods=['POST'])
 @permiso_requerido("crear_productos")
 def create_producto():
-    # ... (sin cambios, igual que original)
-    pass
+    try:
+        data = request.get_json()
+        required_fields = ['nombre', 'precio_venta', 'precio_compra', 'categoria_id', 'marca_id']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"El campo {field} es requerido"}), 400
+        p_venta = float(data['precio_venta'])
+        p_compra = float(data['precio_compra'])
+        if p_venta < 0:
+            return jsonify({"error": "El precio de venta debe ser mayor a 0"}), 400
+        if p_compra < 0:
+            return jsonify({"error": "El precio de compra debe ser mayor a 0"}), 400
+        if p_venta < p_compra:
+            return jsonify({"error": "El precio de venta no puede ser menor al precio de compra"}), 400
+        marca = Marca.query.get(data['marca_id'])
+        categoria = CategoriaProducto.query.get(data['categoria_id'])
+        if not marca or not categoria:
+            return jsonify({"error": "La marca o categoría seleccionada no existe"}), 400
+        if not marca.estado or not categoria.estado:
+            return jsonify({"error": "No puedes crear productos con una marca o categoría inactiva"}), 400
+        stock = int(data.get('stock', 0))
+        if stock < 0:
+            return jsonify({"error": "El stock inicial no puede ser negativo"}), 400
+        if Producto.query.filter(Producto.nombre.ilike(data['nombre'].strip())).first():
+            return jsonify({"error": "Ya existe un producto con este nombre"}), 400
+        producto = Producto(
+            nombre=data['nombre'].strip(),
+            precio_venta=p_venta,
+            precio_compra=p_compra,
+            stock=stock,
+            stock_minimo=data.get('stock_minimo', 5),
+            descripcion=data.get('descripcion', ''),
+            categoria_producto_id=data['categoria_id'],
+            marca_id=data['marca_id'],
+            estado=data.get('estado', True)
+        )
+        db.session.add(producto)
+        db.session.commit()
+        return jsonify({"message": "Producto creado", "producto": producto.to_dict()}), 201
+    except ValueError:
+        return jsonify({"error": "Los precios y stock deben ser números válidos"}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al crear producto: {str(e)}"}), 500
 
 
 @main_bp.route('/productos/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_productos")
 def update_producto(id):
-    # ... (sin cambios)
-    pass
+    try:
+        producto = Producto.query.get(id)
+        if not producto:
+            return jsonify({"error": "Producto no encontrado"}), 404
+        data = request.get_json()
+        if 'precio_venta' in data or 'precio_compra' in data:
+            nuevo_pv = float(data.get('precio_venta', producto.precio_venta))
+            nuevo_pc = float(data.get('precio_compra', producto.precio_compra))
+            if nuevo_pv < 0 or nuevo_pc < 0:
+                return jsonify({"error": "Los precios deben ser mayores a 0"}), 400
+            if nuevo_pv < nuevo_pc:
+                return jsonify({"error": "El precio de venta no puede ser menor al precio de compra"}), 400
+            producto.precio_venta = nuevo_pv
+            producto.precio_compra = nuevo_pc
+        if 'stock' in data:
+            nuevo_stock = int(data['stock'])
+            if nuevo_stock < 0:
+                return jsonify({"error": "El stock no puede ser negativo"}), 400
+            producto.stock = nuevo_stock
+        if 'stock_minimo' in data:
+            nuevo_minimo = int(data['stock_minimo'])
+            if nuevo_minimo < 0:
+                return jsonify({"error": "El stock mínimo no puede ser negativo"}), 400
+            producto.stock_minimo = nuevo_minimo
+        if 'categoria_id' in data:
+            categoria = CategoriaProducto.query.get(data['categoria_id'])
+            if not categoria or not categoria.estado:
+                return jsonify({"error": "Categoría no válida o inactiva"}), 400
+            producto.categoria_producto_id = data['categoria_id']
+        if 'marca_id' in data:
+            marca = Marca.query.get(data['marca_id'])
+            if not marca or not marca.estado:
+                return jsonify({"error": "Marca no válida o inactiva"}), 400
+            producto.marca_id = data['marca_id']
+        if 'estado' in data:
+            producto.estado = data['estado']
+        if 'nombre' in data:
+            nombre = data['nombre'].strip()
+            if Producto.query.filter(Producto.nombre.ilike(nombre), Producto.id != id).first():
+                return jsonify({"error": "Ya existe otro producto con este nombre"}), 400
+            producto.nombre = nombre
+        if 'descripcion' in data:
+            producto.descripcion = data['descripcion']
+        db.session.commit()
+        return jsonify({"message": "Producto actualizado", "producto": producto.to_dict()})
+    except ValueError:
+        return jsonify({"error": "Los precios y stock deben ser números válidos"}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al actualizar producto: {str(e)}"}), 500
 
 
 @main_bp.route('/productos/<int:id>', methods=['DELETE'])
 @permiso_requerido("eliminar_productos")
 def delete_producto(id):
-    # ... (sin cambios)
-    pass
+    try:
+        producto = Producto.query.get(id)
+        if not producto:
+            return jsonify({"error": "Producto no encontrado"}), 404
+        if producto.detalle_ventas and len(producto.detalle_ventas) > 0:
+            return jsonify({"error": "No se puede eliminar un producto que tiene ventas asociadas"}), 400
+        db.session.delete(producto)
+        db.session.commit()
+        return jsonify({"message": "Producto eliminado correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al eliminar producto: {str(e)}"}), 500
 
 
 # ============================================================
@@ -614,15 +712,42 @@ def get_imagenes_por_producto(producto_id):
 @main_bp.route('/imagenes/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_productos")
 def update_imagen(id):
-    # ... (sin cambios)
-    pass
+    try:
+        imagen = Imagen.query.get(id)
+        if not imagen:
+            return jsonify({"error": "Imagen no encontrada"}), 404
+        data = request.get_json()
+        if 'url' in data:
+            if not data['url']:
+                return jsonify({"error": "La URL no puede estar vacía"}), 400
+            imagen.url = data['url']
+        if 'producto_id' in data:
+            producto = Producto.query.get(data['producto_id'])
+            if not producto:
+                return jsonify({"error": "Producto no encontrado"}), 404
+            if not producto.estado:
+                return jsonify({"error": "No puedes asignar la imagen a un producto inactivo"}), 400
+            imagen.producto_id = data['producto_id']
+        db.session.commit()
+        return jsonify({"message": "Imagen actualizada", "imagen": imagen.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 @main_bp.route('/imagenes/<int:id>', methods=['DELETE'])
 @permiso_requerido("eliminar_productos")
 def delete_imagen(id):
-    # ... (sin cambios)
-    pass
+    try:
+        imagen = Imagen.query.get(id)
+        if not imagen:
+            return jsonify({"error": "Imagen no encontrada"}), 404
+        db.session.delete(imagen)
+        db.session.commit()
+        return jsonify({"message": "Imagen eliminada correctamente"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 # ============================================================
@@ -632,8 +757,48 @@ def delete_imagen(id):
 @main_bp.route('/multimedia', methods=['POST'])
 @permiso_requerido("crear_productos")
 def crear_multimedia():
-    # ... (sin cambios)
-    pass
+    try:
+        data = request.get_json()
+        if not data.get('url'):
+            return jsonify({"error": "URL requerida"}), 400
+        if not data.get('tipo'):
+            return jsonify({"error": "Tipo requerido: 'categoria', 'comprobante' u 'otro'"}), 400
+        tipo = data['tipo']
+        if tipo not in ['categoria', 'comprobante', 'otro']:
+            return jsonify({"error": "Tipo debe ser: 'categoria', 'comprobante' u 'otro'"}), 400
+        if tipo == 'categoria':
+            if not data.get('categoria_id'):
+                return jsonify({"error": "Para tipo 'categoria' se requiere categoria_id"}), 400
+            categoria = CategoriaProducto.query.get(data['categoria_id'])
+            if not categoria:
+                return jsonify({"error": "La categoría especificada no existe"}), 404
+            existente = Multimedia.query.filter_by(tipo='categoria', categoria_id=data['categoria_id']).first()
+            if existente:
+                existente.url = data['url']
+                db.session.commit()
+                return jsonify({"success": True, "message": "Imagen de categoría actualizada", "multimedia": existente.to_dict()})
+        if tipo == 'comprobante':
+            if not data.get('pedido_id'):
+                return jsonify({"error": "Para tipo 'comprobante' se requiere pedido_id"}), 400
+            from app.Models.models import Pedido
+            pedido = Pedido.query.get(data['pedido_id'])
+            if not pedido:
+                return jsonify({"error": "El pedido especificado no existe"}), 404
+            existente = Multimedia.query.filter_by(tipo='comprobante', pedido_id=data['pedido_id']).first()
+            if existente:
+                return jsonify({"error": "Este pedido ya tiene un comprobante"}), 400
+        multimedia = Multimedia(
+            url=data['url'],
+            tipo=tipo,
+            categoria_id=data.get('categoria_id'),
+            pedido_id=data.get('pedido_id')
+        )
+        db.session.add(multimedia)
+        db.session.commit()
+        return jsonify({"success": True, "multimedia": multimedia.to_dict()}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 @main_bp.route('/multimedia/comprobante/pedido/<int:pedido_id>', methods=['GET'])
@@ -654,5 +819,40 @@ def obtener_comprobante_pedido(pedido_id):
 @main_bp.route('/multimedia/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_productos")
 def actualizar_multimedia(id):
-    # ... (sin cambios)
-    pass
+    try:
+        multimedia = Multimedia.query.get(id)
+        if not multimedia:
+            return jsonify({"error": "Elemento multimedia no encontrado"}), 404
+        data = request.get_json()
+        if 'url' in data:
+            if not data['url']:
+                return jsonify({"error": "La URL no puede estar vacía"}), 400
+            multimedia.url = data['url']
+        if 'tipo' in data:
+            tipo = data['tipo']
+            if tipo not in ['categoria', 'comprobante', 'otro']:
+                return jsonify({"error": "Tipo debe ser: 'categoria', 'comprobante' u 'otro'"}), 400
+            multimedia.tipo = tipo
+        if multimedia.tipo == 'categoria':
+            if 'categoria_id' in data:
+                categoria = CategoriaProducto.query.get(data['categoria_id'])
+                if not categoria:
+                    return jsonify({"error": "La categoría no existe"}), 404
+                multimedia.categoria_id = data['categoria_id']
+            multimedia.pedido_id = None
+        elif multimedia.tipo == 'comprobante':
+            if 'pedido_id' in data:
+                from app.Models.models import Pedido
+                pedido = Pedido.query.get(data['pedido_id'])
+                if not pedido:
+                    return jsonify({"error": "El pedido no existe"}), 404
+                multimedia.pedido_id = data['pedido_id']
+            multimedia.categoria_id = None
+        else:
+            multimedia.categoria_id = None
+            multimedia.pedido_id = None
+        db.session.commit()
+        return jsonify({"success": True, "message": "Multimedia actualizado", "multimedia": multimedia.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
