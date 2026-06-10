@@ -1,11 +1,9 @@
 """
-Blueprint de autenticación: /auth
-
 Rutas:
     POST /auth/login            → login con JWT
-    POST /auth/register         → inicia registro, envía código por Mailtrap
+    POST /auth/register         → inicia registro, envía código por Resend
     POST /auth/verify-register  → verifica código y crea el cliente + usuario (con rol Cliente)
-    POST /auth/forgot-password  → envía código de recuperación por Mailtrap (solo para usuarios con rol)
+    POST /auth/forgot-password  → envía código de recuperación por Resend (solo para usuarios con rol)
     POST /auth/reset-password   → verifica código y actualiza contraseña
     POST /auth/logout           → cierra sesión (instrucción al frontend)
     GET  /auth/me               → retorna datos del usuario autenticado
@@ -13,6 +11,7 @@ Rutas:
 
 import re
 import secrets
+import os  # ← Agregado para leer variables de entorno
 from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, request
@@ -256,6 +255,19 @@ def register():
                 "message": "No se pudo enviar el código de verificación. Verifica el correo e intenta de nuevo."
             }), 500
 
+        # ========== BLOQUE DE DEPURACIÓN (SOLO MODO TEST_EVENTS) ==========
+        # Devuelve el código en la respuesta para facilitar pruebas desde el frontend.
+        # ELIMINAR ESTAS LÍNEAS EN PRODUCCIÓN (o cuando RESEND_MODE=REAL)
+        modo = os.getenv('RESEND_MODE', 'REAL')
+        if modo == 'TEST_EVENTS':
+            return jsonify({
+                "success": True,
+                "code": "CODE_SENT",
+                "message": "Código de verificación enviado.",
+                "debug_code": codigo   # ← solo para desarrollo
+            }), 200
+        # ========== FIN BLOQUE DEPURACIÓN ==========
+
         return jsonify({
             "success": True,
             "code": "CODE_SENT",
@@ -429,7 +441,7 @@ def verify_register():
 
 
 # =============================================
-# POST /auth/forgot-password (solo para usuarios con rol, no clientes)
+# POST /auth/forgot-password (solo para usuarios con rol)
 # =============================================
 @auth_bp.route('/forgot-password', methods=['POST'])
 def forgot_password():
@@ -482,6 +494,19 @@ def forgot_password():
             del codigos_reset[correo]
             # No revelamos el fallo al usuario para mantener seguridad
             return jsonify(RESPUESTA_GENERICA), 200
+
+        # ========== BLOQUE DE DEPURACIÓN (SOLO MODO TEST_EVENTS) ==========
+        # Devuelve el código en la respuesta para facilitar pruebas desde el frontend.
+        # ELIMINAR ESTAS LÍNEAS EN PRODUCCIÓN (o cuando RESEND_MODE=REAL)
+        modo = os.getenv('RESEND_MODE', 'REAL')
+        if modo == 'TEST_EVENTS':
+            return jsonify({
+                "success": True,
+                "code": "RESET_SENT_IF_EXISTS",
+                "message": "Código de recuperación enviado.",
+                "debug_code": codigo   # ← solo para desarrollo
+            }), 200
+        # ========== FIN BLOQUE DEPURACIÓN ==========
 
         return jsonify(RESPUESTA_GENERICA), 200
 
