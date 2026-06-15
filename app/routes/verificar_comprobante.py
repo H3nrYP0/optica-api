@@ -1,172 +1,30 @@
-# =============================================================
-# verificar_comprobante.py
-#
-# Endpoint Python para verificar comprobantes de pago con Claude Vision.
-# Soluciona el error CORS: el navegador no puede llamar a
-# api.anthropic.com directamente. Este endpoint corre en tu
-# servidor, recibe la imagen y devuelve el monto leído.
-#
-# ── INSTALACIÓN ──────────────────────────────────────────────
-#   pip install anthropic python-multipart
-#
-# ── VARIABLE DE ENTORNO (en Render → Environment) ────────────
-#   ANTHROPIC_API_KEY = sk-ant-xxxxxxxxxxxxxxxx
-#
-# ══════════════════════════════════════════════════════════════
-# OPCIÓN A — FastAPI  (si tu backend usa FastAPI)
-# ══════════════════════════════════════════════════════════════
-# MONTAJE en tu main.py / app.py:
-#
-#   from verificar_comprobante import router as comprobante_router
-#   app.include_router(comprobante_router)
-#
-# El frontend llama a: POST /pedidos/verificar-comprobante
-# ─────────────────────────────────────────────────────────────
-
 import os
 import base64
-import json
 import re
-
+import json
+from flask import Blueprint, request, jsonify
 import anthropic
 
-# ── Soporte FastAPI ───────────────────────────────────────────
-try:
-    from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-    from fastapi.responses import JSONResponse
+# ============================================================
+# Blueprint para verificación de comprobantes con Claude Vision
+# ============================================================
 
-    router = APIRouter(prefix="/pedidos", tags=["pedidos"])
+comprobante_bp = Blueprint("comprobante", __name__, url_prefix="/pedidos")
 
-    ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+# ---------- VALIDACIÓN DE API KEY ----------
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+if not ANTHROPIC_API_KEY:
+    raise RuntimeError(
+        "❌ ANTHROPIC_API_KEY no configurada. "
+        "Agrega la variable de entorno o en tu .env"
+    )
+client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-    TIPOS_VALIDOS = {
-        "image/jpeg", "image/png", "image/webp", "image/gif"
-    }
+# ---------- CONFIGURACIÓN ----------
+TIPOS_VALIDOS = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_TAMANO = 10 * 1024 * 1024  # 10 MB
 
-    PROMPT = """Eres un sistema de verificación de comprobantes bancarios colombianos (Bancolombia, Nequi, Daviplata).
-
-Analiza esta imagen con máxima precisión y extrae:
-
-1. MONTO TRANSFERIDO exacto:
-   - Busca: "Valor", "Total", "Transferencia por", "Transferiste", "Pagaste", "Monto"
-   - Lee CADA dígito sin redondear
-   - "$99.000" -> 99000 | "$149.500" -> 149500 | "$1.250.000" -> 1250000
-   - Los puntos son separadores de miles, la coma es decimal
-
-2. NOMBRE del remitente (quien envía)
-
-Responde SOLO con este JSON exacto, sin texto extra ni markdown:
-{"monto": <entero sin puntos ni comas>, "montoTexto": "<como aparece>", "remitente": "<nombre>", "confianza": <1-10>}
-
-Si no puedes leer el monto con certeza -> monto: -1"""
-
-    def _parse_ocr_response(text: str) -> dict:
-        """Parsea la respuesta de Claude limpiando posibles ```json ... ```"""
-        clean = re.sub(r"^```json\s*", "", text.strip(), flags=re.IGNORECASE)
-        clean = re.sub(r"\s*```$", "", clean).strip()
-        try:
-            return json.loads(clean)
-        except json.JSONDecodeError:
-            match = re.search(r"\{[\s\S]+\}", clean)
-            if match:
-                return json.loads(match.group())
-            raise ValueError("No se pudo parsear respuesta OCR")
-
-    @router.post("/verificar-comprobante")
-    async def verificar_comprobante(
-        comprobante: UploadFile = File(...),
-        montoEsperado: str = Form(...),
-    ):
-        # Validar tipo
-        if comprobante.content_type not in TIPOS_VALIDOS:
-            raise HTTPException(
-                status_code=400,
-                detail="Formato no soportado. Sube una imagen JPG, PNG, WEBP o GIF."
-            )
-
-        # Leer archivo y convertir a base64
-        contenido = await comprobante.read()
-        if len(contenido) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="El archivo supera los 10 MB.")
-
-        b64 = base64.b64encode(contenido).decode("utf-8")
-        mime = comprobante.content_type
-
-        # Llamar a Claude Vision (server-side, sin CORS)
-        try:
-            message = client.messages.create(
-                model="claude-haiku-4-5-20251001",  # modelo rápido y económico para OCR
-                max_tokens=300,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": mime,
-                                "data": b64,
-                            },
-                        },
-                        {"type": "text", "text": PROMPT},
-                    ],
-                }],
-            )
-        except anthropic.APIError as e:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Error al contactar Claude: {str(e)}"
-            )
-
-        raw = "".join(
-            block.text for block in message.content
-            if hasattr(block, "text")
-        )
-
-        try:
-            datos = _parse_ocr_response(raw)
-        except (ValueError, json.JSONDecodeError):
-            raise HTTPException(
-                status_code=502,
-                detail="No se pudo interpretar el comprobante. Sube una imagen más clara."
-            )
-
-        # Asegurar tipos correctos
-        datos["monto"]     = int(datos.get("monto", -1))
-        datos["confianza"] = int(datos.get("confianza", 0))
-
-        return JSONResponse(content=datos)
-
-except ImportError:
-    # FastAPI no instalado — ignorar, usar Flask abajo
-    pass
-
-
-# ══════════════════════════════════════════════════════════════
-# OPCIÓN B — Flask  (si tu backend usa Flask)
-# ══════════════════════════════════════════════════════════════
-# MONTAJE en tu app.py / __init__.py:
-#
-#   from verificar_comprobante import comprobante_bp
-#   app.register_blueprint(comprobante_bp)
-#
-# El frontend llama a: POST /pedidos/verificar-comprobante
-# ─────────────────────────────────────────────────────────────
-
-try:
-    from flask import Blueprint, request, jsonify
-
-    comprobante_bp = Blueprint("comprobante", __name__, url_prefix="/pedidos")
-
-    ANTHROPIC_API_KEY_FLASK = os.environ.get("ANTHROPIC_API_KEY", "")
-    client_flask = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY_FLASK)
-
-    TIPOS_VALIDOS_FLASK = {
-        "image/jpeg", "image/png", "image/webp", "image/gif"
-    }
-
-    PROMPT_FLASK = """Eres un sistema de verificación de comprobantes bancarios colombianos (Bancolombia, Nequi, Daviplata).
+PROMPT = """Eres un sistema de verificación de comprobantes bancarios colombianos (Bancolombia, Nequi, Daviplata).
 
 Analiza esta imagen con máxima precisión y extrae:
 
@@ -183,71 +41,85 @@ Responde SOLO con este JSON exacto, sin texto extra ni markdown:
 
 Si no puedes leer el monto con certeza -> monto: -1"""
 
-    def _parse_flask(text: str) -> dict:
-        clean = re.sub(r"^```json\s*", "", text.strip(), flags=re.IGNORECASE)
-        clean = re.sub(r"\s*```$", "", clean).strip()
-        try:
-            return json.loads(clean)
-        except json.JSONDecodeError:
-            match = re.search(r"\{[\s\S]+\}", clean)
-            if match:
-                return json.loads(match.group())
-            raise ValueError("No se pudo parsear respuesta OCR")
+# ---------- FUNCIÓN AUXILIAR ----------
+def _parse_claude_response(text: str) -> dict:
+    """Limpia y parsea el JSON devuelto por Claude."""
+    clean = re.sub(r"^```json\s*", "", text.strip(), flags=re.IGNORECASE)
+    clean = re.sub(r"\s*```$", "", clean).strip()
+    try:
+        return json.loads(clean)
+    except json.JSONDecodeError:
+        match = re.search(r"\{[\s\S]+\}", clean)
+        if match:
+            return json.loads(match.group())
+        raise ValueError("No se pudo extraer JSON de la respuesta de Claude")
 
-    @comprobante_bp.route("/verificar-comprobante", methods=["POST"])
-    def verificar_comprobante_flask():
-        if "comprobante" not in request.files:
-            return jsonify({"error": "No se recibió ningún archivo."}), 400
+# ---------- ENDPOINT PRINCIPAL ----------
+@comprobante_bp.route("/verificar-comprobante", methods=["POST"])
+def verificar_comprobante():
+    # 1. Validar que llegue el archivo
+    if "comprobante" not in request.files:
+        return jsonify({"error": "No se recibió ningún archivo."}), 400
 
-        archivo = request.files["comprobante"]
-        mime    = archivo.mimetype
+    archivo = request.files["comprobante"]
+    mime = archivo.mimetype
 
-        if mime not in TIPOS_VALIDOS_FLASK:
-            return jsonify({"error": "Formato no soportado. Sube JPG, PNG, WEBP o GIF."}), 400
+    # 2. Validar tipo de archivo
+    if mime not in TIPOS_VALIDOS:
+        return jsonify({
+            "error": "Formato no soportado. Sube JPG, PNG, WEBP o GIF."
+        }), 400
 
-        contenido = archivo.read()
-        if len(contenido) > 10 * 1024 * 1024:
-            return jsonify({"error": "El archivo supera los 10 MB."}), 400
+    # 3. Validar montoEsperado
+    monto_esperado = request.form.get("montoEsperado")
+    if not monto_esperado:
+        return jsonify({"error": "Falta el parámetro montoEsperado."}), 400
 
-        b64 = base64.b64encode(contenido).decode("utf-8")
+    # 4. Leer y validar tamaño
+    contenido = archivo.read()
+    if len(contenido) > MAX_TAMANO:
+        return jsonify({"error": "El archivo supera los 10 MB."}), 400
 
-        try:
-            message = client_flask.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=300,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": mime,
-                                "data": b64,
-                            },
+    # 5. Convertir a base64
+    b64 = base64.b64encode(contenido).decode("utf-8")
+
+    # 6. Llamar a Claude Vision
+    try:
+        message = client.messages.create(
+            model="claude-3-haiku-20240307",  # ← Modelo válido y económico
+            max_tokens=300,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": mime,
+                            "data": b64,
                         },
-                        {"type": "text", "text": PROMPT_FLASK},
-                    ],
-                }],
-            )
-        except anthropic.APIError as e:
-            return jsonify({"error": f"Error al contactar Claude: {str(e)}"}), 502
-
-        raw = "".join(
-            block.text for block in message.content
-            if hasattr(block, "text")
+                    },
+                    {"type": "text", "text": PROMPT},
+                ],
+            }],
         )
+    except anthropic.APIError as e:
+        return jsonify({"error": f"Error al contactar Claude: {str(e)}"}), 502
+    except Exception as e:
+        return jsonify({"error": f"Error inesperado: {str(e)}"}), 500
 
-        try:
-            datos = _parse_flask(raw)
-        except (ValueError, json.JSONDecodeError):
-            return jsonify({"error": "No se pudo interpretar el comprobante. Sube una imagen más clara."}), 502
+    # 7. Procesar respuesta de Claude
+    raw = "".join(block.text for block in message.content if hasattr(block, "text"))
+    try:
+        datos = _parse_claude_response(raw)
+    except (ValueError, json.JSONDecodeError):
+        return jsonify({
+            "error": "No se pudo interpretar el comprobante. Sube una imagen más clara."
+        }), 422
 
-        datos["monto"]     = int(datos.get("monto", -1))
-        datos["confianza"] = int(datos.get("confianza", 0))
+    # 8. Normalizar tipos y agregar coincidencia
+    datos["monto"] = int(datos.get("monto", -1))
+    datos["confianza"] = int(datos.get("confianza", 0))
+    datos["coincide"] = (datos["monto"] == int(monto_esperado))
 
-        return jsonify(datos), 200
-
-except ImportError:
-    # Flask no instalado — ignorar
-    pass
+    return jsonify(datos), 200

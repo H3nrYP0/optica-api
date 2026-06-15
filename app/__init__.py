@@ -41,9 +41,10 @@ def create_app():
     # Blueprints
     from app.routes import main_bp
     from app.auth.routes import auth_bp
+    from app.routes.verificar_comprobante import comprobante_bp
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix='/auth')
-
+    app.register_blueprint(comprobante_bp)
     # Middleware: solo carga de usuario
     from app.middleware import cargar_usuario_desde_token
 
