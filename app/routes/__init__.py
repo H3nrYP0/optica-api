@@ -16,3 +16,4 @@ from . import r_compras
 from . import r_pedidos
 from . import r_ventas
 from . import r_usuarios
+from . import verificar_comprobante
