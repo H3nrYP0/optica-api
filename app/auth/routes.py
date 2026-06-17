@@ -11,6 +11,7 @@ Rutas:
 
 import re
 import secrets
+import os  # <-- Agregado para leer variable de entorno
 from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, request
@@ -239,6 +240,17 @@ def register():
                 "message": "No se pudo enviar el código de verificación. Verifica el correo e intenta de nuevo."
             }), 500
 
+        # ========== BLOQUE DE DEPURACIÓN (SOLO MODO TEST_EVENTS) ==========
+        modo = os.getenv('RESEND_MODE', 'REAL')
+        if modo == 'TEST_EVENTS':
+            return jsonify({
+                "success": True,
+                "code": "CODE_SENT",
+                "message": "Código de verificación enviado.",
+                "debug_code": codigo   # ← solo para desarrollo
+            }), 200
+        # ========== FIN BLOQUE DEPURACIÓN ==========
+
         # Respuesta genérica
         return jsonify({
             "success": True,
@@ -453,6 +465,17 @@ def forgot_password():
         if not enviado:
             del codigos_reset[correo]
             return jsonify(RESPUESTA_GENERICA), 200
+
+        # ========== BLOQUE DE DEPURACIÓN (SOLO MODO TEST_EVENTS) ==========
+        modo = os.getenv('RESEND_MODE', 'REAL')
+        if modo == 'TEST_EVENTS':
+            return jsonify({
+                "success": True,
+                "code": "RESET_SENT_IF_EXISTS",
+                "message": "Código de recuperación enviado.",
+                "debug_code": codigo   # ← solo para desarrollo
+            }), 200
+        # ========== FIN BLOQUE DEPURACIÓN ==========
 
         # Respuesta genérica
         return jsonify(RESPUESTA_GENERICA), 200
