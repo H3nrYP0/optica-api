@@ -9,10 +9,11 @@ Ahora soporta productos y servicios (item puede tener producto_id o servicio_id)
 
 from flask import jsonify, request
 from app.database import db
-from app.Models.models import Pedido, DetallePedido, Venta, DetalleVenta, Producto, Servicio, Cliente, Abono, EstadoPedido
+from app.Models.models import Pedido, DetallePedido, Usuario, Venta, DetalleVenta, Producto, Servicio, Cliente, Abono, EstadoPedido
 from datetime import datetime
 from app.routes import main_bp
 from app.auth.decorators import permiso_requerido
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
 MAX_PER_PAGE = 10
 
@@ -104,7 +105,7 @@ def get_pedidos():
 
 
 @main_bp.route('/pedidos', methods=['POST'])
-@permiso_requerido("crear_pedidos")
+@jwt_required()
 def create_pedido():
     try:
         data = request.get_json()
@@ -113,10 +114,25 @@ def create_pedido():
             if field not in data or not data[field]:
                 return jsonify({"error": f"El campo '{field}' es requerido"}), 400
 
-        cliente = Cliente.query.get(data['cliente_id'])
+        # Obtener usuario autenticado desde el token
+        usuario_actual_id = get_jwt_identity()  # Asume que el token almacena el ID del usuario
+        usuario = Usuario.query.get(usuario_actual_id)
+        if not usuario:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+        if not usuario.cliente_id:
+            return jsonify({"error": "El usuario no está vinculado a un cliente"}), 400
+
+        # Verificar que el cliente_id del payload coincida con el cliente del usuario
+        cliente_id_payload = data['cliente_id']
+        if usuario.cliente_id != cliente_id_payload:
+            return jsonify({"error": "No tienes permiso para crear pedidos en nombre de otro cliente"}), 403
+
+        # Validar cliente
+        cliente = Cliente.query.get(cliente_id_payload)
         if not cliente or not cliente.estado:
             return jsonify({"error": "Cliente no existe o está inactivo"}), 404
 
+        # Validar método de pago
         metodo_pago = data['metodo_pago']
         if metodo_pago not in ['efectivo', 'transferencia', 'tarjeta']:
             return jsonify({"error": "Método de pago inválido. Opciones: efectivo, transferencia, tarjeta"}), 400
@@ -201,7 +217,7 @@ def create_pedido():
         total_con_envio = total_calculado + costo_envio
 
         pedido = Pedido(
-            cliente_id=data['cliente_id'],
+            cliente_id=cliente_id_payload,
             metodo_pago=metodo_pago,
             metodo_entrega=metodo_entrega,
             direccion_entrega=data.get('direccion_entrega', '').strip(),
@@ -238,7 +254,6 @@ def create_pedido():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear pedido: {str(e)}"}), 500
-
 @main_bp.route('/pedidos/<int:id>', methods=['GET'])
 @permiso_requerido("ver_pedidos")
 def get_pedido(id):
