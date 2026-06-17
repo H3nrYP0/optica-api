@@ -115,6 +115,163 @@ def create_pedido():
                 return jsonify({"error": f"El campo '{field}' es requerido"}), 400
 
         # Obtener usuario autenticado desde el token
+        usuario_actual_id = get_jwt_identity()
+        usuario = Usuario.query.get(usuario_actual_id)
+        if not usuario:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+
+        cliente_id_payload = data['cliente_id']
+
+        # ============================================================
+        # FIX: Autorización diferenciada
+        # - Admin/empleado pueden elegir cualquier cliente_id
+        # - Cliente común solo puede pedir para sí mismo
+        # ============================================================
+        if usuario.rol in ['admin', 'empleado']:
+            # Permiso total: no se valida vinculación
+            pass
+        else:
+            # Es cliente: debe tener cliente_id y coincidir con el payload
+            if not usuario.cliente_id:
+                return jsonify({"error": "El usuario no está vinculado a un cliente"}), 400
+            if usuario.cliente_id != cliente_id_payload:
+                return jsonify({"error": "No tienes permiso para crear pedidos en nombre de otro cliente"}), 403
+
+        # Validar cliente
+        cliente = Cliente.query.get(cliente_id_payload)
+        if not cliente or not cliente.estado:
+            return jsonify({"error": "Cliente no existe o está inactivo"}), 404
+
+        # Validar método de pago
+        metodo_pago = data['metodo_pago']
+        if metodo_pago not in ['efectivo', 'transferencia', 'tarjeta']:
+            return jsonify({"error": "Método de pago inválido. Opciones: efectivo, transferencia, tarjeta"}), 400
+
+        metodo_entrega = data.get('metodo_entrega')
+        if metodo_entrega and metodo_entrega not in ['tienda', 'domicilio']:
+            return jsonify({"error": "Método de entrega inválido. Opciones: tienda, domicilio"}), 400
+        if metodo_entrega == 'domicilio' and not data.get('direccion_entrega'):
+            return jsonify({"error": "Para envío a domicilio, la dirección de entrega es requerida"}), 400
+
+        items = data['items']
+        if not isinstance(items, list) or len(items) == 0:
+            return jsonify({"error": "El pedido debe tener al menos un item"}), 400
+
+        estado_pendiente = EstadoPedido.query.filter_by(nombre='pendiente').first()
+        if not estado_pendiente:
+            return jsonify({"error": "Estado 'pendiente' no encontrado en la base de datos"}), 500
+
+        total_calculado = 0.0
+        detalles_temp = []
+        productos_procesados = []
+
+        for idx, item_data in enumerate(items):
+            producto_id = item_data.get('producto_id')
+            servicio_id = item_data.get('servicio_id')
+            cantidad = item_data.get('cantidad', 1)
+
+            if not producto_id and not servicio_id:
+                db.session.rollback()
+                return jsonify({"error": f"Item {idx+1}: debe tener 'producto_id' o 'servicio_id'"}), 400
+            if producto_id and servicio_id:
+                db.session.rollback()
+                return jsonify({"error": f"Item {idx+1}: no puede tener ambos, solo uno"}), 400
+
+            try:
+                cantidad = int(cantidad)
+                if cantidad <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                db.session.rollback()
+                return jsonify({"error": f"Item {idx+1}: la cantidad debe ser un número positivo"}), 400
+
+            precio_unitario = None
+            if producto_id:
+                producto = Producto.query.get(producto_id)
+                if not producto or not producto.estado:
+                    db.session.rollback()
+                    return jsonify({"error": f"Producto ID {producto_id} no existe o está inactivo"}), 404
+                if producto.stock < cantidad:
+                    db.session.rollback()
+                    return jsonify({"error": f"Stock insuficiente para '{producto.nombre}'. Disponible: {producto.stock}"}), 400
+                precio_unitario = float(item_data.get('precio_unitario', producto.precio_venta))
+                if precio_unitario <= 0:
+                    db.session.rollback()
+                    return jsonify({"error": f"Item {idx+1}: precio unitario inválido"}), 400
+                productos_procesados.append((producto, cantidad))
+            else:
+                servicio = Servicio.query.get(servicio_id)
+                if not servicio or not servicio.estado:
+                    db.session.rollback()
+                    return jsonify({"error": f"Servicio ID {servicio_id} no existe o está inactivo"}), 404
+                precio_unitario = float(item_data.get('precio_unitario', servicio.precio))
+                if precio_unitario <= 0:
+                    db.session.rollback()
+                    return jsonify({"error": f"Item {idx+1}: precio unitario inválido"}), 400
+
+            subtotal = cantidad * precio_unitario
+            total_calculado += subtotal
+
+            detalles_temp.append({
+                'producto_id': producto_id,
+                'servicio_id': servicio_id,
+                'cantidad': cantidad,
+                'precio_unitario': precio_unitario,
+                'subtotal': subtotal
+            })
+
+        costo_envio = 0.0
+        if metodo_entrega == 'domicilio':
+            costo_envio = 20000.0
+
+        total_con_envio = total_calculado + costo_envio
+
+        pedido = Pedido(
+            cliente_id=cliente_id_payload,
+            metodo_pago=metodo_pago,
+            metodo_entrega=metodo_entrega,
+            direccion_entrega=data.get('direccion_entrega', '').strip(),
+            departamento_entrega=data.get('departamento_entrega', '').strip(),
+            municipio_entrega=data.get('municipio_entrega', '').strip(),
+            barrio_entrega=data.get('barrio_entrega', '').strip(),
+            codigo_postal_entrega=data.get('codigo_postal_entrega', '').strip(),
+            estado_id=estado_pendiente.id,
+            transferencia_comprobante=data.get('transferencia_comprobante'),
+            total=total_con_envio,
+            costo_envio=costo_envio,
+            abono_acumulado=0
+        )
+        db.session.add(pedido)
+        db.session.flush()
+
+        for detalle_data in detalles_temp:
+            detalle = DetallePedido(
+                pedido_id=pedido.id,
+                producto_id=detalle_data['producto_id'],
+                servicio_id=detalle_data['servicio_id'],
+                cantidad=detalle_data['cantidad'],
+                precio_unitario=detalle_data['precio_unitario'],
+                subtotal=detalle_data['subtotal']
+            )
+            db.session.add(detalle)
+
+        for producto, cantidad in productos_procesados:
+            producto.stock -= cantidad
+
+        db.session.commit()
+        return jsonify({"message": "Pedido creado exitosamente", "pedido": pedido.to_dict()}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Error al crear pedido: {str(e)}"}), 500
+    try:
+        data = request.get_json()
+        required_fields = ['cliente_id', 'metodo_pago', 'items']
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return jsonify({"error": f"El campo '{field}' es requerido"}), 400
+
+        # Obtener usuario autenticado desde el token
         usuario_actual_id = get_jwt_identity()  # Asume que el token almacena el ID del usuario
         usuario = Usuario.query.get(usuario_actual_id)
         if not usuario:
@@ -254,6 +411,7 @@ def create_pedido():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear pedido: {str(e)}"}), 500
+
 @main_bp.route('/pedidos/<int:id>', methods=['GET'])
 @permiso_requerido("ver_pedidos")
 def get_pedido(id):
