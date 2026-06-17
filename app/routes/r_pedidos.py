@@ -419,17 +419,36 @@ def delete_pedido(id):
 
 
 @main_bp.route('/pedidos/cliente/<int:cliente_id>', methods=['GET'])
-@permiso_requerido("ver_pedidos")
+@jwt_required()
 def get_pedidos_cliente(cliente_id):
+    """
+    Obtiene los pedidos de un cliente específico.
+    - Administradores pueden ver cualquier cliente.
+    - Clientes solo pueden ver sus propios pedidos.
+    """
     try:
+        # Obtener usuario autenticado desde el token
+        usuario_actual_id = get_jwt_identity()
+        usuario = Usuario.query.get(usuario_actual_id)
+        if not usuario:
+            return jsonify({"error": "Usuario no encontrado"}), 404
+
+        # Verificar autorización
+        es_admin = usuario.rol in ['admin', 'empleado']  # asumiendo que 'rol' es un string
+        if not (es_admin or usuario.cliente_id == cliente_id):
+            return jsonify({"error": "No autorizado para ver estos pedidos"}), 403
+
+        # Verificar que el cliente exista
         cliente = Cliente.query.get(cliente_id)
         if not cliente:
             return jsonify({"error": "Cliente no encontrado"}), 404
+
+        # Obtener pedidos del cliente
         pedidos = Pedido.query.filter_by(cliente_id=cliente_id).order_by(Pedido.fecha.desc()).all()
         return jsonify([pedido.to_dict() for pedido in pedidos])
+
     except Exception as e:
         return jsonify({"error": f"Error al obtener pedidos del cliente: {str(e)}"}), 500
-
 
 @main_bp.route('/pedidos/<int:pedido_id>/detalles', methods=['GET'])
 @permiso_requerido("ver_pedidos")
