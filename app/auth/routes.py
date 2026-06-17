@@ -11,7 +11,6 @@ Rutas:
 
 import re
 import secrets
-import os  # ← Agregado para leer variables de entorno
 from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, request
@@ -87,14 +86,6 @@ def login():
 
         usuario = Usuario.query.filter_by(correo=correo).first()
 
-        # Logs internos para depuración
-        print(f"🔍 Login intento: correo={correo}")
-        if usuario:
-            print(f"   Usuario ID={usuario.id}, rol_id={usuario.rol_id}, estado={usuario.estado}")
-            print(f"   Hash de contraseña (primeros 20): {usuario.contrasenia[:20]}...")
-        else:
-            print("   Usuario NO encontrado")
-
         if not usuario:
             log_login_fallido("correo no existe", correo, ip_cliente)
             return jsonify({
@@ -113,7 +104,6 @@ def login():
                 "message": "Tu cuenta ha sido desactivada. Contacta al administrador para más información."
             }), 403
 
-        # Verificar contraseña
         contrasenia_valida = verificar_contrasenia(
             contrasenia,
             usuario.contrasenia,
@@ -128,9 +118,6 @@ def login():
                 "message": "La contraseña es incorrecta. Puedes restablecerla desde '¿Olvidaste tu contraseña?'."
             }), 401
 
-        # ============================================================
-        # NUEVA LÓGICA UNIFICADA (SIN empleado_id)
-        # ============================================================
         nombre_completo = f"{usuario.nombre or ''} {usuario.apellido or ''}".strip()
         if not nombre_completo:
             nombre_completo = usuario.correo
@@ -141,7 +128,6 @@ def login():
             rol_nombre = usuario.rol.nombre
             permisos = [p.nombre for p in usuario.rol.permisos] if usuario.rol.permisos else []
 
-        # Determinar si es cliente (por nombre de rol)
         es_cliente = (rol_nombre == 'Cliente')
 
         token = generar_token(
@@ -150,7 +136,7 @@ def login():
             nombre_rol=rol_nombre,
             nombre_completo=nombre_completo,
             es_cliente=es_cliente,
-            empleado_id=None   # Ya no se usa, pero se mantiene por compatibilidad
+            empleado_id=None
         )
         log_login_exitoso(usuario.id, rol_nombre or "cliente", ip_cliente)
 
@@ -165,12 +151,10 @@ def login():
                 "rol_id": usuario.rol_id,
                 "permisos": permisos,
                 "es_cliente": es_cliente
-                # empleado_id omitido
             }
         }), 200
 
     except Exception as e:
-        # En producción, registrar el error en un log
         print(f"❌ Error en login: {str(e)}")
         return jsonify({
             "success": False,
@@ -255,19 +239,7 @@ def register():
                 "message": "No se pudo enviar el código de verificación. Verifica el correo e intenta de nuevo."
             }), 500
 
-        # ========== BLOQUE DE DEPURACIÓN (SOLO MODO TEST_EVENTS) ==========
-        # Devuelve el código en la respuesta para facilitar pruebas desde el frontend.
-        # ELIMINAR ESTAS LÍNEAS EN PRODUCCIÓN (o cuando RESEND_MODE=REAL)
-        modo = os.getenv('RESEND_MODE', 'REAL')
-        if modo == 'TEST_EVENTS':
-            return jsonify({
-                "success": True,
-                "code": "CODE_SENT",
-                "message": "Código de verificación enviado.",
-                "debug_code": codigo   # ← solo para desarrollo
-            }), 200
-        # ========== FIN BLOQUE DEPURACIÓN ==========
-
+        # Respuesta genérica
         return jsonify({
             "success": True,
             "code": "CODE_SENT",
@@ -341,9 +313,7 @@ def verify_register():
 
         from werkzeug.security import generate_password_hash
 
-        # ============================================================
-        # 1. CREAR CLIENTE
-        # ============================================================
+        # Crear Cliente
         cliente = Cliente(
             nombre=form_data['nombre'].strip(),
             apellido=form_data['apellido'].strip(),
@@ -363,14 +333,11 @@ def verify_register():
             estado=True
         )
         db.session.add(cliente)
-        db.session.flush()  # Para obtener el ID del cliente
+        db.session.flush()
 
-        # ============================================================
-        # 2. CREAR USUARIO CON ROL "Cliente"
-        # ============================================================
+        # Crear Usuario con rol Cliente
         rol_cliente = _obtener_rol_cliente()
         if not rol_cliente:
-            # Por seguridad, creamos el rol Cliente si no existe
             rol_cliente = Rol(nombre='Cliente', descripcion='Rol para clientes registrados', estado=True)
             db.session.add(rol_cliente)
             db.session.flush()
@@ -382,7 +349,6 @@ def verify_register():
             estado=True,
             cliente_id=cliente.id
         )
-        # Guardar datos personales directamente en usuario
         usuario.nombre = form_data['nombre'].strip()
         usuario.apellido = form_data['apellido'].strip()
         usuario.telefono = form_data.get('telefono', '')
@@ -396,16 +362,13 @@ def verify_register():
         db.session.add(usuario)
         db.session.commit()
 
-        # Limpiar código
         del codigos_verificacion[correo]
 
-        # ============================================================
-        # 3. GENERAR JWT PARA EL CLIENTE
-        # ============================================================
+        # Generar JWT
         nombre_completo = f"{cliente.nombre} {cliente.apellido}"
         token = generar_token(
             usuario=usuario,
-            permisos=[],   # El rol Cliente no tiene permisos por defecto
+            permisos=[],
             nombre_rol='Cliente',
             nombre_completo=nombre_completo,
             es_cliente=True,
@@ -467,11 +430,9 @@ def forgot_password():
         if not usuario:
             return jsonify(RESPUESTA_GENERICA), 200
 
-        # Solo permitir recuperación a usuarios que tienen rol (administrativos)
         if usuario.rol_id is None:
             return jsonify(RESPUESTA_GENERICA), 200
 
-        # Generar código
         codigo = str(secrets.randbelow(900000) + 100000)
         codigos_reset[correo] = {
             "codigo": codigo,
@@ -479,7 +440,6 @@ def forgot_password():
             "expira": datetime.utcnow() + timedelta(minutes=EXPIRACION_MINUTOS)
         }
 
-        # Obtener nombre completo desde los campos directos
         nombre_completo = f"{usuario.nombre or ''} {usuario.apellido or ''}".strip()
         if not nombre_completo:
             nombre_completo = usuario.correo
@@ -492,22 +452,9 @@ def forgot_password():
 
         if not enviado:
             del codigos_reset[correo]
-            # No revelamos el fallo al usuario para mantener seguridad
             return jsonify(RESPUESTA_GENERICA), 200
 
-        # ========== BLOQUE DE DEPURACIÓN (SOLO MODO TEST_EVENTS) ==========
-        # Devuelve el código en la respuesta para facilitar pruebas desde el frontend.
-        # ELIMINAR ESTAS LÍNEAS EN PRODUCCIÓN (o cuando RESEND_MODE=REAL)
-        modo = os.getenv('RESEND_MODE', 'REAL')
-        if modo == 'TEST_EVENTS':
-            return jsonify({
-                "success": True,
-                "code": "RESET_SENT_IF_EXISTS",
-                "message": "Código de recuperación enviado.",
-                "debug_code": codigo   # ← solo para desarrollo
-            }), 200
-        # ========== FIN BLOQUE DEPURACIÓN ==========
-
+        # Respuesta genérica
         return jsonify(RESPUESTA_GENERICA), 200
 
     except Exception as e:
@@ -643,6 +590,6 @@ def me():
             "rol_id": claims.get("rol_id"),
             "permisos": claims.get("permisos", []),
             "es_cliente": claims.get("es_cliente", False),
-            "cliente_id": claims.get("cliente_id") 
+            "cliente_id": claims.get("cliente_id")
         }
     }), 200
