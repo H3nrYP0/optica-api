@@ -1,58 +1,56 @@
 import os
-import smtplib
 import logging
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import requests
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
+
 
 class EmailService:
     def __init__(self):
-        self.smtp_server = os.environ.get('EMAIL_SERVER', 'smtp.gmail.com')
-        self.smtp_port = int(os.environ.get('EMAIL_PORT', 465))  # Cambio a 465 por defecto
+        self.api_key = os.environ.get('BREVO_API_KEY')
         self.sender_email = os.environ.get('EMAIL_USER')
-        self.sender_password = os.environ.get('EMAIL_PASSWORD')
-        self.use_tls = os.environ.get('EMAIL_USE_TLS', 'false').lower() == 'true'  # false por defecto
+        self.sender_name = os.environ.get('EMAIL_SENDER_NAME', 'Visual Outlet')
 
-        if not self.sender_email or not self.sender_password:
-            logger.warning("EMAIL_USER o EMAIL_PASSWORD no configurados. El envío fallará.")
+        if not self.api_key or not self.sender_email:
+            logger.warning("BREVO_API_KEY o EMAIL_USER no configurados. El envío fallará.")
         else:
-            logger.info("EmailService inicializado con Gmail SMTP SSL")
+            logger.info("EmailService inicializado con Brevo API (HTTP)")
 
     def _enviar(self, destinatario: str, nombre: str, asunto: str, html: str) -> bool:
-        if not self.sender_email or not self.sender_password:
-            logger.error("Faltan credenciales de correo")
+        if not self.api_key or not self.sender_email:
+            logger.error("Faltan credenciales de Brevo (BREVO_API_KEY / EMAIL_USER)")
             return False
+
+        payload = {
+            "sender": {"name": self.sender_name, "email": self.sender_email},
+            "to": [{"email": destinatario, "name": nombre or destinatario}],
+            "subject": asunto,
+            "htmlContent": html,
+        }
+        headers = {
+            "accept": "application/json",
+            "api-key": self.api_key,
+            "content-type": "application/json",
+        }
 
         try:
-            msg = MIMEMultipart('alternative')
-            msg['From'] = f"Visual Outlet <{self.sender_email}>"
-            msg['To'] = destinatario
-            msg['Subject'] = asunto
-            parte_html = MIMEText(html, 'html')
-            msg.attach(parte_html)
+            response = requests.post(BREVO_API_URL, json=payload, headers=headers, timeout=10)
 
-            # Conectar con timeout de 5 segundos (para no bloquear al worker)
-            if self.use_tls:
-                server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=5)
-                server.starttls()
-            else:
-                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=5)
+            if response.status_code in (200, 201):
+                logger.info(f"✅ Correo enviado a {destinatario} (Brevo messageId={response.json().get('messageId')})")
+                return True
 
-            server.login(self.sender_email, self.sender_password)
-            server.sendmail(self.sender_email, destinatario, msg.as_string())
-            server.quit()
+            logger.error(f"❌ Brevo respondió {response.status_code} enviando a {destinatario}: {response.text}")
+            return False
 
-            logger.info(f"✅ Correo enviado a {destinatario}")
-            return True
-
-        except smtplib.SMTPAuthenticationError as e:
-            logger.error(f"❌ Autenticación fallida para {destinatario}: {e}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Error de red enviando a {destinatario}: {e}")
             return False
         except Exception as e:
-            logger.error(f"❌ Error enviando a {destinatario}: {e}")
+            logger.error(f"❌ Error inesperado enviando a {destinatario}: {e}")
             return False
 
     def enviar_codigo_verificacion(self, correo: str, nombre: str, codigo: str) -> bool:
