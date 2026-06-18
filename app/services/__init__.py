@@ -1,6 +1,6 @@
 # app/services/__init__.py
 """
-Servicios externos de la aplicación(Brevo).
+Servicios externos de la aplicación(mail).
 
 """
 
