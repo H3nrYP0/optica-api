@@ -1,6 +1,7 @@
 import os
 import smtplib
 import logging
+import threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -38,12 +39,13 @@ class EmailService:
             parte_html = MIMEText(html, 'html')
             msg.attach(parte_html)
 
-            # Conectar y enviar
+            # Conectar y enviar (timeout corto para evitar que el worker
+            # de gunicorn se quede colgado si Gmail SMTP no responde)
             if self.use_tls:
-                server = smtplib.SMTP(self.smtp_server, self.smtp_port)
+                server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=10)
                 server.starttls()
             else:
-                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port)
+                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=10)
 
             server.login(self.sender_email, self.sender_password)
             server.sendmail(self.sender_email, destinatario, msg.as_string())
@@ -55,6 +57,28 @@ class EmailService:
         except Exception as e:
             logger.error(f"❌ Error enviando a {destinatario}: {e}")
             return False
+
+    def _enviar_en_background_y_confirmar(self, destinatario: str, nombre: str, asunto: str, html: str) -> bool:
+        """
+        Valida que existan credenciales (chequeo instantáneo) y lanza el envío
+        real por SMTP en un hilo aparte. Retorna True de inmediato sin esperar
+        a que Gmail responda, evitando que el worker de gunicorn haga timeout.
+        """
+        if not self.sender_email or not self.sender_password:
+            logger.error("Faltan credenciales de correo")
+            return False
+
+        self._enviar_en_background(destinatario, nombre, asunto, html)
+        return True
+
+    def _enviar_en_background(self, destinatario: str, nombre: str, asunto: str, html: str) -> None:
+        """Lanza el envío SMTP en un hilo aparte para no bloquear el worker de Flask."""
+        hilo = threading.Thread(
+            target=self._enviar,
+            args=(destinatario, nombre, asunto, html),
+            daemon=True
+        )
+        hilo.start()
 
     def enviar_codigo_verificacion(self, correo: str, nombre: str, codigo: str) -> bool:
         print(f"📧 [VERIFICACIÓN] Código para {correo}: {codigo}")
@@ -107,7 +131,7 @@ class EmailService:
         </body>
         </html>
         """
-        return self._enviar(correo, nombre, "Código de verificación — Visual Outlet", html)
+        return self._enviar_en_background_y_confirmar(correo, nombre, "Código de verificación — Visual Outlet", html)
 
     def enviar_codigo_reset(self, correo: str, nombre: str, codigo: str) -> bool:
         print(f"📧 [RESET] Código para {correo}: {codigo}")
@@ -161,7 +185,7 @@ class EmailService:
         </body>
         </html>
         """
-        return self._enviar(correo, nombre, "Restablecer contraseña — Visual Outlet", html)
+        return self._enviar_en_background_y_confirmar(correo, nombre, "Restablecer contraseña — Visual Outlet", html)
 
 
 # Instancia única (compatible con los imports actuales)
