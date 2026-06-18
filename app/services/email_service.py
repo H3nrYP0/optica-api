@@ -1,7 +1,6 @@
 import os
 import smtplib
 import logging
-import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -12,50 +11,49 @@ logger = logging.getLogger(__name__)
 class EmailService:
     def __init__(self):
         self.smtp_server = os.environ.get('EMAIL_SERVER', 'smtp.gmail.com')
-        self.smtp_port = int(os.environ.get('EMAIL_PORT', 587))
+        self.smtp_port = int(os.environ.get('EMAIL_PORT', 465))  # Cambio a 465 por defecto
         self.sender_email = os.environ.get('EMAIL_USER')
         self.sender_password = os.environ.get('EMAIL_PASSWORD')
-        self.use_tls = os.environ.get('EMAIL_USE_TLS', 'true').lower() == 'true'
+        self.use_tls = os.environ.get('EMAIL_USE_TLS', 'false').lower() == 'true'  # false por defecto
 
         if not self.sender_email or not self.sender_password:
             logger.warning("EMAIL_USER o EMAIL_PASSWORD no configurados. El envío fallará.")
         else:
-            logger.info("EmailService inicializado con Gmail SMTP")
+            logger.info("EmailService inicializado con Gmail SMTP SSL")
 
-    def _enviar_con_reintentos(self, destinatario: str, nombre: str, asunto: str, html: str, max_intentos: int = 3) -> bool:
-        """Intenta enviar el correo hasta max_intentos veces (síncrono)."""
-        for intento in range(1, max_intentos + 1):
-            try:
-                # Crear mensaje
-                msg = MIMEMultipart('alternative')
-                msg['From'] = f"Visual Outlet <{self.sender_email}>"
-                msg['To'] = destinatario
-                msg['Subject'] = asunto
+    def _enviar(self, destinatario: str, nombre: str, asunto: str, html: str) -> bool:
+        if not self.sender_email or not self.sender_password:
+            logger.error("Faltan credenciales de correo")
+            return False
 
-                parte_html = MIMEText(html, 'html')
-                msg.attach(parte_html)
+        try:
+            msg = MIMEMultipart('alternative')
+            msg['From'] = f"Visual Outlet <{self.sender_email}>"
+            msg['To'] = destinatario
+            msg['Subject'] = asunto
+            parte_html = MIMEText(html, 'html')
+            msg.attach(parte_html)
 
-                # Conectar y enviar (timeout 15 segundos)
-                if self.use_tls:
-                    server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=15)
-                    server.starttls()
-                else:
-                    server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=15)
+            # Conectar con timeout de 5 segundos (para no bloquear al worker)
+            if self.use_tls:
+                server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=5)
+                server.starttls()
+            else:
+                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=5)
 
-                server.login(self.sender_email, self.sender_password)
-                server.sendmail(self.sender_email, destinatario, msg.as_string())
-                server.quit()
+            server.login(self.sender_email, self.sender_password)
+            server.sendmail(self.sender_email, destinatario, msg.as_string())
+            server.quit()
 
-                logger.info(f"✅ Correo enviado a {destinatario} (intento {intento})")
-                return True
+            logger.info(f"✅ Correo enviado a {destinatario}")
+            return True
 
-            except Exception as e:
-                logger.warning(f"⚠️ Intento {intento} falló para {destinatario}: {e}")
-                if intento < max_intentos:
-                    time.sleep(2)  # espera 2 segundos antes de reintentar
-
-        logger.error(f"❌ Todos los intentos fallaron para {destinatario}")
-        return False
+        except smtplib.SMTPAuthenticationError as e:
+            logger.error(f"❌ Autenticación fallida para {destinatario}: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Error enviando a {destinatario}: {e}")
+            return False
 
     def enviar_codigo_verificacion(self, correo: str, nombre: str, codigo: str) -> bool:
         print(f"📧 [VERIFICACIÓN] Código para {correo}: {codigo}")
@@ -108,7 +106,7 @@ class EmailService:
         </body>
         </html>
         """
-        return self._enviar_con_reintentos(correo, nombre, "Código de verificación — Visual Outlet", html)
+        return self._enviar(correo, nombre, "Código de verificación — Visual Outlet", html)
 
     def enviar_codigo_reset(self, correo: str, nombre: str, codigo: str) -> bool:
         print(f"📧 [RESET] Código para {correo}: {codigo}")
@@ -162,10 +160,9 @@ class EmailService:
         </body>
         </html>
         """
-        return self._enviar_con_reintentos(correo, nombre, "Restablecer contraseña — Visual Outlet", html)
+        return self._enviar(correo, nombre, "Restablecer contraseña — Visual Outlet", html)
 
 
-# Instancia única (compatible con imports actuales)
 email_service = EmailService()
 
 def enviar_codigo_verificacion(correo, nombre, codigo):
