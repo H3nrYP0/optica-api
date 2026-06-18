@@ -1,7 +1,6 @@
 import os
 import smtplib
 import logging
-import threading
 import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -24,7 +23,7 @@ class EmailService:
             logger.info("EmailService inicializado con Gmail SMTP")
 
     def _enviar_con_reintentos(self, destinatario: str, nombre: str, asunto: str, html: str, max_intentos: int = 3) -> bool:
-        """Intenta enviar el correo hasta max_intentos veces con espera entre intentos."""
+        """Intenta enviar el correo hasta max_intentos veces (síncrono)."""
         for intento in range(1, max_intentos + 1):
             try:
                 # Crear mensaje
@@ -57,15 +56,6 @@ class EmailService:
 
         logger.error(f"❌ Todos los intentos fallaron para {destinatario}")
         return False
-
-    def _enviar_en_background(self, destinatario: str, nombre: str, asunto: str, html: str) -> None:
-        """Lanza el envío en un hilo separado (daemon)."""
-        hilo = threading.Thread(
-            target=self._enviar_con_reintentos,
-            args=(destinatario, nombre, asunto, html),
-            daemon=True
-        )
-        hilo.start()
 
     def enviar_codigo_verificacion(self, correo: str, nombre: str, codigo: str) -> bool:
         print(f"📧 [VERIFICACIÓN] Código para {correo}: {codigo}")
@@ -118,8 +108,7 @@ class EmailService:
         </body>
         </html>
         """
-        self._enviar_en_background(correo, nombre, "Código de verificación — Visual Outlet", html)
-        return True
+        return self._enviar_con_reintentos(correo, nombre, "Código de verificación — Visual Outlet", html)
 
     def enviar_codigo_reset(self, correo: str, nombre: str, codigo: str) -> bool:
         print(f"📧 [RESET] Código para {correo}: {codigo}")
@@ -173,8 +162,7 @@ class EmailService:
         </body>
         </html>
         """
-        self._enviar_en_background(correo, nombre, "Restablecer contraseña — Visual Outlet", html)
-        return True
+        return self._enviar_con_reintentos(correo, nombre, "Restablecer contraseña — Visual Outlet", html)
 
 
 # Instancia única (compatible con imports actuales)
