@@ -2,6 +2,7 @@ import os
 import smtplib
 import logging
 import threading
+import time
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -22,59 +23,45 @@ class EmailService:
         else:
             logger.info("EmailService inicializado con Gmail SMTP")
 
-    def _enviar(self, destinatario: str, nombre: str, asunto: str, html: str) -> bool:
-        """Envía un correo usando Gmail SMTP."""
-        if not self.sender_email or not self.sender_password:
-            logger.error("Faltan credenciales de correo")
-            return False
+    def _enviar_con_reintentos(self, destinatario: str, nombre: str, asunto: str, html: str, max_intentos: int = 3) -> bool:
+        """Intenta enviar el correo hasta max_intentos veces con espera entre intentos."""
+        for intento in range(1, max_intentos + 1):
+            try:
+                # Crear mensaje
+                msg = MIMEMultipart('alternative')
+                msg['From'] = f"Visual Outlet <{self.sender_email}>"
+                msg['To'] = destinatario
+                msg['Subject'] = asunto
 
-        try:
-            # Crear mensaje
-            msg = MIMEMultipart('alternative')
-            msg['From'] = f"Visual Outlet <{self.sender_email}>"
-            msg['To'] = destinatario
-            msg['Subject'] = asunto
+                parte_html = MIMEText(html, 'html')
+                msg.attach(parte_html)
 
-            # Versión HTML
-            parte_html = MIMEText(html, 'html')
-            msg.attach(parte_html)
+                # Conectar y enviar (timeout 15 segundos)
+                if self.use_tls:
+                    server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=15)
+                    server.starttls()
+                else:
+                    server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=15)
 
-            # Conectar y enviar (timeout corto para evitar que el worker
-            # de gunicorn se quede colgado si Gmail SMTP no responde)
-            if self.use_tls:
-                server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=10)
-                server.starttls()
-            else:
-                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=10)
+                server.login(self.sender_email, self.sender_password)
+                server.sendmail(self.sender_email, destinatario, msg.as_string())
+                server.quit()
 
-            server.login(self.sender_email, self.sender_password)
-            server.sendmail(self.sender_email, destinatario, msg.as_string())
-            server.quit()
+                logger.info(f"✅ Correo enviado a {destinatario} (intento {intento})")
+                return True
 
-            logger.info(f" Correo enviado a {destinatario}")
-            return True
+            except Exception as e:
+                logger.warning(f"⚠️ Intento {intento} falló para {destinatario}: {e}")
+                if intento < max_intentos:
+                    time.sleep(2)  # espera 2 segundos antes de reintentar
 
-        except Exception as e:
-            logger.error(f"❌ Error enviando a {destinatario}: {e}")
-            return False
-
-    def _enviar_en_background_y_confirmar(self, destinatario: str, nombre: str, asunto: str, html: str) -> bool:
-        """
-        Valida que existan credenciales (chequeo instantáneo) y lanza el envío
-        real por SMTP en un hilo aparte. Retorna True de inmediato sin esperar
-        a que Gmail responda, evitando que el worker de gunicorn haga timeout.
-        """
-        if not self.sender_email or not self.sender_password:
-            logger.error("Faltan credenciales de correo")
-            return False
-
-        self._enviar_en_background(destinatario, nombre, asunto, html)
-        return True
+        logger.error(f"❌ Todos los intentos fallaron para {destinatario}")
+        return False
 
     def _enviar_en_background(self, destinatario: str, nombre: str, asunto: str, html: str) -> None:
-        """Lanza el envío SMTP en un hilo aparte para no bloquear el worker de Flask."""
+        """Lanza el envío en un hilo separado (daemon)."""
         hilo = threading.Thread(
-            target=self._enviar,
+            target=self._enviar_con_reintentos,
             args=(destinatario, nombre, asunto, html),
             daemon=True
         )
@@ -131,7 +118,8 @@ class EmailService:
         </body>
         </html>
         """
-        return self._enviar_en_background_y_confirmar(correo, nombre, "Código de verificación — Visual Outlet", html)
+        self._enviar_en_background(correo, nombre, "Código de verificación — Visual Outlet", html)
+        return True
 
     def enviar_codigo_reset(self, correo: str, nombre: str, codigo: str) -> bool:
         print(f"📧 [RESET] Código para {correo}: {codigo}")
@@ -185,10 +173,11 @@ class EmailService:
         </body>
         </html>
         """
-        return self._enviar_en_background_y_confirmar(correo, nombre, "Restablecer contraseña — Visual Outlet", html)
+        self._enviar_en_background(correo, nombre, "Restablecer contraseña — Visual Outlet", html)
+        return True
 
 
-# Instancia única (compatible con los imports actuales)
+# Instancia única (compatible con imports actuales)
 email_service = EmailService()
 
 def enviar_codigo_verificacion(correo, nombre, codigo):
