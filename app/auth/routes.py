@@ -1,9 +1,9 @@
 """
 Rutas:
     POST /auth/login            → login con JWT
-    POST /auth/register         → inicia registro, envía código por Resend
+    POST /auth/register         → inicia registro, envía código por correo
     POST /auth/verify-register  → verifica código y crea el cliente + usuario (con rol Cliente)
-    POST /auth/forgot-password  → envía código de recuperación por Resend (solo para usuarios con rol)
+    POST /auth/forgot-password  → envía código de recuperación por correo (solo para usuarios con rol)
     POST /auth/reset-password   → verifica código y actualiza contraseña
     POST /auth/logout           → cierra sesión (instrucción al frontend)
     GET  /auth/me               → retorna datos del usuario autenticado
@@ -11,7 +11,7 @@ Rutas:
 
 import re
 import secrets
-import os  # <-- Agregado para leer variable de entorno
+import os
 from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, request
@@ -240,18 +240,7 @@ def register():
                 "message": "No se pudo enviar el código de verificación. Verifica el correo e intenta de nuevo."
             }), 500
 
-        # ========== BLOQUE DE DEPURACIÓN (SOLO MODO TEST_EVENTS) ==========
-        modo = os.getenv('RESEND_MODE', 'REAL')
-        if modo == 'TEST_EVENTS':
-            return jsonify({
-                "success": True,
-                "code": "CODE_SENT",
-                "message": "Código de verificación enviado.",
-                "debug_code": codigo   # ← solo para desarrollo
-            }), 200
-        # ========== FIN BLOQUE DEPURACIÓN ==========
-
-        # Respuesta genérica
+        # Respuesta genérica (sin debug_code)
         return jsonify({
             "success": True,
             "code": "CODE_SENT",
@@ -466,18 +455,7 @@ def forgot_password():
             del codigos_reset[correo]
             return jsonify(RESPUESTA_GENERICA), 200
 
-        # ========== BLOQUE DE DEPURACIÓN (SOLO MODO TEST_EVENTS) ==========
-        modo = os.getenv('RESEND_MODE', 'REAL')
-        if modo == 'TEST_EVENTS':
-            return jsonify({
-                "success": True,
-                "code": "RESET_SENT_IF_EXISTS",
-                "message": "Código de recuperación enviado.",
-                "debug_code": codigo   # ← solo para desarrollo
-            }), 200
-        # ========== FIN BLOQUE DEPURACIÓN ==========
-
-        # Respuesta genérica
+        # Respuesta genérica (sin debug_code)
         return jsonify(RESPUESTA_GENERICA), 200
 
     except Exception as e:
