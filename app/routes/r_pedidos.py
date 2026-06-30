@@ -5,6 +5,17 @@ Permisos granulares:
 - Detalles de pedido y abonos: mismos permisos de pedidos
 - Estados de pedido: gestionar_configuracion
 Ahora soporta productos y servicios (item puede tener producto_id o servicio_id)
+
+NOTA SOBRE DIRECCION DE ENTREGA:
+Cliente guarda la direccion de entrega "actual"/default del cliente
+(departamento, municipio, direccion, barrio, codigo_postal -compartidos con
+"Direccion y ubicacion"- mas apto_torre, nombre_receptor, telefono_entrega
+e indicaciones, exclusivos de entrega).
+Pedido guarda un snapshot historico de a donde se envio ESE pedido en
+particular (mismos 9 campos, sufijo _entrega). Si el pedido no trae estos
+datos en el payload, se usan los del Cliente como default. Si el pedido
+SI los trae y son distintos a los guardados, se sincronizan de vuelta al
+Cliente para que la proxima compra ya los tenga precargados.
 """
 
 from flask import jsonify, request
@@ -17,26 +28,56 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 
 MAX_PER_PAGE = 10
 
+# Campos de direccion de entrega compartidos entre Cliente y Pedido.
+# Cliente.{campo} <-> Pedido.{campo}_entrega
+CAMPOS_ENTREGA = {
+    'direccion_entrega':       'direccion',
+    'departamento_entrega':    'departamento',
+    'municipio_entrega':       'municipio',
+    'barrio_entrega':          'barrio',
+    'codigo_postal_entrega':   'codigo_postal',
+    'apto_torre_entrega':      'apto_torre',
+    'nombre_receptor_entrega': 'nombre_receptor',
+    'celular_entrega':         'telefono_entrega',
+    'indicaciones_entrega':    'indicaciones',
+}
+
+
+def _resolver_datos_entrega(data, cliente):
+    """
+    Construye el diccionario de campos *_entrega para el Pedido.
+    - Si el payload trae el campo (no vacio), se usa ese valor.
+    - Si no, se usa el valor guardado en el Cliente como default.
+    - Si el payload trae un valor distinto al guardado en Cliente,
+      se sincroniza de vuelta (el cliente actualizo su direccion al pagar).
+    Devuelve (valores_pedido: dict, hubo_cambios_cliente: bool)
+    """
+    valores_pedido = {}
+    hubo_cambios_cliente = False
+
+    for campo_pedido, campo_cliente in CAMPOS_ENTREGA.items():
+        valor_payload = data.get(campo_pedido)
+        valor_payload = valor_payload.strip() if isinstance(valor_payload, str) else valor_payload
+        valor_actual_cliente = getattr(cliente, campo_cliente, None)
+
+        if valor_payload:
+            valores_pedido[campo_pedido] = valor_payload
+            if valor_payload != valor_actual_cliente:
+                setattr(cliente, campo_cliente, valor_payload)
+                hubo_cambios_cliente = True
+        else:
+            valores_pedido[campo_pedido] = valor_actual_cliente
+
+    return valores_pedido, hubo_cambios_cliente
+
+
 # ============================================================
-# MÓDULO: PEDIDOS (CRUD)
+# MODULO: PEDIDOS (CRUD)
 # ============================================================
 
 @main_bp.route('/pedidos', methods=['GET'])
 @permiso_requerido("ver_pedidos")
 def get_pedidos():
-    """
-    Listar pedidos con paginación, búsqueda y filtros.
-    Query params:
-        page          (int)
-        per_page      (int) máx 10
-        search        (str) busca en cliente (nombre/apellido)
-        cliente_id    (int)
-        estado_id     (int)
-        metodo_pago   (str)
-        metodo_entrega(str)
-        fecha_desde   (str) YYYY-MM-DD
-        fecha_hasta   (str)
-    """
     try:
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
@@ -63,13 +104,13 @@ def get_pedidos():
                 fd = datetime.strptime(fecha_desde, '%Y-%m-%d')
                 query = query.filter(Pedido.fecha >= fd)
             except ValueError:
-                return jsonify({"error": "Formato fecha_desde inválido"}), 400
+                return jsonify({"error": "Formato fecha_desde invalido"}), 400
         if fecha_hasta:
             try:
                 fh = datetime.strptime(fecha_hasta, '%Y-%m-%d')
                 query = query.filter(Pedido.fecha <= fh)
             except ValueError:
-                return jsonify({"error": "Formato fecha_hasta inválido"}), 400
+                return jsonify({"error": "Formato fecha_hasta invalido"}), 400
         if search:
             like = f"%{search}%"
             query = query.filter(
@@ -107,6 +148,12 @@ def get_pedidos():
 @main_bp.route('/pedidos', methods=['POST'])
 @jwt_required()
 def create_pedido():
+    """
+    Crea un pedido. Si metodo_entrega es 'domicilio', resuelve los 9 campos
+    de direccion de entrega: usa lo enviado en el payload, o si falta,
+    recurre a lo guardado en el Cliente. Si el payload trae datos nuevos,
+    sincroniza esos cambios de vuelta al Cliente.
+    """
     try:
         data = request.get_json()
         required_fields = ['cliente_id', 'metodo_pago', 'items']
@@ -121,39 +168,44 @@ def create_pedido():
 
         cliente_id_payload = data['cliente_id']
 
-        # ============================================================
-        # AUTORIZACIÓN: diferenciar entre administrativos y clientes
-        # ============================================================
-        # Verificar si el usuario tiene rol y si es admin o empleado
         es_administrativo = False
         if usuario.rol and usuario.rol.nombre in ['Admin', 'Empleado']:
             es_administrativo = True
 
         if es_administrativo:
-            # Permiso total: no se valida vinculación
             pass
         else:
-            # Cliente común: solo puede crear pedidos para sí mismo
             if not usuario.cliente_id:
-                return jsonify({"error": "El usuario no está vinculado a un cliente"}), 400
+                return jsonify({"error": "El usuario no esta vinculado a un cliente"}), 400
             if usuario.cliente_id != cliente_id_payload:
                 return jsonify({"error": "No tienes permiso para crear pedidos en nombre de otro cliente"}), 403
 
-        # Validar cliente
         cliente = Cliente.query.get(cliente_id_payload)
         if not cliente or not cliente.estado:
-            return jsonify({"error": "Cliente no existe o está inactivo"}), 404
+            return jsonify({"error": "Cliente no existe o esta inactivo"}), 404
 
-        # Validar método de pago
         metodo_pago = data['metodo_pago']
         if metodo_pago not in ['efectivo', 'transferencia', 'tarjeta']:
-            return jsonify({"error": "Método de pago inválido. Opciones: efectivo, transferencia, tarjeta"}), 400
+            return jsonify({"error": "Metodo de pago invalido. Opciones: efectivo, transferencia, tarjeta"}), 400
 
         metodo_entrega = data.get('metodo_entrega')
         if metodo_entrega and metodo_entrega not in ['tienda', 'domicilio']:
-            return jsonify({"error": "Método de entrega inválido. Opciones: tienda, domicilio"}), 400
-        if metodo_entrega == 'domicilio' and not data.get('direccion_entrega'):
-            return jsonify({"error": "Para envío a domicilio, la dirección de entrega es requerida"}), 400
+            return jsonify({"error": "Metodo de entrega invalido. Opciones: tienda, domicilio"}), 400
+
+        # ========== Resolver direccion de entrega (Cliente <-> Pedido) ==========
+        datos_entrega = {}
+        if metodo_entrega == 'domicilio':
+            datos_entrega, hubo_cambios_cliente = _resolver_datos_entrega(data, cliente)
+
+            if not datos_entrega.get('direccion_entrega'):
+                return jsonify({"error": "Para envio a domicilio, la direccion de entrega es requerida"}), 400
+            if not datos_entrega.get('nombre_receptor_entrega'):
+                return jsonify({"error": "Para envio a domicilio, el nombre del receptor es requerido"}), 400
+            if not datos_entrega.get('celular_entrega'):
+                return jsonify({"error": "Para envio a domicilio, el celular de contacto es requerido"}), 400
+
+            if hubo_cambios_cliente:
+                db.session.add(cliente)
 
         items = data['items']
         if not isinstance(items, list) or len(items) == 0:
@@ -185,31 +237,31 @@ def create_pedido():
                     raise ValueError
             except (ValueError, TypeError):
                 db.session.rollback()
-                return jsonify({"error": f"Item {idx+1}: la cantidad debe ser un número positivo"}), 400
+                return jsonify({"error": f"Item {idx+1}: la cantidad debe ser un numero positivo"}), 400
 
             precio_unitario = None
             if producto_id:
                 producto = Producto.query.get(producto_id)
                 if not producto or not producto.estado:
                     db.session.rollback()
-                    return jsonify({"error": f"Producto ID {producto_id} no existe o está inactivo"}), 404
+                    return jsonify({"error": f"Producto ID {producto_id} no existe o esta inactivo"}), 404
                 if producto.stock < cantidad:
                     db.session.rollback()
                     return jsonify({"error": f"Stock insuficiente para '{producto.nombre}'. Disponible: {producto.stock}"}), 400
                 precio_unitario = float(item_data.get('precio_unitario', producto.precio_venta))
                 if precio_unitario <= 0:
                     db.session.rollback()
-                    return jsonify({"error": f"Item {idx+1}: precio unitario inválido"}), 400
+                    return jsonify({"error": f"Item {idx+1}: precio unitario invalido"}), 400
                 productos_procesados.append((producto, cantidad))
             else:
                 servicio = Servicio.query.get(servicio_id)
                 if not servicio or not servicio.estado:
                     db.session.rollback()
-                    return jsonify({"error": f"Servicio ID {servicio_id} no existe o está inactivo"}), 404
+                    return jsonify({"error": f"Servicio ID {servicio_id} no existe o esta inactivo"}), 404
                 precio_unitario = float(item_data.get('precio_unitario', servicio.precio))
                 if precio_unitario <= 0:
                     db.session.rollback()
-                    return jsonify({"error": f"Item {idx+1}: precio unitario inválido"}), 400
+                    return jsonify({"error": f"Item {idx+1}: precio unitario invalido"}), 400
 
             subtotal = cantidad * precio_unitario
             total_calculado += subtotal
@@ -232,11 +284,15 @@ def create_pedido():
             cliente_id=cliente_id_payload,
             metodo_pago=metodo_pago,
             metodo_entrega=metodo_entrega,
-            direccion_entrega=data.get('direccion_entrega', '').strip(),
-            departamento_entrega=data.get('departamento_entrega', '').strip(),
-            municipio_entrega=data.get('municipio_entrega', '').strip(),
-            barrio_entrega=data.get('barrio_entrega', '').strip(),
-            codigo_postal_entrega=data.get('codigo_postal_entrega', '').strip(),
+            direccion_entrega=datos_entrega.get('direccion_entrega'),
+            departamento_entrega=datos_entrega.get('departamento_entrega'),
+            municipio_entrega=datos_entrega.get('municipio_entrega'),
+            barrio_entrega=datos_entrega.get('barrio_entrega'),
+            codigo_postal_entrega=datos_entrega.get('codigo_postal_entrega'),
+            apto_torre_entrega=datos_entrega.get('apto_torre_entrega'),
+            nombre_receptor_entrega=datos_entrega.get('nombre_receptor_entrega'),
+            celular_entrega=datos_entrega.get('celular_entrega'),
+            indicaciones_entrega=datos_entrega.get('indicaciones_entrega'),
             estado_id=estado_pendiente.id,
             transferencia_comprobante=data.get('transferencia_comprobante'),
             total=total_con_envio,
@@ -266,164 +322,7 @@ def create_pedido():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Error al crear pedido: {str(e)}"}), 500
-    try:
-        data = request.get_json()
-        required_fields = ['cliente_id', 'metodo_pago', 'items']
-        for field in required_fields:
-            if field not in data or not data[field]:
-                return jsonify({"error": f"El campo '{field}' es requerido"}), 400
 
-        # Obtener usuario autenticado desde el token
-        usuario_actual_id = get_jwt_identity()
-        usuario = Usuario.query.get(usuario_actual_id)
-        if not usuario:
-            return jsonify({"error": "Usuario no encontrado"}), 404
-
-        cliente_id_payload = data['cliente_id']
-
-        # ============================================================
-        # FIX: Autorización diferenciada
-        # - Admin/empleado pueden elegir cualquier cliente_id
-        # - Cliente común solo puede pedir para sí mismo
-        # ============================================================
-        if usuario.rol in ['admin', 'empleado']:
-            # Permiso total: no se valida vinculación
-            pass
-        else:
-            # Es cliente: debe tener cliente_id y coincidir con el payload
-            if not usuario.cliente_id:
-                return jsonify({"error": "El usuario no está vinculado a un cliente"}), 400
-            if usuario.cliente_id != cliente_id_payload:
-                return jsonify({"error": "No tienes permiso para crear pedidos en nombre de otro cliente"}), 403
-
-        # Validar cliente
-        cliente = Cliente.query.get(cliente_id_payload)
-        if not cliente or not cliente.estado:
-            return jsonify({"error": "Cliente no existe o está inactivo"}), 404
-
-        # Validar método de pago
-        metodo_pago = data['metodo_pago']
-        if metodo_pago not in ['efectivo', 'transferencia', 'tarjeta']:
-            return jsonify({"error": "Método de pago inválido. Opciones: efectivo, transferencia, tarjeta"}), 400
-
-        metodo_entrega = data.get('metodo_entrega')
-        if metodo_entrega and metodo_entrega not in ['tienda', 'domicilio']:
-            return jsonify({"error": "Método de entrega inválido. Opciones: tienda, domicilio"}), 400
-        if metodo_entrega == 'domicilio' and not data.get('direccion_entrega'):
-            return jsonify({"error": "Para envío a domicilio, la dirección de entrega es requerida"}), 400
-
-        items = data['items']
-        if not isinstance(items, list) or len(items) == 0:
-            return jsonify({"error": "El pedido debe tener al menos un item"}), 400
-
-        estado_pendiente = EstadoPedido.query.filter_by(nombre='pendiente').first()
-        if not estado_pendiente:
-            return jsonify({"error": "Estado 'pendiente' no encontrado en la base de datos"}), 500
-
-        total_calculado = 0.0
-        detalles_temp = []
-        productos_procesados = []
-
-        for idx, item_data in enumerate(items):
-            producto_id = item_data.get('producto_id')
-            servicio_id = item_data.get('servicio_id')
-            cantidad = item_data.get('cantidad', 1)
-
-            if not producto_id and not servicio_id:
-                db.session.rollback()
-                return jsonify({"error": f"Item {idx+1}: debe tener 'producto_id' o 'servicio_id'"}), 400
-            if producto_id and servicio_id:
-                db.session.rollback()
-                return jsonify({"error": f"Item {idx+1}: no puede tener ambos, solo uno"}), 400
-
-            try:
-                cantidad = int(cantidad)
-                if cantidad <= 0:
-                    raise ValueError
-            except (ValueError, TypeError):
-                db.session.rollback()
-                return jsonify({"error": f"Item {idx+1}: la cantidad debe ser un número positivo"}), 400
-
-            precio_unitario = None
-            if producto_id:
-                producto = Producto.query.get(producto_id)
-                if not producto or not producto.estado:
-                    db.session.rollback()
-                    return jsonify({"error": f"Producto ID {producto_id} no existe o está inactivo"}), 404
-                if producto.stock < cantidad:
-                    db.session.rollback()
-                    return jsonify({"error": f"Stock insuficiente para '{producto.nombre}'. Disponible: {producto.stock}"}), 400
-                precio_unitario = float(item_data.get('precio_unitario', producto.precio_venta))
-                if precio_unitario <= 0:
-                    db.session.rollback()
-                    return jsonify({"error": f"Item {idx+1}: precio unitario inválido"}), 400
-                productos_procesados.append((producto, cantidad))
-            else:
-                servicio = Servicio.query.get(servicio_id)
-                if not servicio or not servicio.estado:
-                    db.session.rollback()
-                    return jsonify({"error": f"Servicio ID {servicio_id} no existe o está inactivo"}), 404
-                precio_unitario = float(item_data.get('precio_unitario', servicio.precio))
-                if precio_unitario <= 0:
-                    db.session.rollback()
-                    return jsonify({"error": f"Item {idx+1}: precio unitario inválido"}), 400
-
-            subtotal = cantidad * precio_unitario
-            total_calculado += subtotal
-
-            detalles_temp.append({
-                'producto_id': producto_id,
-                'servicio_id': servicio_id,
-                'cantidad': cantidad,
-                'precio_unitario': precio_unitario,
-                'subtotal': subtotal
-            })
-
-        costo_envio = 0.0
-        if metodo_entrega == 'domicilio':
-            costo_envio = 20000.0
-
-        total_con_envio = total_calculado + costo_envio
-
-        pedido = Pedido(
-            cliente_id=cliente_id_payload,
-            metodo_pago=metodo_pago,
-            metodo_entrega=metodo_entrega,
-            direccion_entrega=data.get('direccion_entrega', '').strip(),
-            departamento_entrega=data.get('departamento_entrega', '').strip(),
-            municipio_entrega=data.get('municipio_entrega', '').strip(),
-            barrio_entrega=data.get('barrio_entrega', '').strip(),
-            codigo_postal_entrega=data.get('codigo_postal_entrega', '').strip(),
-            estado_id=estado_pendiente.id,
-            transferencia_comprobante=data.get('transferencia_comprobante'),
-            total=total_con_envio,
-            costo_envio=costo_envio,
-            abono_acumulado=0
-        )
-        db.session.add(pedido)
-        db.session.flush()
-
-        for detalle_data in detalles_temp:
-            detalle = DetallePedido(
-                pedido_id=pedido.id,
-                producto_id=detalle_data['producto_id'],
-                servicio_id=detalle_data['servicio_id'],
-                cantidad=detalle_data['cantidad'],
-                precio_unitario=detalle_data['precio_unitario'],
-                subtotal=detalle_data['subtotal']
-            )
-            db.session.add(detalle)
-
-        for producto, cantidad in productos_procesados:
-            producto.stock -= cantidad
-
-        db.session.commit()
-        return jsonify({"message": "Pedido creado exitosamente", "pedido": pedido.to_dict()}), 201
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": f"Error al crear pedido: {str(e)}"}), 500
-    
 
 @main_bp.route('/pedidos/<int:id>', methods=['GET'])
 @permiso_requerido("ver_pedidos")
@@ -459,7 +358,7 @@ def update_pedido(id):
 
         nuevo_estado_obj = EstadoPedido.query.get(nuevo_estado_id)
         if not nuevo_estado_obj:
-            return jsonify({"error": "Estado inválido"}), 400
+            return jsonify({"error": "Estado invalido"}), 400
 
         estado_anterior_nombre = pedido.estado.nombre if pedido.estado else None
         nuevo_estado_nombre = nuevo_estado_obj.nombre
@@ -475,7 +374,7 @@ def update_pedido(id):
 
         if nuevo_estado_nombre == 'pagado' and estado_anterior_nombre != 'pagado':
             if hasattr(pedido, 'venta') and pedido.venta:
-                return jsonify({"error": "Este pedido ya generó una venta anteriormente"}), 400
+                return jsonify({"error": "Este pedido ya genero una venta anteriormente"}), 400
 
             from app.Models.models import EstadoVenta
             estado_completada = EstadoVenta.query.filter_by(nombre='completada').first()
@@ -526,16 +425,24 @@ def update_pedido(id):
             pedido.barrio_entrega = data['barrio_entrega'].strip()
         if 'codigo_postal_entrega' in data:
             pedido.codigo_postal_entrega = data['codigo_postal_entrega'].strip()
+        if 'apto_torre_entrega' in data:
+            pedido.apto_torre_entrega = data['apto_torre_entrega'].strip() or None
+        if 'nombre_receptor_entrega' in data:
+            pedido.nombre_receptor_entrega = data['nombre_receptor_entrega'].strip() or None
+        if 'celular_entrega' in data:
+            pedido.celular_entrega = data['celular_entrega'].strip() or None
+        if 'indicaciones_entrega' in data:
+            pedido.indicaciones_entrega = data['indicaciones_entrega'].strip() or None
         if 'metodo_pago' in data:
             if data['metodo_pago'] not in ['efectivo', 'transferencia', 'tarjeta']:
-                return jsonify({"error": "Método de pago inválido"}), 400
+                return jsonify({"error": "Metodo de pago invalido"}), 400
             pedido.metodo_pago = data['metodo_pago']
         if 'metodo_entrega' in data:
             if data['metodo_entrega'] not in ['tienda', 'domicilio']:
-                return jsonify({"error": "Método de entrega inválido"}), 400
+                return jsonify({"error": "Metodo de entrega invalido"}), 400
             pedido.metodo_entrega = data['metodo_entrega']
         if 'total' in data:
-            return jsonify({"error": "No se puede modificar el total directamente. Se calcula automáticamente"}), 400
+            return jsonify({"error": "No se puede modificar el total directamente. Se calcula automaticamente"}), 400
 
         db.session.commit()
         return jsonify({"message": "Pedido actualizado", "pedido": pedido.to_dict()})
@@ -555,7 +462,7 @@ def delete_pedido(id):
 
         venta_asociada = Venta.query.filter_by(pedido_id=id).first()
         if venta_asociada:
-            return jsonify({"error": "No se puede eliminar un pedido que ya generó una venta"}), 400
+            return jsonify({"error": "No se puede eliminar un pedido que ya genero una venta"}), 400
 
         if pedido.estado.nombre in ['pagado', 'anulado']:
             return jsonify({"error": "No se puede eliminar un pedido pagado o anulado"}), 400
@@ -581,33 +488,30 @@ def delete_pedido(id):
 @jwt_required()
 def get_pedidos_cliente(cliente_id):
     """
-    Obtiene los pedidos de un cliente específico.
+    Obtiene los pedidos de un cliente especifico.
     - Administradores pueden ver cualquier cliente.
     - Clientes solo pueden ver sus propios pedidos.
     """
     try:
-        # Obtener usuario autenticado desde el token
         usuario_actual_id = get_jwt_identity()
         usuario = Usuario.query.get(usuario_actual_id)
         if not usuario:
             return jsonify({"error": "Usuario no encontrado"}), 404
 
-        # Verificar autorización
-        es_admin = usuario.rol in ['admin', 'empleado']  # asumiendo que 'rol' es un string
+        es_admin = usuario.rol and usuario.rol.nombre in ['Admin', 'Empleado']
         if not (es_admin or usuario.cliente_id == cliente_id):
             return jsonify({"error": "No autorizado para ver estos pedidos"}), 403
 
-        # Verificar que el cliente exista
         cliente = Cliente.query.get(cliente_id)
         if not cliente:
             return jsonify({"error": "Cliente no encontrado"}), 404
 
-        # Obtener pedidos del cliente
         pedidos = Pedido.query.filter_by(cliente_id=cliente_id).order_by(Pedido.fecha.desc()).all()
         return jsonify([pedido.to_dict() for pedido in pedidos])
 
     except Exception as e:
         return jsonify({"error": f"Error al obtener pedidos del cliente: {str(e)}"}), 500
+
 
 @main_bp.route('/pedidos/<int:pedido_id>/detalles', methods=['GET'])
 @permiso_requerido("ver_pedidos")
@@ -623,7 +527,7 @@ def get_detalles_de_pedido(pedido_id):
 
 
 # ============================================================
-# MÓDULO: ABONOS DE PEDIDOS
+# MODULO: ABONOS DE PEDIDOS
 # ============================================================
 
 @main_bp.route('/pedidos/<int:id>/abonos', methods=['GET'])
@@ -657,7 +561,7 @@ def add_abono_pedido(id):
 
         nuevo_acumulado = pedido.abono_acumulado + monto
         if nuevo_acumulado > pedido.total:
-            return jsonify({"error": f"El abono excede el total del pedido. Máximo permitido: {pedido.total - pedido.abono_acumulado}"}), 400
+            return jsonify({"error": f"El abono excede el total del pedido. Maximo permitido: {pedido.total - pedido.abono_acumulado}"}), 400
 
         abono = Abono(
             pedido_id=pedido.id,
@@ -679,16 +583,12 @@ def add_abono_pedido(id):
 
 
 # ============================================================
-# MÓDULO: DETALLES DE PEDIDO (CRUD independiente)
+# MODULO: DETALLES DE PEDIDO (CRUD independiente)
 # ============================================================
 
 @main_bp.route('/detalle-pedido', methods=['GET'])
 @permiso_requerido("ver_pedidos")
 def get_detalles_pedido():
-    """
-    Listar detalles de pedido con paginación y filtros.
-    Query params: page, per_page, pedido_id
-    """
     try:
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
@@ -755,7 +655,7 @@ def create_detalle_pedido():
         if producto_id:
             producto = Producto.query.get(producto_id)
             if not producto or not producto.estado:
-                return jsonify({"error": "Producto no existe o está inactivo"}), 404
+                return jsonify({"error": "Producto no existe o esta inactivo"}), 404
             if producto.stock < cantidad:
                 return jsonify({"error": f"Stock insuficiente para '{producto.nombre}'. Disponible: {producto.stock}"}), 400
             producto.stock -= cantidad
@@ -769,7 +669,7 @@ def create_detalle_pedido():
         else:
             servicio = Servicio.query.get(servicio_id)
             if not servicio or not servicio.estado:
-                return jsonify({"error": "Servicio no existe o está inactivo"}), 404
+                return jsonify({"error": "Servicio no existe o esta inactivo"}), 404
             detalle = DetallePedido(
                 pedido_id=data['pedido_id'],
                 servicio_id=servicio_id,
@@ -872,16 +772,12 @@ def delete_detalle_pedido(id):
 
 
 # ============================================================
-# MÓDULO: ESTADOS DE PEDIDO (opcional, con gestionar_configuracion)
+# MODULO: ESTADOS DE PEDIDO (opcional, con gestionar_configuracion)
 # ============================================================
 
 @main_bp.route('/estado-pedido', methods=['GET'])
 @permiso_requerido("gestionar_configuracion")
 def get_estados_pedido():
-    """
-    Listar estados de pedido con paginación y búsqueda.
-    Query params: page, per_page, search
-    """
     try:
         page = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
@@ -953,7 +849,7 @@ def delete_estado_pedido(id):
         if not estado:
             return jsonify({"error": "Estado de pedido no encontrado"}), 404
         if Pedido.query.filter_by(estado_id=id).first():
-            return jsonify({"error": "No se puede eliminar un estado que está siendo usado por pedidos"}), 400
+            return jsonify({"error": "No se puede eliminar un estado que esta siendo usado por pedidos"}), 400
         db.session.delete(estado)
         db.session.commit()
         return jsonify({"message": "Estado de pedido eliminado correctamente"})

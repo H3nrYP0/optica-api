@@ -82,16 +82,6 @@ def cambiar_mi_contrasenia_usuario():
 @main_bp.route('/admin/usuarios', methods=['GET'])
 @permiso_requerido("ver_usuarios")
 def get_usuarios_admin():
-    """
-    Listar usuarios administrativos con paginación y filtros opcionales.
-
-    Query params opcionales:
-        page      (int)  – página actual, default 1
-        per_page  (int)  – registros por página, máx 10
-        search    (str)  – busca en nombre, apellido y correo
-        rol_id    (int)  – filtra por rol
-        estado    (str)  – 'true' | 'false'
-    """
     try:
         db.session.expire_all()
 
@@ -124,7 +114,6 @@ def get_usuarios_admin():
 
         query = query.order_by(Usuario.nombre.asc())
 
-        # Si no viene 'page' en la URL se devuelve todo (compatible con código anterior)
         if 'page' not in request.args and 'per_page' not in request.args \
                 and not search and not rol_id and estado == '':
             usuarios = query.all()
@@ -163,7 +152,6 @@ def get_usuarios_admin():
 @main_bp.route('/admin/usuarios', methods=['POST'])
 @permiso_requerido("crear_usuarios")
 def create_usuario_admin():
-    """Crear un nuevo usuario administrativo."""
     try:
         data = request.get_json()
         required_fields = ['nombre', 'correo', 'contrasenia', 'rol_id']
@@ -205,7 +193,6 @@ def create_usuario_admin():
 @main_bp.route('/admin/usuarios/<int:id>', methods=['GET'])
 @permiso_requerido("ver_usuarios")
 def get_usuario(id):
-    """Obtener un usuario administrativo por ID."""
     try:
         db.session.expire_all()
         usuario = Usuario.query.get(id)
@@ -219,7 +206,6 @@ def get_usuario(id):
 @main_bp.route('/admin/usuarios/<int:id>', methods=['PUT'])
 @permiso_requerido("editar_usuarios")
 def update_usuario_admin(id):
-    """Actualizar un usuario administrativo."""
     try:
         usuario = Usuario.query.get(id)
         if not usuario:
@@ -258,7 +244,6 @@ def update_usuario_admin(id):
 @main_bp.route('/admin/usuarios/<int:id>', methods=['DELETE'])
 @permiso_requerido("eliminar_usuarios")
 def delete_usuario_admin(id):
-    """Eliminar un usuario (solo si ya está desactivado)."""
     try:
         usuario = Usuario.query.get(id)
         if not usuario:
@@ -279,15 +264,6 @@ def delete_usuario_admin(id):
 @main_bp.route('/roles', methods=['GET'])
 @permiso_requerido("ver_roles")
 def get_roles_admin():
-    """
-    Listar roles con paginación y filtros opcionales.
-
-    Query params opcionales:
-        page      (int)  – página actual, default 1
-        per_page  (int)  – registros por página, máx 10
-        search    (str)  – busca en nombre
-        estado    (str)  – 'true' | 'false'
-    """
     try:
         page     = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
@@ -305,7 +281,6 @@ def get_roles_admin():
 
         query = query.order_by(Rol.nombre.asc())
 
-        # Sin parámetros → compatible con código anterior
         if 'page' not in request.args and 'per_page' not in request.args \
                 and not search and estado == '':
             roles = query.all()
@@ -343,15 +318,6 @@ def get_roles_admin():
 @main_bp.route('/clientes', methods=['GET'])
 @permiso_requerido("ver_clientes")
 def get_clientes_admin():
-    """
-    Listar clientes con paginación y filtros opcionales.
-
-    Query params opcionales:
-        page      (int)  – página actual, default 1
-        per_page  (int)  – registros por página, máx 10
-        search    (str)  – busca en nombre, apellido, correo y número de documento
-        estado    (str)  – 'true' | 'false'
-    """
     try:
         page     = request.args.get('page', 1, type=int)
         per_page = min(request.args.get('per_page', MAX_PER_PAGE, type=int), MAX_PER_PAGE)
@@ -377,9 +343,7 @@ def get_clientes_admin():
 
         query = query.order_by(Cliente.nombre.asc())
 
-        # Sin parámetros → compatible con código anterior
-        if 'page' not in request.args and 'per_page' not in request.args \
-                and not search and estado == '':
+        if 'page' not in request.args and 'per_page' not in request.args and not search and estado == '':
             clientes = query.all()
             return jsonify([c.to_dict() for c in clientes])
 
@@ -428,7 +392,14 @@ def get_mi_perfil():
 @main_bp.route('/mi-perfil', methods=['PUT'])
 @jwt_requerido
 def update_mi_perfil():
-    """Actualiza los datos del usuario y/o cliente asociado."""
+    """Actualiza los datos del usuario y/o cliente asociado.
+
+    NOTA IMPORTANTE: el bloque de Cliente (incluyendo dirección de entrega)
+    solo se ejecuta si el frontend envía `cliente_data` en el payload.
+    AparienciaAdmin.jsx nunca arma ese bloque, así que para Admin/Empleado
+    (cliente_id = None) este bloque jamás se dispara y nunca se les crea
+    una fila en Cliente por accidente.
+    """
     try:
         claims = get_usuario_actual()
         usuario = Usuario.query.get(claims['id'])
@@ -475,8 +446,14 @@ def update_mi_perfil():
             else:
                 cliente = Cliente.query.get(usuario.cliente_id)
 
+            # Campos de "Dirección y ubicación" (incluye los que antes eran
+            # exclusivos de "Dirección de entrega": apto_torre, nombre_receptor,
+            # telefono_entrega, indicaciones). Departamento/municipio/dirección/
+            # barrio/codigo_postal son compartidos entre ambas secciones.
             for field in ['municipio', 'direccion', 'barrio', 'codigo_postal',
-                          'ocupacion', 'telefono_emergencia', 'departamento']:
+                          'ocupacion', 'telefono_emergencia', 'departamento',
+                          'apto_torre', 'nombre_receptor', 'telefono_entrega',
+                          'indicaciones']:
                 if field in cliente_data:
                     value = cliente_data[field]
                     setattr(cliente, field, value.strip() if value else None)

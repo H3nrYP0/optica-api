@@ -192,6 +192,10 @@ class Pedido(db.Model):
     municipio_entrega = db.Column(db.String(50))
     barrio_entrega = db.Column(db.String(50))
     codigo_postal_entrega = db.Column(db.String(10))
+    apto_torre_entrega = db.Column(db.String(20))
+    nombre_receptor_entrega = db.Column(db.String(70))
+    celular_entrega = db.Column(db.String(20))
+    indicaciones_entrega = db.Column(db.String(200))
     transferencia_comprobante = db.Column(db.String(255))
     abono_acumulado = db.Column(db.Float, default=0.0)
     costo_envio = db.Column(db.Float, default=0.0, nullable=False)   # ← NUEVO CAMPO
@@ -218,6 +222,10 @@ class Pedido(db.Model):
             'municipio_entrega': self.municipio_entrega,
             'barrio_entrega': self.barrio_entrega,
             'codigo_postal_entrega': self.codigo_postal_entrega,
+            'apto_torre_entrega': self.apto_torre_entrega,
+            'nombre_receptor_entrega': self.nombre_receptor_entrega,
+            'celular_entrega': self.celular_entrega,
+            'indicaciones_entrega': self.indicaciones_entrega,
             'transferencia_comprobante': self.transferencia_comprobante,
             'abono_acumulado': self.abono_acumulado,
             'costo_envio': self.costo_envio,   # ← NUEVO
@@ -446,6 +454,14 @@ class Cliente(db.Model):
     ocupacion = db.Column(db.String(20))
     telefono_emergencia = db.Column(db.String(20))
     estado = db.Column(db.Boolean, default=True)
+
+    # ── Dirección de entrega (datos específicos del envío, no de ubicación) ──
+    # Departamento/municipio/dirección/barrio/código postal se reutilizan
+    # de los campos generales de arriba; estos 4 son exclusivos de entrega.
+    apto_torre = db.Column(db.String(20))
+    nombre_receptor = db.Column(db.String(70))
+    telefono_entrega = db.Column(db.String(20))
+    indicaciones = db.Column(db.String(200))
     
     citas = db.relationship('Cita', backref='cliente', lazy=True)
     historiales = db.relationship('HistorialFormula', backref='cliente', lazy=True)
@@ -468,6 +484,10 @@ class Cliente(db.Model):
             'codigo_postal': self.codigo_postal,
             'ocupacion': self.ocupacion,
             'telefono_emergencia': self.telefono_emergencia,
+            'apto_torre': self.apto_torre,
+            'nombre_receptor': self.nombre_receptor,
+            'telefono_entrega': self.telefono_entrega,
+            'indicaciones': self.indicaciones,
             'estado': self.estado
         }
 
@@ -742,4 +762,4 @@ class Multimedia(db.Model):
             'categoria_id': self.categoria_id,
             'pedido_id': self.pedido_id,
             'tipo': self.tipo
-        }
+        }   

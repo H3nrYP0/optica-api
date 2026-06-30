@@ -111,6 +111,10 @@ def create_cliente_publico():
             codigo_postal=data.get('codigo_postal', '').strip() or None,
             ocupacion=data.get('ocupacion', '').strip() or None,
             telefono_emergencia=data.get('telefono_emergencia', '').strip() or None,
+            apto_torre=data.get('apto_torre', '').strip() or None,
+            nombre_receptor=data.get('nombre_receptor', '').strip() or None,
+            telefono_entrega=data.get('telefono_entrega', '').strip() or None,
+            indicaciones=data.get('indicaciones', '').strip() or None,
             estado=data.get('estado', True)
         )
         db.session.add(cliente)
@@ -171,6 +175,14 @@ def update_cliente_publico(id):
             cliente.ocupacion = data['ocupacion'].strip() or None
         if 'telefono_emergencia' in data:
             cliente.telefono_emergencia = data['telefono_emergencia'].strip() or None
+        if 'apto_torre' in data:
+            cliente.apto_torre = data['apto_torre'].strip() or None
+        if 'nombre_receptor' in data:
+            cliente.nombre_receptor = data['nombre_receptor'].strip() or None
+        if 'telefono_entrega' in data:
+            cliente.telefono_entrega = data['telefono_entrega'].strip() or None
+        if 'indicaciones' in data:
+            cliente.indicaciones = data['indicaciones'].strip() or None
         db.session.commit()
         return jsonify({"success": True, "message": "Cliente actualizado", "cliente": cliente.to_dict()})
     except Exception as e:
@@ -293,6 +305,10 @@ def create_cliente():
             codigo_postal=data.get('codigo_postal', '').strip() or None,
             ocupacion=data.get('ocupacion', '').strip() or None,
             telefono_emergencia=data.get('telefono_emergencia', '').strip() or None,
+            apto_torre=data.get('apto_torre', '').strip() or None,
+            nombre_receptor=data.get('nombre_receptor', '').strip() or None,
+            telefono_entrega=data.get('telefono_entrega', '').strip() or None,
+            indicaciones=data.get('indicaciones', '').strip() or None,
             estado=data.get('estado', True)
         )
         db.session.add(cliente)
@@ -366,6 +382,14 @@ def update_cliente(id):
             cliente.ocupacion = data['ocupacion'].strip() or None
         if 'telefono_emergencia' in data:
             cliente.telefono_emergencia = data['telefono_emergencia'].strip() or None
+        if 'apto_torre' in data:
+            cliente.apto_torre = data['apto_torre'].strip() or None
+        if 'nombre_receptor' in data:
+            cliente.nombre_receptor = data['nombre_receptor'].strip() or None
+        if 'telefono_entrega' in data:
+            cliente.telefono_entrega = data['telefono_entrega'].strip() or None
+        if 'indicaciones' in data:
+            cliente.indicaciones = data['indicaciones'].strip() or None
         if 'estado' in data:
             cliente.estado = data['estado']
         db.session.commit()
